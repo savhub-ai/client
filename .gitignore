@@ -1,0 +1,10 @@
+/target
+
+.DS_Store
+.claude
+nul
+
+_*.md
+.tmp*
+*.log
+*.tmp
