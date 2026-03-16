@@ -728,9 +728,8 @@ pub fn save_config(
     workdir: &std::path::Path,
     agents: &[String],
 ) {
-    if let Some(dirs) = directories::ProjectDirs::from("", "", "savhub") {
-        let config_dir = dirs.config_dir();
-        let _ = std::fs::create_dir_all(config_dir);
+    if let Ok(config_dir) = savhub_local::config::get_config_dir() {
+        let _ = std::fs::create_dir_all(&config_dir);
         let config = serde_json::json!({
             "registry": base,
             "token": if token.trim().is_empty() { serde_json::Value::Null } else { serde_json::Value::String(token.to_string()) },

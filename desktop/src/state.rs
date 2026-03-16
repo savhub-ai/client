@@ -78,8 +78,9 @@ fn load_config() -> (String, Option<String>, Language, PathBuf, Vec<String>) {
 
 /// Read just the language setting from config (used before full state init).
 pub fn read_language() -> Language {
-    let config_path = directories::ProjectDirs::from("", "", "savhub")
-        .map(|dirs| dirs.config_dir().join("config.json"));
+    let config_path = savhub_local::config::get_config_dir()
+        .ok()
+        .map(|d| d.join("config.json"));
     if let Some(path) = config_path {
         if let Ok(raw) = std::fs::read_to_string(&path) {
             if let Ok(cfg) = serde_json::from_str::<serde_json::Value>(&raw) {

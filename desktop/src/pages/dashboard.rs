@@ -496,19 +496,26 @@ fn UserCard(
                         "{t.not_logged_in_hint}"
                     }
                     if *logging_in.read() {
-                        span { style: "font-size: 13px; color: {Theme::MUTED};",
-                            "{t.logging_in}"
+                        div { style: "display: flex; align-items: center; gap: 8px;",
+                            span { style: "display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(90, 158, 63, 0.3); border-top-color: {Theme::ACCENT}; border-radius: 50%; animation: spin 0.8s linear infinite;" }
+                            span { style: "font-size: 13px; color: {Theme::MUTED};",
+                                "{t.opening_browser}"
+                            }
+                        }
+                    } else if let Some(msg) = login_status.read().as_ref() {
+                        p { style: "font-size: 12px; color: {Theme::DANGER};",
+                            "{msg}"
+                        }
+                        button {
+                            style: "padding: 8px 16px; background: linear-gradient(135deg, {Theme::ACCENT} 0%, #7bc25a 100%); color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; align-self: flex-start;",
+                            onclick: do_login,
+                            "{t.login_with_github}"
                         }
                     } else {
                         button {
                             style: "padding: 8px 16px; background: linear-gradient(135deg, {Theme::ACCENT} 0%, #7bc25a 100%); color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; align-self: flex-start;",
                             onclick: do_login,
                             "{t.login_with_github}"
-                        }
-                    }
-                    if let Some(msg) = login_status.read().as_ref() {
-                        p { style: "font-size: 12px; color: {Theme::ACCENT_STRONG};",
-                            "{msg}"
                         }
                     }
                 }
