@@ -364,13 +364,14 @@ fn init_schema(conn: &Connection) -> Result<()> {
 
         CREATE TABLE IF NOT EXISTS skills (
             id              TEXT PRIMARY KEY,
-            flock_id        TEXT NOT NULL DEFAULT '',
-            repo_id         TEXT NOT NULL DEFAULT '',
+            sign            TEXT NOT NULL DEFAULT '',
             slug            TEXT NOT NULL,
             name            TEXT NOT NULL,
             path            TEXT NOT NULL DEFAULT '',
             summary         TEXT NOT NULL DEFAULT '',
             description     TEXT NOT NULL DEFAULT '',
+            flock_id        TEXT NOT NULL DEFAULT '',
+            repo_id         TEXT NOT NULL DEFAULT '',
             version         TEXT NOT NULL DEFAULT '0.0.0',
             status          TEXT NOT NULL DEFAULT 'active',
             license         TEXT NOT NULL DEFAULT '',

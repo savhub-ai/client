@@ -90,7 +90,7 @@ impl SelectorForm {
             editing_id: if as_template {
                 None
             } else {
-                Some(d.id.clone())
+                Some(d.sign.clone())
             },
             name: if as_template {
                 format!("{} (copy)", d.name)
@@ -107,8 +107,8 @@ impl SelectorForm {
             },
             custom_expr: d.custom_expression.clone(),
             presets: d.presets.iter().cloned().collect(),
-            skills: d.add_skills.iter().cloned().collect(),
-            flocks: d.add_flocks.iter().cloned().collect(),
+            skills: d.skills.iter().cloned().collect(),
+            flocks: d.flocks.iter().cloned().collect(),
             priority: d.priority,
             error: String::new(),
         }
@@ -146,7 +146,7 @@ impl SelectorForm {
             })
             .collect();
         SelectorDefinition {
-            id: self.editing_id.clone().unwrap_or_else(generate_selector_id),
+            sign: self.editing_id.clone().unwrap_or_else(generate_selector_id),
             name: self.name.trim().to_string(),
             description: self.description.trim().to_string(),
             folder_scope: self.folder_scope.trim().to_string(),
@@ -158,8 +158,8 @@ impl SelectorForm {
             },
             custom_expression: self.custom_expr.clone(),
             presets: self.presets.iter().cloned().collect(),
-            add_skills: self.skills.iter().cloned().collect(),
-            add_flocks: self.flocks.iter().cloned().collect(),
+            skills: self.skills.iter().cloned().collect(),
+            flocks: self.flocks.iter().cloned().collect(),
             priority: self.priority,
         }
     }
@@ -273,7 +273,7 @@ pub fn SelectorsPage() -> Element {
                     div { style: "{container_style}",
                         for selector in visible.iter() {
                             SelectorRow {
-                                key: "{selector.id}",
+                                key: "{selector.sign}",
                                 selector: selector.clone(),
                                 form_is_open: form_is_open,
                                 card_mode: is_cards,
@@ -290,7 +290,7 @@ pub fn SelectorsPage() -> Element {
                                     move |_| { form_key += 1; form.set(Some(SelectorForm::from_selector(&selector, false))); }
                                 },
                                 on_delete: {
-                                    let id = selector.id.clone();
+                                    let id = selector.sign.clone();
                                     move |_| { let _ = delete_selector(&id); version += 1; }
                                 },
                             }
@@ -339,9 +339,9 @@ fn SelectorRow(
     let t = i18n::texts(*state.lang.read());
     let mut down_pos = use_signal(|| (0.0f64, 0.0f64));
     let rules_count = selector.rules.len();
-    let skills_count = selector.add_skills.len();
+    let skills_count = selector.skills.len();
     let presets_count = selector.presets.len();
-    let flocks_count = selector.add_flocks.len();
+    let flocks_count = selector.flocks.len();
 
     if card_mode {
         // Card view — compact card for grid layout, multiple per row
@@ -427,8 +427,8 @@ fn SelectorDetailPopup(selector: Signal<Option<SelectorDefinition>>) -> Element 
     };
     let rules = d.rules.clone();
     let presets = d.presets.clone();
-    let skills = d.add_skills.clone();
-    let flocks = d.add_flocks.clone();
+    let skills = d.skills.clone();
+    let flocks = d.flocks.clone();
     let priority = d.priority;
     drop(guard);
 

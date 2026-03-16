@@ -625,7 +625,7 @@ pub fn generate_selector_id() -> String {
 /// Deduplicate skills and presets in a selector before saving.
 fn dedup_selector(mut d: SelectorDefinition) -> SelectorDefinition {
     let mut seen = std::collections::BTreeSet::new();
-    d.add_skills.retain(|s| seen.insert(s.clone()));
+    d.skills.retain(|s| seen.insert(s.clone()));
     let mut seen = std::collections::BTreeSet::new();
     d.presets.retain(|s| seen.insert(s.clone()));
     d
@@ -633,8 +633,8 @@ fn dedup_selector(mut d: SelectorDefinition) -> SelectorDefinition {
 
 pub fn create_selector(selector: SelectorDefinition) -> Result<()> {
     let mut store = read_selectors_store()?;
-    if store.selectors.iter().any(|d| d.id == selector.id) {
-        bail!("selector with id '{}' already exists", selector.id);
+    if store.selectors.iter().any(|d| d.sign == selector.sign) {
+        bail!("selector with id '{}' already exists", selector.sign);
     }
     store.selectors.push(dedup_selector(selector));
     write_selectors_store(&store)
@@ -642,10 +642,10 @@ pub fn create_selector(selector: SelectorDefinition) -> Result<()> {
 
 pub fn update_selector(selector: SelectorDefinition) -> Result<()> {
     let mut store = read_selectors_store()?;
-    if let Some(existing) = store.selectors.iter_mut().find(|d| d.id == selector.id) {
+    if let Some(existing) = store.selectors.iter_mut().find(|d| d.sign == selector.sign) {
         *existing = dedup_selector(selector);
     } else {
-        bail!("selector '{}' not found", selector.id);
+        bail!("selector '{}' not found", selector.sign);
     }
     write_selectors_store(&store)
 }
@@ -653,7 +653,7 @@ pub fn update_selector(selector: SelectorDefinition) -> Result<()> {
 pub fn delete_selector(id: &str) -> Result<()> {
     let mut store = read_selectors_store()?;
     let before = store.selectors.len();
-    store.selectors.retain(|d| d.id != id);
+    store.selectors.retain(|d| d.sign != id);
     if store.selectors.len() == before {
         bail!("selector '{id}' not found");
     }
@@ -705,8 +705,8 @@ pub fn run_selectors(project_root: &Path) -> Result<SelectorRunResult> {
             matched.push(SelectorMatch {
                 selector: selector.clone(),
                 presets: selector.presets.clone(),
-                skills: selector.add_skills.clone(),
-                flocks: selector.add_flocks.clone(),
+                skills: selector.skills.clone(),
+                flocks: selector.flocks.clone(),
             });
         }
     }
@@ -760,7 +760,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
     let defaults = vec![
         // ── Language-level selectors ─────────────────────────
         SelectorDefinition {
-            id: "builtin-rust-project".to_string(),
+            sign: "builtin-rust-project".to_string(),
             name: "Rust Project".to_string(),
             description: "Detects Rust projects by the presence of Cargo.toml.".to_string(),
             folder_scope: ".".to_string(),
@@ -770,12 +770,12 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
             presets: vec![],
-            add_skills: vec![],
-            add_flocks: vec![],
+            skills: vec![],
+            flocks: vec![],
             priority: 10,
         },
         SelectorDefinition {
-            id: "builtin-python-project".to_string(),
+            sign: "builtin-python-project".to_string(),
             name: "Python Project".to_string(),
             description: "Detects Python projects by pyproject.toml or requirements.txt."
                 .to_string(),
@@ -794,12 +794,12 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             match_mode: MatchMode::AnyMatch,
             custom_expression: String::new(),
             presets: vec![],
-            add_skills: vec![],
-            add_flocks: vec![],
+            skills: vec![],
+            flocks: vec![],
             priority: 10,
         },
         SelectorDefinition {
-            id: "builtin-go-project".to_string(),
+            sign: "builtin-go-project".to_string(),
             name: "Go Project".to_string(),
             description: "Detects Go projects by the presence of go.mod.".to_string(),
             folder_scope: ".".to_string(),
@@ -809,12 +809,12 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
             presets: vec![],
-            add_skills: vec![],
-            add_flocks: vec![],
+            skills: vec![],
+            flocks: vec![],
             priority: 10,
         },
         SelectorDefinition {
-            id: "builtin-java-project".to_string(),
+            sign: "builtin-java-project".to_string(),
             name: "Java / Kotlin Project".to_string(),
             description: "Detects JVM projects via pom.xml or build.gradle.".to_string(),
             folder_scope: ".".to_string(),
@@ -832,13 +832,13 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             match_mode: MatchMode::AnyMatch,
             custom_expression: String::new(),
             presets: vec![],
-            add_skills: vec![],
-            add_flocks: vec![],
+            skills: vec![],
+            flocks: vec![],
             priority: 10,
         },
         // ── Rust framework selectors ─────────────────────────
         SelectorDefinition {
-            id: "builtin-salvo-project".to_string(),
+            sign: "builtin-salvo-project".to_string(),
             name: "Salvo Web Framework".to_string(),
             description: "Detects Rust projects using the Salvo web framework.".to_string(),
             folder_scope: ".".to_string(),
@@ -854,12 +854,12 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
             presets: vec![],
-            add_skills: vec![],
-            add_flocks: vec![],
+            skills: vec![],
+            flocks: vec![],
             priority: 20,
         },
         SelectorDefinition {
-            id: "builtin-actix-project".to_string(),
+            sign: "builtin-actix-project".to_string(),
             name: "Actix Web Framework".to_string(),
             description: "Detects Rust projects using the Actix-web framework.".to_string(),
             folder_scope: ".".to_string(),
@@ -875,12 +875,12 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
             presets: vec![],
-            add_skills: vec![],
-            add_flocks: vec![],
+            skills: vec![],
+            flocks: vec![],
             priority: 20,
         },
         SelectorDefinition {
-            id: "builtin-axum-project".to_string(),
+            sign: "builtin-axum-project".to_string(),
             name: "Axum Web Framework".to_string(),
             description: "Detects Rust projects using the Axum web framework.".to_string(),
             folder_scope: ".".to_string(),
@@ -896,12 +896,12 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
             presets: vec![],
-            add_skills: vec![],
-            add_flocks: vec![],
+            skills: vec![],
+            flocks: vec![],
             priority: 20,
         },
         SelectorDefinition {
-            id: "builtin-dioxus-project".to_string(),
+            sign: "builtin-dioxus-project".to_string(),
             name: "Dioxus Framework".to_string(),
             description: "Detects Rust projects using the Dioxus UI framework.".to_string(),
             folder_scope: ".".to_string(),
@@ -917,13 +917,13 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
             presets: vec![],
-            add_skills: vec![],
-            add_flocks: vec![],
+            skills: vec![],
+            flocks: vec![],
             priority: 20,
         },
         // ── JS/TS framework selectors ────────────────────────
         SelectorDefinition {
-            id: "builtin-web-frontend".to_string(),
+            sign: "builtin-web-frontend".to_string(),
             name: "Web Frontend (Node/TS)".to_string(),
             description: "Detects Node.js or TypeScript frontend projects.".to_string(),
             folder_scope: ".".to_string(),
@@ -938,12 +938,12 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
             presets: vec![],
-            add_skills: vec![],
-            add_flocks: vec![],
+            skills: vec![],
+            flocks: vec![],
             priority: 10,
         },
         SelectorDefinition {
-            id: "builtin-react-project".to_string(),
+            sign: "builtin-react-project".to_string(),
             name: "React".to_string(),
             description: "Detects React projects by checking package.json for react dependency."
                 .to_string(),
@@ -960,12 +960,12 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
             presets: vec![],
-            add_skills: vec![],
-            add_flocks: vec![],
+            skills: vec![],
+            flocks: vec![],
             priority: 20,
         },
         SelectorDefinition {
-            id: "builtin-vue-project".to_string(),
+            sign: "builtin-vue-project".to_string(),
             name: "Vue".to_string(),
             description: "Detects Vue.js projects by checking package.json for vue dependency."
                 .to_string(),
@@ -982,12 +982,12 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
             presets: vec![],
-            add_skills: vec![],
-            add_flocks: vec![],
+            skills: vec![],
+            flocks: vec![],
             priority: 20,
         },
         SelectorDefinition {
-            id: "builtin-angular-project".to_string(),
+            sign: "builtin-angular-project".to_string(),
             name: "Angular".to_string(),
             description: "Detects Angular projects by checking package.json for @angular/core."
                 .to_string(),
@@ -1004,12 +1004,12 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
             presets: vec![],
-            add_skills: vec![],
-            add_flocks: vec![],
+            skills: vec![],
+            flocks: vec![],
             priority: 20,
         },
         SelectorDefinition {
-            id: "builtin-svelte-project".to_string(),
+            sign: "builtin-svelte-project".to_string(),
             name: "Svelte".to_string(),
             description: "Detects Svelte projects by checking package.json for svelte dependency."
                 .to_string(),
@@ -1026,12 +1026,12 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
             presets: vec![],
-            add_skills: vec![],
-            add_flocks: vec![],
+            skills: vec![],
+            flocks: vec![],
             priority: 20,
         },
         SelectorDefinition {
-            id: "builtin-nextjs-project".to_string(),
+            sign: "builtin-nextjs-project".to_string(),
             name: "Next.js".to_string(),
             description: "Detects Next.js projects by checking package.json for next dependency."
                 .to_string(),
@@ -1048,12 +1048,12 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
             presets: vec![],
-            add_skills: vec![],
-            add_flocks: vec![],
+            skills: vec![],
+            flocks: vec![],
             priority: 20,
         },
         SelectorDefinition {
-            id: "builtin-nuxt-project".to_string(),
+            sign: "builtin-nuxt-project".to_string(),
             name: "Nuxt".to_string(),
             description: "Detects Nuxt projects by checking package.json for nuxt dependency."
                 .to_string(),
@@ -1070,13 +1070,13 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
             presets: vec![],
-            add_skills: vec![],
-            add_flocks: vec![],
+            skills: vec![],
+            flocks: vec![],
             priority: 20,
         },
         // ── Monorepo ─────────────────────────────────────────
         SelectorDefinition {
-            id: "builtin-monorepo-web".to_string(),
+            sign: "builtin-monorepo-web".to_string(),
             name: "Monorepo Web App".to_string(),
             description: "Scopes detection to a workspace folder inside a monorepo.".to_string(),
             folder_scope: "apps/web".to_string(),
@@ -1094,13 +1094,13 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             match_mode: MatchMode::Custom,
             custom_expression: "(1 && 2) || 3".to_string(),
             presets: vec![],
-            add_skills: vec![],
-            add_flocks: vec![],
+            skills: vec![],
+            flocks: vec![],
             priority: 20,
         },
     ];
     for selector in defaults {
-        if !store.selectors.iter().any(|d| d.id == selector.id) {
+        if !store.selectors.iter().any(|d| d.sign == selector.sign) {
             store.selectors.push(selector);
         }
     }

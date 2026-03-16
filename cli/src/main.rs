@@ -2826,7 +2826,7 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
                     String::new()
                 };
                 let rules = d.rules.len();
-                let skills = d.add_skills.len();
+                let skills = d.skills.len();
                 let presets = d.presets.len();
                 println!(
                     "  {:<24} scope={:<10} {}r {}p {}s{}",
@@ -2846,7 +2846,7 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
                 .selectors
                 .iter()
                 .filter(|d| {
-                    d.name.to_lowercase().contains(&query) || d.id.to_lowercase().contains(&query)
+                    d.name.to_lowercase().contains(&query) || d.sign.to_lowercase().contains(&query)
                 })
                 .collect();
             if found.is_empty() {
@@ -2858,7 +2858,7 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
             }
             for d in &found {
                 println!("Name:       {}", d.name);
-                println!("ID:         {}", d.id);
+                println!("ID:         {}", d.sign);
                 if !d.description.is_empty() {
                     println!("Desc:       {}", d.description);
                 }
@@ -2877,11 +2877,11 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
                 if !d.presets.is_empty() {
                     println!("Presets:    {}", d.presets.join(", "));
                 }
-                if !d.add_skills.is_empty() {
-                    println!("Skills:     {}", d.add_skills.join(", "));
+                if !d.skills.is_empty() {
+                    println!("Skills:     {}", d.skills.join(", "));
                 }
-                if !d.add_flocks.is_empty() {
-                    println!("Flocks:     {}", d.add_flocks.join(", "));
+                if !d.flocks.is_empty() {
+                    println!("Flocks:     {}", d.flocks.join(", "));
                 }
                 println!();
             }
