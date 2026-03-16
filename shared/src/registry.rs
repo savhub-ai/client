@@ -1722,7 +1722,7 @@ pub fn get_skill_by_slug(slug: &str) -> Result<Option<RegistrySkill>> {
 pub fn get_skill_by_sign(sign: &str) -> Result<Option<RegistrySkill>> {
     let conn = open_cache()?;
     let result = conn.query_row(
-        "SELECT data_json FROM skills WHERE sign = ?1 LIMIT 1",
+        "SELECT data_json FROM skills WHERE repo_id || '/' || path = ?1 LIMIT 1",
         params![sign],
         |row| row.get::<_, String>(0),
     );

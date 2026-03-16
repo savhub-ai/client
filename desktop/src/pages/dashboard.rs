@@ -132,7 +132,6 @@ pub fn DashboardPage() -> Element {
     } else {
         None
     };
-    let current_user = state.current_user.read().clone();
     let agents = detected_agents.read().clone();
     let recent_projects_list = recent_projects.read().clone();
     let recent_projects_current_page = pagination::clamp_page(
@@ -247,13 +246,6 @@ pub fn DashboardPage() -> Element {
                 }
                 UserCard {
                     label: account_label,
-                    value: user_info.read().clone(),
-                    accent: if user_info.read().starts_with('@') {
-                        Theme::ACCENT
-                    } else {
-                        Theme::MUTED
-                    },
-                    user: current_user,
                 }
                 StatCard {
                     label: skills_label,
@@ -437,13 +429,11 @@ fn avatar_initial(value: &str) -> String {
 #[component]
 fn UserCard(
     label: &'static str,
-    value: String,
-    accent: &'static str,
-    user: Option<UserSummary>,
 ) -> Element {
     let mut state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
-    let is_logged_in = user.is_some();
+    // Read current_user directly from state so the component re-renders on change
+    let user = state.current_user.read().clone();
     let mut login_status = use_signal(|| Option::<String>::None);
     let mut logging_in = use_signal(|| false);
 
@@ -488,11 +478,16 @@ fn UserCard(
             p { style: "font-size: 12px; color: {Theme::MUTED}; margin-bottom: 12px;",
                 "{label}"
             }
-            if is_logged_in {
-                div { style: "display: flex; align-items: center; gap: 12px;",
-                    DashboardAvatar { user: user, fallback_text: value.clone(), size: 42 }
-                    p { style: "font-size: 20px; font-weight: 600; color: {accent}; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;",
-                        "{value}"
+            if let Some(ref u) = user {
+                {
+                    let display = format!("@{}", u.handle);
+                    rsx! {
+                        div { style: "display: flex; align-items: center; gap: 12px;",
+                            DashboardAvatar { user: user.clone(), fallback_text: display.clone(), size: 42 }
+                            p { style: "font-size: 20px; font-weight: 600; color: {Theme::ACCENT}; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;",
+                                "{display}"
+                            }
+                        }
                     }
                 }
             } else {
