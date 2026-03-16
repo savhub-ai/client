@@ -558,11 +558,11 @@ impl McpHandler {
     }
 
     fn tool_install_skill(&self, id: Option<Value>, arguments: &Value) -> JsonRpcResponse {
-        let Some(slug) = arguments.get("slug").and_then(Value::as_str) else {
-            return JsonRpcResponse::success(id, tool_error("Missing parameter: slug"));
+        let Some(sign) = arguments.get("sign").and_then(Value::as_str) else {
+            return JsonRpcResponse::success(id, tool_error("Missing parameter: sign"));
         };
 
-        match savhub_local::registry::install_skill_from_registry(slug) {
+        match savhub_local::registry::install_skill_from_registry(&sign) {
             Ok(path) => {
                 // Notify client that prompts list has changed
                 let _ = crate::transport::send_notification(
@@ -576,7 +576,7 @@ impl McpHandler {
                         "content": [{
                             "type": "text",
                             "text": format!(
-                                "Installed skill '{slug}' to {}. The skill is now available as a prompt.",
+                                "Installed skill '{sign}' to {}. The skill is now available as a prompt.",
                                 path.display()
                             )
                         }]
@@ -585,7 +585,7 @@ impl McpHandler {
             }
             Err(e) => JsonRpcResponse::success(
                 id,
-                tool_error(&format!("Failed to install skill '{slug}': {e}")),
+                tool_error(&format!("Failed to install skill '{sign}': {e}")),
             ),
         }
     }

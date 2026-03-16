@@ -34,20 +34,20 @@ pub fn FlockDetailPage(slug: String) -> Element {
         skills.iter().all(|s| map.contains_key(&s.slug))
     };
 
-    let skill_slugs: Vec<String> = skills.iter().map(|s| s.slug.clone()).collect();
+    let skill_signs: Vec<String> = skills.iter().map(|s| s.signs.clone()).collect();
     let do_all = move |_: MouseEvent| {
-        let slugs = skill_slugs.clone();
+        let signs = skill_signs.clone();
         let uninstall = all_installed;
         spawn(async move {
             working.set(true);
             action_error.set(None);
-            for slug in &slugs {
-                let s = slug.clone();
+            for sign in &signs {
+                let sign = sign.clone();
                 let result = tokio::task::spawn_blocking(move || {
                     if uninstall {
-                        registry::uninstall_skill_from_registry(&s).map(|_| ())
+                        registry::uninstall_skill_from_registry(&sign).map(|_| ())
                     } else {
-                        registry::install_skill_from_registry(&s).map(|_| ())
+                        registry::install_skill_from_registry(&sign).map(|_| ())
                     }
                 })
                 .await
@@ -178,25 +178,24 @@ fn FlockSkillRow(skill: RegistrySkill, mut installed: Signal<BTreeMap<String, bo
     let state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
     let mut working = use_signal(|| false);
-    let mut error_msg = use_signal(|| Option::<String>::None);
-    let slug = skill.slug.clone();
-    let slug_action = slug.clone();
-    let is_installed = installed.read().contains_key(&slug);
+    let mut error_msg: Signal<Option<String>> = use_signal(|| Option::<String>::None);
+    let sign = skill.sign.clone();
+    let is_installed = installed.read().contains_key(&sign);
 
     let do_action = move |e: Event<MouseData>| {
         e.stop_propagation();
-        let slug = slug_action.clone();
+        let sign = sign.clone();
         let uninstall = is_installed;
         spawn(async move {
             working.set(true);
             error_msg.set(None);
             let result = {
-                let s = slug.clone();
+                let s = sign.clone();
                 tokio::task::spawn_blocking(move || {
                     if uninstall {
                         registry::uninstall_skill_from_registry(&s).map(|_| ())
                     } else {
-                        registry::install_skill_from_registry(&s).map(|_| ())
+                        registry::install_skill_from_registry(&sign).map(|_| ())
                     }
                 })
                 .await

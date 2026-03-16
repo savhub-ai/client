@@ -804,12 +804,12 @@ pub fn skill_matches_skipped(sign: &str, skipped: &[String]) -> bool {
 ///
 /// Returns the local path to the skill's subdirectory inside the repo.
 pub fn install_skill_from_registry(sign: &str) -> Result<PathBuf> {
-    let slug = sign.rsplit('/').next().unwrap_or(sign);
     let skill = get_skill_by_sign(sign)?
         .with_context(|| format!("skill '{sign}' not found in registry cache"))?;
+    let slug = skill.slug.as_str();
 
-    let source = get_repo_source_for_skill(sign)?
-        .with_context(|| format!("no repo source found for skill '{sign}'"))?;
+    let source = get_repo_source_for_skill(slug)?
+        .with_context(|| format!("no repo source found for skill '{slug}'"))?;
     let (git_url, git_ref, source_path) = match &source {
         RegistrySource::Git { url, r#ref, .. } => {
             let sp = if !skill.path.is_empty() {
@@ -819,7 +819,7 @@ pub fn install_skill_from_registry(sign: &str) -> Result<PathBuf> {
             };
             (url.clone(), r#ref.clone(), sp)
         }
-        _ => bail!("skill '{sign}' has no git source"),
+        _ => bail!("skill '{slug}' has no git source"),
     };
 
     let base = repos_dir()?;

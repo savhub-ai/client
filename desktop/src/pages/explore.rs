@@ -17,6 +17,7 @@ const EXPLORE_SEARCH_FETCH_LIMIT: usize = 120;
 /// Unified display item for skills from either browse or search APIs.
 #[derive(Debug, Clone, PartialEq)]
 struct DisplaySkill {
+    sign: String,
     slug: String,
     name: String,
     summary: Option<String>,
@@ -27,6 +28,7 @@ struct DisplaySkill {
 impl From<&SkillListItem> for DisplaySkill {
     fn from(item: &SkillListItem) -> Self {
         Self {
+            sign: item.sign.clone(),
             slug: item.slug.clone(),
             name: item.display_name.clone(),
             summary: item.summary.clone(),
@@ -39,6 +41,7 @@ impl From<&SkillListItem> for DisplaySkill {
 impl From<&SearchResult> for DisplaySkill {
     fn from(item: &SearchResult) -> Self {
         Self {
+            sign: String::new(), // SearchResult doesn't have sign
             slug: item.slug.clone(),
             name: item.display_name.clone(),
             summary: item.summary.clone(),
@@ -575,24 +578,23 @@ fn SkillListRow(
     let t = i18n::texts(*state.lang.read());
     let mut working = use_signal(|| false);
     let mut action_error = use_signal(|| Option::<String>::None);
-    let slug = skill.slug.clone();
-    let slug_action = slug.clone();
-    let is_installed = installed_versions.read().contains_key(&skill.slug);
+    let sign = skill.sign.clone();
+    let is_installed = installed_versions.read().contains_key(&skill.sign);
 
     let do_action = move |e: Event<MouseData>| {
         e.stop_propagation();
-        let slug = slug_action.clone();
+        let sign = sign.clone();
         let uninstall = is_installed;
         spawn(async move {
             working.set(true);
             action_error.set(None);
             let result = {
-                let s = slug.clone();
+                let sign = sign.clone();
                 tokio::task::spawn_blocking(move || {
                     if uninstall {
-                        savhub_local::registry::uninstall_skill_from_registry(&s).map(|_| ())
+                        savhub_local::registry::uninstall_skill_from_registry(&sign).map(|_| ())
                     } else {
-                        savhub_local::registry::install_skill_from_registry(&s).map(|_| ())
+                        savhub_local::registry::install_skill_from_registry(&sign).map(|_| ())
                     }
                 })
                 .await
@@ -693,24 +695,23 @@ fn SkillCard(
     let t = i18n::texts(*state.lang.read());
     let mut working = use_signal(|| false);
     let mut action_error = use_signal(|| Option::<String>::None);
-    let slug = skill.slug.clone();
-    let slug_action = slug.clone();
-    let is_installed = installed_versions.read().contains_key(&skill.slug);
+    let sign = skill.sign.clone();
+    let is_installed = installed_versions.read().contains_key(&skill.sign);
 
     let do_action = move |e: Event<MouseData>| {
         e.stop_propagation();
-        let slug = slug_action.clone();
+        let sign = sign.clone();
         let uninstall = is_installed;
         spawn(async move {
             working.set(true);
             action_error.set(None);
             let result = {
-                let s = slug.clone();
+                let s = sign.clone();
                 tokio::task::spawn_blocking(move || {
                     if uninstall {
                         savhub_local::registry::uninstall_skill_from_registry(&s).map(|_| ())
                     } else {
-                        savhub_local::registry::install_skill_from_registry(&s).map(|_| ())
+                        savhub_local::registry::install_skill_from_registry(&sign).map(|_| ())
                     }
                 })
                 .await
@@ -840,7 +841,11 @@ fn FlockListRow(
                     if uninstall {
                         savhub_local::registry::uninstall_skill_from_registry(&s).map(|_| ())
                     } else {
-                        savhub_local::registry::install_skill_from_registry(&s).map(|_| ())
+                        {
+                            let sign =
+                                savhub_local::registry::get_sign_by_slug(&s).unwrap_or(s.clone());
+                            savhub_local::registry::install_skill_from_registry(&sign).map(|_| ())
+                        }
                     }
                 })
                 .await
@@ -966,7 +971,11 @@ fn FlockCard(
                     if uninstall {
                         savhub_local::registry::uninstall_skill_from_registry(&s).map(|_| ())
                     } else {
-                        savhub_local::registry::install_skill_from_registry(&s).map(|_| ())
+                        {
+                            let sign =
+                                savhub_local::registry::get_sign_by_slug(&s).unwrap_or(s.clone());
+                            savhub_local::registry::install_skill_from_registry(&sign).map(|_| ())
+                        }
                     }
                 })
                 .await
