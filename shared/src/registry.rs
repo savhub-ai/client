@@ -213,7 +213,7 @@ pub struct RegistrySkill {
 }
 
 /// Internal representation for parsed skills.json data.
-/// The JSON file is now a direct array of skills; repo_id and flock_slug
+/// The JSON file is now a direct array of skills; repo_sign and flock_slug
 /// are derived from the directory path.
 #[derive(Debug, Clone)]
 struct SkillsFile {
@@ -642,12 +642,12 @@ fn repo_dir_name(git_url: &str) -> String {
     stripped.replace('/', "-").replace(':', "-")
 }
 
-/// Construct a skill sign from repo id and skill path: `{repo_id}/{skill_path}`.
+/// Construct a skill sign: `{repo_sign}/{skill_path}`.
 ///
 /// Example: `make_skill_sign("github.com/salvo-rs/salvo-skills", "skills/salvo-auth")`
 /// → `"github.com/salvo-rs/salvo-skills/skills/salvo-auth"`
-pub fn make_skill_sign(repo_id: &str, skill_path: &str) -> String {
-    format!("{repo_id}/{skill_path}")
+pub fn make_skill_sign(repo_sign: &str, skill_path: &str) -> String {
+    format!("{repo_sign}/{skill_path}")
 }
 
 /// Look up the repo-level source for a given skill slug.
@@ -706,10 +706,12 @@ fn get_repo_source_for_skill(slug: &str) -> Result<Option<RegistrySource>> {
     }
 }
 
-/// Look up the repo_id and path for a skill from the DB.
+/// Look up the repo sign and skill path from the DB.
 ///
-/// Returns `(repo_id, path)` where path is the skill directory relative to repo root.
-/// The sign for this skill is `{repo_id}/{path}`.
+/// Returns `(repo_sign, skill_path)`.
+/// The skill sign is `{repo_sign}/{skill_path}`.
+///
+/// Note: queries by slug which may not be unique across repos.
 pub fn get_skill_db_info(slug: &str) -> Option<(String, String)> {
     let conn = open_cache().ok()?;
     let result = conn.query_row(
@@ -718,7 +720,7 @@ pub fn get_skill_db_info(slug: &str) -> Option<(String, String)> {
         |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
     );
     match result {
-        Ok((repo_id, path)) if !path.is_empty() => Some((repo_id, path)),
+        Ok((repo_sign, path)) if !path.is_empty() => Some((repo_sign, path)),
         _ => None,
     }
 }
@@ -799,12 +801,12 @@ pub fn skill_matches_skipped(sign: &str, skipped: &[String]) -> bool {
 /// 3. Mark the skill as installed in SQLite
 ///
 /// Returns the local path to the skill's subdirectory inside the repo.
-pub fn install_skill_from_registry(slug: &str) -> Result<PathBuf> {
-    let skill = get_skill_by_slug(slug)?
-        .with_context(|| format!("skill '{slug}' not found in registry cache"))?;
+pub fn install_skill_from_registry(sign: &str) -> Result<PathBuf> {
+    let skill = get_skill_by_sign(sign)?
+        .with_context(|| format!("skill '{sign}' not found in registry cache"))?;
 
-    let source = get_repo_source_for_skill(slug)?
-        .with_context(|| format!("no repo source found for skill '{slug}'"))?;
+    let source = get_repo_source_for_skill(sign)?
+        .with_context(|| format!("no repo source found for skill '{sign}'"))?;
     let (git_url, git_ref, source_path) = match &source {
         RegistrySource::Git { url, r#ref, .. } => {
             let sp = if !skill.path.is_empty() {
@@ -814,7 +816,7 @@ pub fn install_skill_from_registry(slug: &str) -> Result<PathBuf> {
             };
             (url.clone(), r#ref.clone(), sp)
         }
-        _ => bail!("skill '{slug}' has no git source"),
+        _ => bail!("skill '{sign}' has no git source"),
     };
 
     let base = repos_dir()?;
@@ -951,7 +953,7 @@ pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>>
     // 1. Resolve all skills from SQLite and extract their git source info (from repo).
     struct SkillInfo {
         slug: String,
-        repo_id: String,
+        repo_sign: String,
         git_url: String,
         git_ref: GitRef,
         source_path: String,
@@ -985,7 +987,7 @@ pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>>
                 };
                 skill_infos.push(SkillInfo {
                     slug: slug.clone(),
-                    repo_id: skill_repo_sign,
+                    repo_sign: skill_repo_sign,
                     git_url: url.clone(),
                     git_ref: r#ref.clone(),
                     source_path,
@@ -1106,7 +1108,7 @@ pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>>
             );
             results.push(InstalledSkillInfo {
                 slug: info.slug.clone(),
-                repo_sign: info.repo_id.clone(),
+                repo_sign: info.repo_sign.clone(),
                 skill_path: info.source_path.clone(),
                 local_path: skill_path,
             });
@@ -1385,19 +1387,13 @@ pub fn sync_from_zip(zip_bytes: &[u8], commit_sha: &str) -> Result<SyncStats> {
             let mut buf = String::new();
             file.read_to_string(&mut buf)?;
             if let Ok(parsed) = serde_json::from_str::<RepoFile>(&buf) {
-                // Derive ID from path: data/{domain}/{path-slug}/repo.json
-                let parts: Vec<&str> = rel
+                // Derive repo_id from path: data/{domain}/{owner}/{repo}/repo.json
+                let repo_id = rel
                     .strip_prefix("data/")
                     .unwrap_or(rel)
                     .strip_suffix("/repo.json")
-                    .unwrap_or("")
-                    .splitn(2, '/')
-                    .collect();
-                let repo_id = if parts.len() == 2 {
-                    format!("{}/{}", parts[0], parts[1])
-                } else {
-                    rel.to_string()
-                };
+                    .unwrap_or(rel)
+                    .to_string();
                 repos.push((repo_id, parsed.repo, buf));
             }
         } else if rel.ends_with("/flock.json") {
@@ -1405,20 +1401,15 @@ pub fn sync_from_zip(zip_bytes: &[u8], commit_sha: &str) -> Result<SyncStats> {
             file.read_to_string(&mut buf)?;
             if let Ok(parsed) = serde_json::from_str::<FlockFile>(&buf) {
                 // Derive flock slug and repo_id from path:
-                // data/{domain}/{path-slug}/{flock-slug}/flock.json
+                // data/{domain}/{owner}/{repo}/{flock-slug}/flock.json
                 let stripped = rel
                     .strip_prefix("data/")
                     .unwrap_or(rel)
                     .strip_suffix("/flock.json")
                     .unwrap_or("");
-                let path_parts: Vec<&str> = stripped.splitn(3, '/').collect();
-                let (repo_id, flock_slug) = if path_parts.len() == 3 {
-                    (
-                        format!("{}/{}", path_parts[0], path_parts[1]),
-                        path_parts[2].to_string(),
-                    )
-                } else {
-                    (parsed.flock.repo.clone(), String::new())
+                let (repo_id, flock_slug) = match stripped.rsplitn(2, '/').collect::<Vec<_>>().as_slice() {
+                    [flock, repo] => (repo.to_string(), flock.to_string()),
+                    _ => (parsed.flock.repo.clone(), String::new()),
                 };
                 let flock_id = format!("{}/{}", repo_id, flock_slug);
                 let mut flock = parsed.flock;
@@ -1432,20 +1423,16 @@ pub fn sync_from_zip(zip_bytes: &[u8], commit_sha: &str) -> Result<SyncStats> {
             file.read_to_string(&mut buf)?;
             if let Ok(items) = serde_json::from_str::<Vec<RegistrySkill>>(&buf) {
                 // Derive repo_id and flock_slug from path:
-                // data/{domain}/{path-slug}/{flock-slug}/skills.json
+                // data/{domain}/{owner}/{repo}/{flock-slug}/skills.json
                 let stripped = rel
                     .strip_prefix("data/")
                     .unwrap_or(rel)
                     .strip_suffix("/skills.json")
                     .unwrap_or("");
-                let path_parts: Vec<&str> = stripped.splitn(3, '/').collect();
-                let (repo_id, flock_slug) = if path_parts.len() == 3 {
-                    (
-                        format!("{}/{}", path_parts[0], path_parts[1]),
-                        path_parts[2].to_string(),
-                    )
-                } else {
-                    (String::new(), String::new())
+                // Last segment is flock_slug, everything before is repo_id
+                let (repo_id, flock_slug) = match stripped.rsplitn(2, '/').collect::<Vec<_>>().as_slice() {
+                    [flock, repo] => (repo.to_string(), flock.to_string()),
+                    _ => (String::new(), String::new()),
                 };
                 skills_files.push(SkillsFile {
                     repo_id,
@@ -1488,15 +1475,7 @@ fn write_parsed_to_db(
 
     // Insert repos
     for (id, repo, raw) in repos {
-        let repo_id = if repo.sign.is_empty() {
-            id.clone()
-        } else {
-            repo.sign.clone()
-        };
-        let mut repo_parts = repo_id.splitn(2, '/');
-        let domain = repo_parts.next().unwrap_or_default().to_string();
-        let path_slug = repo_parts.next().unwrap_or_default().to_string();
-        // Extract git_url: prefer new git_url field, fall back to legacy source
+        let sign = if repo.sign.is_empty() { id.clone() } else { repo.sign.clone() };
         let git_url = repo.git_url.as_deref().or_else(|| {
             repo.source.as_ref().and_then(|s| match s {
                 RegistrySource::Git { url, .. } => Some(url.as_str()),
@@ -1504,17 +1483,16 @@ fn write_parsed_to_db(
             })
         });
         tx.execute(
-            "INSERT OR REPLACE INTO repos (id, name, description, git_url, git_rev, git_branch, domain, path_slug, visibility, verified, data_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT OR REPLACE INTO repos (id, sign, name, description, git_url, git_rev, git_branch, visibility, verified, data_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
-                repo_id,
+                id,
+                sign,
                 repo.name,
                 repo.description,
                 git_url,
                 repo.git_rev,
                 repo.git_branch,
-                domain,
-                path_slug,
                 repo.visibility,
                 repo.verified.unwrap_or(false) as i32,
                 raw,
@@ -1524,11 +1502,13 @@ fn write_parsed_to_db(
 
     // Insert flocks
     for (id, slug, flock, raw) in flocks {
+        let flock_sign = if flock.sign.is_empty() { id.clone() } else { flock.sign.clone() };
         tx.execute(
-            "INSERT OR REPLACE INTO flocks (id, repo_id, slug, name, description, version, status, license, source_json, data_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT OR REPLACE INTO flocks (id, sign, repo_id, slug, name, description, version, status, license, source_json, data_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 id,
+                flock_sign,
                 flock.repo,
                 slug,
                 flock.name,
@@ -1719,11 +1699,11 @@ pub fn search_skills(query: &str, limit: usize) -> Result<Vec<RegistrySkill>> {
 }
 
 /// Get a single skill by path (returns first match).
-pub fn get_skill_by_slug(slug: &str) -> Result<Option<RegistrySkill>> {
+pub fn get_skill_by_sign(sign: &str) -> Result<Option<RegistrySkill>> {
     let conn = open_cache()?;
     let result = conn.query_row(
-        "SELECT data_json FROM skills WHERE slug = ?1 LIMIT 1",
-        params![slug],
+        "SELECT data_json FROM skills WHERE sign = ?1 LIMIT 1",
+        params![sign],
         |row| row.get::<_, String>(0),
     );
     match result {
@@ -1733,7 +1713,7 @@ pub fn get_skill_by_slug(slug: &str) -> Result<Option<RegistrySkill>> {
     }
 }
 
-pub fn get_skill(repo_id: &str, path: &str) -> Result<Option<RegistrySkill>> {
+pub fn get_skill_by_path(repo_sign: &str, path: &str) -> Result<Option<RegistrySkill>> {
     let conn = open_cache()?;
     let result = conn.query_row(
         "SELECT data_json FROM skills WHERE repo_id = ?1 AND path = ?2 LIMIT 1",
