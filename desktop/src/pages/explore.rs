@@ -605,18 +605,18 @@ fn SkillListRow(
                 Ok(()) => {
                     installed_versions.with_mut(|entries| {
                         if uninstall {
-                            entries.remove(&slug);
+                            entries.remove(&sign);
                         } else {
-                            entries.insert(slug.clone(), "installed".to_string());
+                            entries.insert(sign.clone(), "installed".to_string());
                         }
                     });
                     if !uninstall {
-                        let track_slug = slug.clone();
+                        let track_sign = sign.clone();
                         let track_client = state.api_client();
                         tokio::spawn(async move {
                             let _ = track_client
                                 .post_json::<serde_json::Value, serde_json::Value>(
-                                    &format!("/skills/{track_slug}/install"),
+                                    &format!("/collect?skill={track_sign}"),
                                     &serde_json::json!({ "client_type": "desktop" }),
                                 )
                                 .await;
@@ -633,7 +633,7 @@ fn SkillListRow(
     let owner_display = skill.owner.as_deref().unwrap_or("unknown");
 
     let nav = use_navigator();
-    let slug_nav = slug.clone();
+    let slug_nav = skill.slug.clone();
 
     rsx! {
             div { style: "background: {Theme::PANEL}; border: 1px solid {Theme::LINE}; border-radius: 10px; padding: 14px 16px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; cursor: pointer;",
@@ -711,7 +711,7 @@ fn SkillCard(
                     if uninstall {
                         savhub_local::registry::uninstall_skill_from_registry(&s).map(|_| ())
                     } else {
-                        savhub_local::registry::install_skill_from_registry(&sign).map(|_| ())
+                        savhub_local::registry::install_skill_from_registry(&s).map(|_| ())
                     }
                 })
                 .await
@@ -722,18 +722,18 @@ fn SkillCard(
                 Ok(()) => {
                     installed_versions.with_mut(|entries| {
                         if uninstall {
-                            entries.remove(&slug);
+                            entries.remove(&sign);
                         } else {
-                            entries.insert(slug.clone(), "installed".to_string());
+                            entries.insert(sign.clone(), "installed".to_string());
                         }
                     });
                     if !uninstall {
-                        let track_slug = slug.clone();
+                        let track_sign = sign.clone();
                         let track_client = state.api_client();
                         tokio::spawn(async move {
                             let _ = track_client
                                 .post_json::<serde_json::Value, serde_json::Value>(
-                                    &format!("/skills/{track_slug}/install"),
+                                    &format!("/collect?skill={track_sign}"),
                                     &serde_json::json!({ "client_type": "desktop" }),
                                 )
                                 .await;
@@ -750,7 +750,7 @@ fn SkillCard(
     let owner_display = skill.owner.as_deref().unwrap_or("unknown");
 
     let nav = use_navigator();
-    let slug_nav = slug.clone();
+    let slug_nav = skill.slug.clone();
 
     rsx! {
             div { style: "background: {Theme::PANEL}; border: 1px solid {Theme::LINE}; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 8px; cursor: pointer; transition: box-shadow 0.15s;",
@@ -841,11 +841,10 @@ fn FlockListRow(
                     if uninstall {
                         savhub_local::registry::uninstall_skill_from_registry(&s).map(|_| ())
                     } else {
-                        {
-                            let sign =
-                                savhub_local::registry::get_sign_by_slug(&s).unwrap_or(s.clone());
-                            savhub_local::registry::install_skill_from_registry(&sign).map(|_| ())
-                        }
+                        let sign = savhub_local::registry::get_skill_db_info(&s)
+                            .map(|(repo_id, path)| format!("{repo_id}/{path}"))
+                            .unwrap_or(s.clone());
+                        savhub_local::registry::install_skill_from_registry(&sign).map(|_| ())
                     }
                 })
                 .await
@@ -868,7 +867,7 @@ fn FlockListRow(
                     tokio::spawn(async move {
                         let _ = track_client
                             .post_json::<serde_json::Value, serde_json::Value>(
-                                &format!("/skills/{track_slug}/install"),
+                                &format!("/collect?skill={track_slug}"),
                                 &serde_json::json!({ "client_type": "desktop" }),
                             )
                             .await;
@@ -971,11 +970,10 @@ fn FlockCard(
                     if uninstall {
                         savhub_local::registry::uninstall_skill_from_registry(&s).map(|_| ())
                     } else {
-                        {
-                            let sign =
-                                savhub_local::registry::get_sign_by_slug(&s).unwrap_or(s.clone());
-                            savhub_local::registry::install_skill_from_registry(&sign).map(|_| ())
-                        }
+                        let sign = savhub_local::registry::get_skill_db_info(&s)
+                            .map(|(repo_id, path)| format!("{repo_id}/{path}"))
+                            .unwrap_or(s.clone());
+                        savhub_local::registry::install_skill_from_registry(&sign).map(|_| ())
                     }
                 })
                 .await
@@ -998,7 +996,7 @@ fn FlockCard(
                     tokio::spawn(async move {
                         let _ = track_client
                             .post_json::<serde_json::Value, serde_json::Value>(
-                                &format!("/skills/{track_slug}/install"),
+                                &format!("/collect?skill={track_slug}"),
                                 &serde_json::json!({ "client_type": "desktop" }),
                             )
                             .await;

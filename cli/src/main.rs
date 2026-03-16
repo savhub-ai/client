@@ -3682,7 +3682,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
                     handle.spawn(async move {
                         let _ = client
                             .post_json::<serde_json::Value, serde_json::Value>(
-                                &format!("/skills/{slug}/install"),
+                                &format!("/collect?skill={slug}"),
                                 &json!({ "client_type": "cli" }),
                             )
                             .await;

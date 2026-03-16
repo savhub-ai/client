@@ -181,6 +181,10 @@ pub struct RegistryFlock {
     pub name: String,
     #[serde(default)]
     pub description: String,
+    /// Subdirectory path within the git repo where skills are located.
+    /// `None` means the repository root.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
     #[serde(default)]
@@ -354,6 +358,7 @@ fn init_schema(conn: &Connection) -> Result<()> {
             repo_id         TEXT NOT NULL DEFAULT '',
             slug            TEXT NOT NULL,
             name            TEXT NOT NULL,
+            path            TEXT,
             description     TEXT NOT NULL DEFAULT '',
             version         TEXT,
             status          TEXT NOT NULL DEFAULT 'active',

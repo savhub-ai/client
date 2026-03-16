@@ -141,7 +141,7 @@ fn DetailContent(detail: SkillDetailResponse, slug: String) -> Element {
                                     tokio::spawn(async move {
                                         let _ = track_client
                                             .post_json::<serde_json::Value, serde_json::Value>(
-                                                &format!("/skills/{track_slug}/install"),
+                                                &format!("/collect?skill={track_slug}"),
                                                 &serde_json::json!({ "client_type": "desktop" }),
                                             )
                                             .await;

@@ -439,7 +439,7 @@ fn UserCard(
 
     let do_login = move |_| {
         logging_in.set(true);
-        login_status.set(Some(t.opening_browser.to_string()));
+        login_status.set(None);
         let api_base = state.api_base.read().clone();
         spawn(async move {
             match crate::pages::settings::perform_github_login(&api_base).await {
@@ -455,8 +455,8 @@ fn UserCard(
                     match client.get_json::<WhoAmIResponse>("/whoami").await {
                         Ok(resp) => {
                             if let Some(u) = resp.user {
-                                login_status.set(Some(format!("@{}", u.handle)));
                                 state.current_user.set(Some(u));
+                                // No need to set login_status — the card will re-render as logged in
                             } else {
                                 login_status.set(Some(t.login_succeeded_no_user.to_string()));
                             }

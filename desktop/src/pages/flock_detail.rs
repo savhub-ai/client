@@ -34,19 +34,22 @@ pub fn FlockDetailPage(slug: String) -> Element {
         skills.iter().all(|s| map.contains_key(&s.slug))
     };
 
-    let skill_signs: Vec<String> = skills.iter().map(|s| s.signs.clone()).collect();
+    let skill_slugs: Vec<String> = skills.iter().map(|s| s.slug.clone()).collect();
     let do_all = move |_: MouseEvent| {
-        let signs = skill_signs.clone();
+        let slugs = skill_slugs.clone();
         let uninstall = all_installed;
         spawn(async move {
             working.set(true);
             action_error.set(None);
-            for sign in &signs {
-                let sign = sign.clone();
+            for skill_slug in &slugs {
+                let s = skill_slug.clone();
                 let result = tokio::task::spawn_blocking(move || {
                     if uninstall {
-                        registry::uninstall_skill_from_registry(&sign).map(|_| ())
+                        registry::uninstall_skill_from_registry(&s).map(|_| ())
                     } else {
+                        let sign = registry::get_skill_db_info(&s)
+                            .map(|(repo_id, path)| format!("{repo_id}/{path}"))
+                            .unwrap_or(s.clone());
                         registry::install_skill_from_registry(&sign).map(|_| ())
                     }
                 })
@@ -59,18 +62,18 @@ pub fn FlockDetailPage(slug: String) -> Element {
                 }
                 installed.with_mut(|map| {
                     if uninstall {
-                        map.remove(slug);
+                        map.remove(skill_slug.as_str());
                     } else {
-                        map.insert(slug.clone(), true);
+                        map.insert(skill_slug.clone(), true);
                     }
                 });
                 if !uninstall {
-                    let track_slug = slug.clone();
+                    let track_slug = skill_slug.clone();
                     let track_client = state.api_client();
                     tokio::spawn(async move {
                         let _ = track_client
                             .post_json::<serde_json::Value, serde_json::Value>(
-                                &format!("/skills/{track_slug}/install"),
+                                &format!("/collect?skill={track_slug}"),
                                 &serde_json::json!({ "client_type": "desktop" }),
                             )
                             .await;
@@ -179,22 +182,25 @@ fn FlockSkillRow(skill: RegistrySkill, mut installed: Signal<BTreeMap<String, bo
     let t = i18n::texts(*state.lang.read());
     let mut working = use_signal(|| false);
     let mut error_msg: Signal<Option<String>> = use_signal(|| Option::<String>::None);
-    let sign = skill.sign.clone();
-    let is_installed = installed.read().contains_key(&sign);
+    let skill_slug = skill.slug.clone();
+    let is_installed = installed.read().contains_key(&skill_slug);
 
     let do_action = move |e: Event<MouseData>| {
         e.stop_propagation();
-        let sign = sign.clone();
+        let skill_slug = skill_slug.clone();
         let uninstall = is_installed;
         spawn(async move {
             working.set(true);
             error_msg.set(None);
             let result = {
-                let s = sign.clone();
+                let s = skill_slug.clone();
                 tokio::task::spawn_blocking(move || {
                     if uninstall {
                         registry::uninstall_skill_from_registry(&s).map(|_| ())
                     } else {
+                        let sign = registry::get_skill_db_info(&s)
+                            .map(|(repo_id, path)| format!("{repo_id}/{path}"))
+                            .unwrap_or(s.clone());
                         registry::install_skill_from_registry(&sign).map(|_| ())
                     }
                 })
@@ -206,18 +212,18 @@ fn FlockSkillRow(skill: RegistrySkill, mut installed: Signal<BTreeMap<String, bo
                 Ok(()) => {
                     installed.with_mut(|map| {
                         if uninstall {
-                            map.remove(&slug);
+                            map.remove(&skill_slug);
                         } else {
-                            map.insert(slug.clone(), true);
+                            map.insert(skill_slug.clone(), true);
                         }
                     });
                     if !uninstall {
-                        let track_slug = slug.clone();
+                        let track_slug = skill_slug.clone();
                         let track_client = state.api_client();
                         tokio::spawn(async move {
                             let _ = track_client
                                 .post_json::<serde_json::Value, serde_json::Value>(
-                                    &format!("/skills/{track_slug}/install"),
+                                    &format!("/collect?skill={track_slug}"),
                                     &serde_json::json!({ "client_type": "desktop" }),
                                 )
                                 .await;
@@ -234,7 +240,7 @@ fn FlockSkillRow(skill: RegistrySkill, mut installed: Signal<BTreeMap<String, bo
     let desc = skill.description.as_deref().unwrap_or("");
 
     let nav = use_navigator();
-    let slug_nav = slug.clone();
+    let slug_nav = skill.slug.clone();
 
     rsx! {
         div {
