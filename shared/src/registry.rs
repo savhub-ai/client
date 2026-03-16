@@ -802,6 +802,7 @@ pub fn skill_matches_skipped(sign: &str, skipped: &[String]) -> bool {
 ///
 /// Returns the local path to the skill's subdirectory inside the repo.
 pub fn install_skill_from_registry(sign: &str) -> Result<PathBuf> {
+    let slug = sign.rsplit('/').next().unwrap_or(sign);
     let skill = get_skill_by_sign(sign)?
         .with_context(|| format!("skill '{sign}' not found in registry cache"))?;
 
@@ -943,10 +944,10 @@ pub struct InstalledSkillInfo {
 }
 
 /// Install multiple skills in batch, grouping by git repo to minimize git operations.
-pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>> {
+pub fn install_skills_batch(signs: &[String]) -> Result<Vec<InstalledSkillInfo>> {
     use std::collections::BTreeMap;
 
-    if slugs.is_empty() {
+    if signs.is_empty() {
         return Ok(Vec::new());
     }
 
@@ -959,11 +960,11 @@ pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>>
         source_path: String,
     }
     let mut skill_infos = Vec::new();
-    for slug in slugs {
-        let skill = match get_skill_by_slug(slug)? {
+    for sign in signs {
+        let skill = match get_skill_by_sign(sign)? {
             Some(s) => s,
             None => {
-                eprintln!("  \x1b[33m!\x1b[0m {slug}: not found in registry cache");
+                eprintln!("  \x1b[33m!\x1b[0m {sign}: not found in registry cache");
                 continue;
             }
         };
@@ -1698,7 +1699,22 @@ pub fn search_skills(query: &str, limit: usize) -> Result<Vec<RegistrySkill>> {
     Ok(skills)
 }
 
-/// Get a single skill by path (returns first match).
+/// Get a single skill by slug (returns first match — slugs may not be unique across repos).
+pub fn get_skill_by_slug(slug: &str) -> Result<Option<RegistrySkill>> {
+    let conn = open_cache()?;
+    let result = conn.query_row(
+        "SELECT data_json FROM skills WHERE slug = ?1 LIMIT 1",
+        params![slug],
+        |row| row.get::<_, String>(0),
+    );
+    match result {
+        Ok(json) => Ok(serde_json::from_str(&json).ok()),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => bail!("query failed: {e}"),
+    }
+}
+
+/// Get a single skill by sign.
 pub fn get_skill_by_sign(sign: &str) -> Result<Option<RegistrySkill>> {
     let conn = open_cache()?;
     let result = conn.query_row(
@@ -1717,7 +1733,7 @@ pub fn get_skill_by_path(repo_sign: &str, path: &str) -> Result<Option<RegistryS
     let conn = open_cache()?;
     let result = conn.query_row(
         "SELECT data_json FROM skills WHERE repo_id = ?1 AND path = ?2 LIMIT 1",
-        params![repo_id, path],
+        params![repo_sign, path],
         |row| {
             let json: String = row.get(0)?;
             Ok(json)

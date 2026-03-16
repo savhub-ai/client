@@ -3081,23 +3081,9 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         let lockfile = savhub_local::presets::read_project_lockfile(workdir)?;
 
         if !lockfile.skills.is_empty() {
-            // Group by repo for display
-            let mut by_repo: std::collections::BTreeMap<String, Vec<String>> =
-                std::collections::BTreeMap::new();
-            for s in &lockfile.skills {
-                by_repo
-                    .entry(s.repo.clone())
-                    .or_default()
-                    .push(s.slug().to_string());
-            }
             println!("\nSkills to remove:");
-            for (repo, slugs) in &by_repo {
-                if !repo.is_empty() {
-                    println!("  \x1b[2m{repo}\x1b[0m");
-                }
-                for slug in slugs {
-                    println!("    \x1b[31m[-]\x1b[0m {slug}");
-                }
+            for s in &lockfile.skills {
+                println!("  \x1b[31m[-]\x1b[0m {}", s.sign);
             }
 
             if !args.yes && opts.input_allowed {
@@ -3604,33 +3590,13 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     if !to_remove.is_empty() {
         let all_clients = savhub_local::clients::detect_clients();
         // Group by repo from current lock
-        let mut by_repo: std::collections::BTreeMap<String, Vec<String>> =
-            std::collections::BTreeMap::new();
         for slug in &to_remove {
-            let repo = current_lock
-                .skills
-                .iter()
-                .find(|s| s.slug() == slug)
-                .map(|s| s.repo.clone())
-                .unwrap_or_default();
-            by_repo.entry(repo).or_default().push(slug.clone());
-        }
-        for (repo_id, slugs) in &by_repo {
-            if !repo_id.is_empty() {
-                println!("\n  \x1b[2m{repo_id}\x1b[0m");
+            for client in &all_clients {
+                if !client.installed { continue; }
+                let Some(rel_dir) = client.kind.project_skills_dir() else { continue; };
+                let _ = std::fs::remove_dir_all(workdir.join(rel_dir).join(slug));
             }
-            for slug in slugs {
-                for client in &all_clients {
-                    if !client.installed {
-                        continue;
-                    }
-                    let Some(rel_dir) = client.kind.project_skills_dir() else {
-                        continue;
-                    };
-                    let _ = std::fs::remove_dir_all(workdir.join(rel_dir).join(slug));
-                }
-                println!("    \x1b[31m\u{2717}\x1b[0m {slug} (removed)");
-            }
+            println!("  \x1b[31m\u{2717}\x1b[0m {slug} (removed)");
         }
     }
 
@@ -3667,62 +3633,36 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
 
     // Group by repo for display
     {
-        let mut by_repo: std::collections::BTreeMap<
-            String,
-            Vec<&savhub_local::registry::InstalledSkillInfo>,
-        > = std::collections::BTreeMap::new();
         for info in &batch_results {
-            by_repo
-                .entry(info.repo_sign.clone())
-                .or_default()
-                .push(info);
-        }
-        for (repo_id, skills) in &by_repo {
-            if !repo_id.is_empty() {
-                println!("\n  \x1b[2m{repo_id}\x1b[0m");
+            let skill_sign = savhub_local::registry::make_skill_sign(&info.repo_sign, &info.skill_path);
+            let mut copied_to_any_client = false;
+            for client in &filtered_clients {
+                if !client.installed { continue; }
+                let Some(rel_dir) = client.kind.project_skills_dir() else { continue; };
+                let target_dir = workdir.join(rel_dir);
+                let _ = std::fs::create_dir_all(&target_dir);
+                let target = target_dir.join(&info.slug);
+                if let Err(e) = copy_skill_folder(&info.local_path, &target) {
+                    eprintln!("  \x1b[33m!\x1b[0m {}: failed to copy to {}: {e}", info.slug, rel_dir);
+                    continue;
+                }
+                copied_to_any_client = true;
+                println!("  \x1b[32m\u{2713}\x1b[0m {} -> {rel_dir}/{}", info.slug, info.slug);
             }
-            for info in skills {
-                let mut copied_to_any_client = false;
-                for client in &filtered_clients {
-                    if !client.installed {
-                        continue;
-                    }
-                    let Some(rel_dir) = client.kind.project_skills_dir() else {
-                        continue;
-                    };
-                    let target_dir = workdir.join(rel_dir);
-                    let _ = std::fs::create_dir_all(&target_dir);
-                    let target = target_dir.join(&info.slug);
-                    if let Err(e) = copy_skill_folder(&info.local_path, &target) {
-                        eprintln!(
-                            "  \x1b[33m!\x1b[0m {}: failed to copy to {}: {e}",
-                            info.slug, rel_dir
-                        );
-                        continue;
-                    }
-                    copied_to_any_client = true;
-                    println!(
-                        "    \x1b[32m\u{2713}\x1b[0m {} -> {rel_dir}/{}",
-                        info.slug, info.slug
-                    );
-                }
-                if !copied_to_any_client {
-                    println!("    \x1b[32m\u{2713}\x1b[0m {} (cached)", info.slug);
-                }
+            if !copied_to_any_client {
+                println!("  \x1b[32m\u{2713}\x1b[0m {} (cached)", info.slug);
+            }
 
-                // Record in savhub.lock
-                if !lock.skills.iter().any(|s| s.slug() == info.slug) {
-                    let vi = savhub_local::skills::read_skill_version_info(&info.local_path)
-                        .unwrap_or_default();
-                    lock.skills.push(savhub_local::presets::ProjectLockedSkill {
-                        repo: info.repo_sign.clone(),
-                        path: info.skill_path.clone(),
-                        version: vi.version,
-                        commit_hash: vi.git_commit,
-                    });
-                }
-                installed_count += 1;
+            // Record in savhub.lock
+            if !lock.skills.iter().any(|s| s.slug() == info.slug) {
+                let vi = savhub_local::skills::read_skill_version_info(&info.local_path).unwrap_or_default();
+                lock.skills.push(savhub_local::presets::ProjectLockedSkill {
+                    sign: skill_sign,
+                    version: vi.version,
+                    commit_hash: vi.git_commit,
+                });
             }
+            installed_count += 1;
         }
     }
 

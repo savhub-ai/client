@@ -189,10 +189,8 @@ impl Default for ProjectConfigFile {
 /// A locked skill entry, identified by its registry path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectLockedSkill {
-    /// Repo path relative to registry data dir (e.g. `github.com/salvo-rs/salvo-skills`).
-    pub repo: String,
-    /// Skill path relative to git repo root (e.g. `skills/salvo-auth`).
-    pub path: String,
+    /// Skill sign: `{repo_sign}/{skill_path}` (e.g. `github.com/salvo-rs/salvo-skills/skills/salvo-auth`).
+    pub sign: String,
     /// Skill version if available.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
@@ -202,9 +200,9 @@ pub struct ProjectLockedSkill {
 }
 
 impl ProjectLockedSkill {
-    /// Derive the skill slug from the path's last segment.
+    /// Derive the skill slug from the sign's last segment.
     pub fn slug(&self) -> &str {
-        self.path.rsplit('/').next().unwrap_or(&self.path)
+        self.sign.rsplit('/').next().unwrap_or(&self.sign)
     }
 }
 
@@ -455,30 +453,19 @@ fn normalize_added_skills(skills: &[ProjectAddedSkill]) -> Vec<ProjectAddedSkill
 fn normalize_project_lock_skills(skills: &[ProjectLockedSkill]) -> Vec<ProjectLockedSkill> {
     let mut normalized = Vec::new();
     for skill in skills {
-        let path = skill.path.trim().to_string();
-        if path.is_empty()
-            || normalized
-                .iter()
-                .any(|existing: &ProjectLockedSkill| existing.path == path)
+        let sign = skill.sign.trim().to_string();
+        if sign.is_empty()
+            || normalized.iter().any(|existing: &ProjectLockedSkill| existing.sign == sign)
         {
             continue;
         }
         normalized.push(ProjectLockedSkill {
-            repo: skill.repo.trim().to_string(),
-            path,
-            version: skill
-                .version
-                .as_ref()
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty()),
-            commit_hash: skill
-                .commit_hash
-                .as_ref()
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty()),
+            sign,
+            version: skill.version.as_ref().map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
+            commit_hash: skill.commit_hash.as_ref().map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
         });
     }
-    normalized.sort_by(|left, right| left.path.cmp(&right.path));
+    normalized.sort_by(|left, right| left.sign.cmp(&right.sign));
     normalized
 }
 
@@ -1069,8 +1056,7 @@ fn build_project_lockfile(resolved: &[ResolvedProjectSkill]) -> ProjectLockFile 
         .map(|skill| {
             let version_info = read_skill_version_info(&skill.folder).unwrap_or_default();
             ProjectLockedSkill {
-                repo: String::new(),
-                path: skill.slug.clone(),
+                sign: skill.slug.clone(),
                 version: version_info.version,
                 commit_hash: version_info.git_commit,
             }

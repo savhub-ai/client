@@ -1454,8 +1454,7 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                         let vi = savhub_local::skills::read_skill_version_info(&info.local_path)
                             .unwrap_or_default();
                         lock.skills.push(savhub_local::presets::ProjectLockedSkill {
-                            repo: info.repo_sign.clone(),
-                            path: info.skill_path.clone(),
+                            sign: savhub_local::registry::make_skill_sign(&info.repo_sign, &info.skill_path),
                             version: vi.version,
                             commit_hash: vi.git_commit,
                         });
