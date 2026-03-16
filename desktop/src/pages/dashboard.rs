@@ -492,9 +492,6 @@ fn UserCard(
                 }
             } else {
                 div { style: "display: flex; flex-direction: column; gap: 10px;",
-                    p { style: "font-size: 13px; color: {Theme::MUTED};",
-                        "{t.not_logged_in_hint}"
-                    }
                     if *logging_in.read() {
                         div { style: "display: flex; align-items: center; gap: 8px;",
                             span { style: "display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(90, 158, 63, 0.3); border-top-color: {Theme::ACCENT}; border-radius: 50%; animation: spin 0.8s linear infinite;" }

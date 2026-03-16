@@ -541,7 +541,7 @@ static EN: Texts = Texts {
     selectors_env_var_set: "Env Var Set",
     selectors_command_exits: "Command Exits",
     selectors_search_skills: "Search skills...",
-    selectors_add_flocks_label: "Flocks",
+    selectors_add_flocks_label: "Flocks (Grouped Skills)",
     selectors_search_flocks: "Search flocks...",
     selectors_priority: "Priority",
 
@@ -794,7 +794,7 @@ static ZH: Texts = Texts {
     selectors_env_var_set: "环境变量",
     selectors_command_exits: "命令执行",
     selectors_search_skills: "搜索技能...",
-    selectors_add_flocks_label: "技能集",
+    selectors_add_flocks_label: "技能集（分组技能）",
     selectors_search_flocks: "搜索技能集...",
     selectors_priority: "优先级",
 

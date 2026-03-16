@@ -477,11 +477,11 @@ fn SelectorDetailPopup(selector: Signal<Option<SelectorDefinition>>) -> Element 
                     if !presets.is_empty() {
                         TagGroup { label: t.selectors_presets_label, items: presets, bg: "rgba(90, 158, 63, 0.12)", color: Theme::ACCENT_STRONG, border: "rgba(90, 158, 63, 0.16)" }
                     }
-                    if !skills.is_empty() {
-                        TagGroup { label: t.selectors_add_skills_label, items: skills, bg: "rgba(46, 139, 87, 0.10)", color: Theme::SUCCESS, border: "rgba(46, 139, 87, 0.16)" }
-                    }
                     if !flocks.is_empty() {
                         TagGroup { label: t.selectors_add_flocks_label, items: flocks, bg: "rgba(90, 120, 200, 0.10)", color: "rgba(50, 80, 160, 0.9)", border: "rgba(90, 120, 200, 0.16)" }
+                    }
+                    if !skills.is_empty() {
+                        TagGroup { label: t.selectors_add_skills_label, items: skills, bg: "rgba(46, 139, 87, 0.10)", color: Theme::SUCCESS, border: "rgba(46, 139, 87, 0.16)" }
                     }
                 }
             }
@@ -813,57 +813,6 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
                             }
                         }
                     }
-                    // Skills — search-to-add from installed skills
-                    div {
-                        p { style: "{label_style}", "{t.selectors_add_skills_label}" }
-                        // Selected skills as removable tags
-                        if !selected_skills.is_empty() {
-                            div { style: "display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;",
-                                for skill in selected_skills.iter() {
-                                    { let slug = skill.clone();
-                                      rsx! {
-                                        span { style: "display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border: 1px solid rgba(90, 158, 63, 0.18); border-radius: 999px; font-size: 12px; font-weight: 600;",
-                                            "{slug}"
-                                            button {
-                                                style: "background: none; border: none; color: {Theme::DANGER}; font-size: 13px; cursor: pointer; padding: 0 2px; line-height: 1;",
-                                                onclick: { let slug = slug.clone(); move |_| { let s = slug.clone(); set_field(Box::new(move |f| { f.skills.remove(&s); })); } },
-                                                "\u{00D7}"
-                                            }
-                                        }
-                                    }}
-                                }
-                            }
-                        }
-                        // Search input
-                        input {
-                            r#type: "text", value: "{skill_search}", placeholder: t.selectors_search_skills,
-                            style: "width: 100%; padding: 6px 10px; border: 1px solid {Theme::LINE}; border-radius: 8px; font-size: 12px; background: white; color: {Theme::TEXT};",
-                            oninput: move |evt: Event<FormData>| skill_search.set(evt.value().to_string()),
-                        }
-                        // Search results — only unselected skills matching the query
-                        if !skill_suggestions.is_empty() {
-                            div { style: "display: flex; flex-direction: column; gap: 2px; max-height: 160px; overflow-y: auto; padding: 6px; margin-top: 4px; background: rgba(255,255,255,0.6); border: 1px solid {Theme::LINE}; border-radius: 8px;",
-                                for slug in skill_suggestions.iter() {
-                                    { let s = (*slug).clone();
-                                      rsx! {
-                                        button {
-                                            style: "display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: transparent; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; color: {Theme::TEXT}; text-align: left; width: 100%;",
-                                            onclick: { let s = s.clone(); move |_| {
-                                                let slug = s.clone();
-                                                set_field(Box::new(move |f| { f.skills.insert(slug); }));
-                                                skill_search.set(String::new());
-                                            }},
-                                            span { style: "color: {Theme::ACCENT_STRONG}; font-size: 14px;", "+" }
-                                            "{s}"
-                                        }
-                                    }}
-                                }
-                            }
-                        }
-                        if installed_skills.is_empty() {
-                            p { style: "font-size: 12px; color: {Theme::MUTED}; margin-top: 4px;", "No installed skills." }
-                        }
-                    }
                     // Flocks — search-to-add from registry flocks
                     div {
                         p { style: "{label_style}", "{t.selectors_add_flocks_label}" }
@@ -913,6 +862,54 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
                         }
                         if all_flock_slugs.is_empty() {
                             p { style: "font-size: 12px; color: {Theme::MUTED}; margin-top: 4px;", "No flocks in registry. Sync first." }
+                        }
+                    }
+                    // Skills — search-to-add from installed skills
+                    div {
+                        p { style: "{label_style}", "{t.selectors_add_skills_label}" }
+                        if !selected_skills.is_empty() {
+                            div { style: "display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;",
+                                for skill in selected_skills.iter() {
+                                    { let slug = skill.clone();
+                                      rsx! {
+                                        span { style: "display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border: 1px solid rgba(90, 158, 63, 0.18); border-radius: 999px; font-size: 12px; font-weight: 600;",
+                                            "{slug}"
+                                            button {
+                                                style: "background: none; border: none; color: {Theme::DANGER}; font-size: 13px; cursor: pointer; padding: 0 2px; line-height: 1;",
+                                                onclick: { let slug = slug.clone(); move |_| { let s = slug.clone(); set_field(Box::new(move |f| { f.skills.remove(&s); })); } },
+                                                "\u{00D7}"
+                                            }
+                                        }
+                                    }}
+                                }
+                            }
+                        }
+                        input {
+                            r#type: "text", value: "{skill_search}", placeholder: t.selectors_search_skills,
+                            style: "width: 100%; padding: 6px 10px; border: 1px solid {Theme::LINE}; border-radius: 8px; font-size: 12px; background: white; color: {Theme::TEXT};",
+                            oninput: move |evt: Event<FormData>| skill_search.set(evt.value().to_string()),
+                        }
+                        if !skill_suggestions.is_empty() {
+                            div { style: "display: flex; flex-direction: column; gap: 2px; max-height: 160px; overflow-y: auto; padding: 6px; margin-top: 4px; background: rgba(255,255,255,0.6); border: 1px solid {Theme::LINE}; border-radius: 8px;",
+                                for slug in skill_suggestions.iter() {
+                                    { let s = (*slug).clone();
+                                      rsx! {
+                                        button {
+                                            style: "display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: transparent; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; color: {Theme::TEXT}; text-align: left; width: 100%;",
+                                            onclick: { let s = s.clone(); move |_| {
+                                                let slug = s.clone();
+                                                set_field(Box::new(move |f| { f.skills.insert(slug); }));
+                                                skill_search.set(String::new());
+                                            }},
+                                            span { style: "color: {Theme::ACCENT_STRONG}; font-size: 14px;", "+" }
+                                            "{s}"
+                                        }
+                                    }}
+                                }
+                            }
+                        }
+                        if installed_skills.is_empty() {
+                            p { style: "font-size: 12px; color: {Theme::MUTED}; margin-top: 4px;", "No installed skills." }
                         }
                     }
                     // Error
