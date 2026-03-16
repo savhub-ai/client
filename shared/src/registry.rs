@@ -735,20 +735,18 @@ fn find_skill_in_repo(repo_path: &std::path::Path, skill_path: &str) -> Option<P
 /// - A full sign: `github.com/owner/repo/path/to/skill`
 /// - A partial sign suffix: `path/to/skill`
 /// - A plain slug: `skill-name`
-pub fn skill_matches_skipped(slug: &str, skipped: &[String]) -> bool {
+pub fn skill_matches_skipped(sign: &str, skipped: &[String]) -> bool {
     if skipped.is_empty() {
         return false;
     }
     // Direct slug match
-    if skipped.iter().any(|s| s == slug) {
+    if skipped.iter().any(|s| s == sign) {
         return true;
     }
     // Sign match: compute sign and check
-    if let Ok(Some(sign)) = get_skill_sign(slug) {
-        for entry in skipped {
-            if *entry == sign || sign.ends_with(&format!("/{entry}")) {
-                return true;
-            }
+    for entry in skipped {
+        if *entry == sign || sign.ends_with(&format!("/{entry}")) {
+            return true;
         }
     }
     false
