@@ -21,13 +21,8 @@ pub fn get_config_path() -> Result<PathBuf> {
     Ok(project_dirs.config_dir().join("config.json"))
 }
 
-pub fn get_legacy_config_paths() -> Result<Vec<PathBuf>> {
-    Ok(Vec::new())
-}
-
 pub fn read_global_config() -> Result<Option<GlobalConfig>> {
-    let mut candidates = vec![get_config_path()?];
-    candidates.extend(get_legacy_config_paths()?);
+    let candidates = vec![get_config_path()?];
     for path in candidates {
         let Ok(raw) = fs::read_to_string(&path) else {
             continue;

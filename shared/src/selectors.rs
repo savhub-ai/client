@@ -594,18 +594,6 @@ pub fn read_selectors_store() -> Result<SelectorsStore> {
             .with_context(|| format!("invalid selectors at {}", path.display()))?;
         return Ok(store);
     }
-    // Backward compatibility: try reading from the legacy selectors.json file.
-    let legacy_path = path
-        .parent()
-        .map(|p| p.join("selectors.json"))
-        .unwrap_or_else(|| PathBuf::from("selectors.json"));
-    if let Ok(raw) = fs::read_to_string(&legacy_path) {
-        let store: SelectorsStore = serde_json::from_str(&raw)
-            .with_context(|| format!("invalid selectors at {}", legacy_path.display()))?;
-        // Migrate: write to the new selectors.json so future reads use the new path.
-        let _ = write_selectors_store(&store);
-        return Ok(store);
-    }
     let mut store = SelectorsStore {
         version: 1,
         selectors: Vec::new(),

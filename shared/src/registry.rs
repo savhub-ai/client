@@ -6,7 +6,7 @@
 
 use std::fs;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, params};
@@ -337,7 +337,7 @@ fn init_schema(conn: &Connection) -> Result<()> {
         "
         CREATE TABLE IF NOT EXISTS repos (
             id          TEXT PRIMARY KEY,
-            sign        TEXT NOT NULL,
+            sign        TEXT NOT NULL DEFAULT '',
             name        TEXT NOT NULL DEFAULT '',
             description TEXT NOT NULL DEFAULT '',
             git_url     TEXT,
@@ -350,8 +350,8 @@ fn init_schema(conn: &Connection) -> Result<()> {
 
         CREATE TABLE IF NOT EXISTS flocks (
             id              TEXT PRIMARY KEY,
-            sign        TEXT NOT NULL,
-            repo_id       TEXT NOT NULL DEFAULT '',
+            sign            TEXT NOT NULL DEFAULT '',
+            repo_id         TEXT NOT NULL DEFAULT '',
             slug            TEXT NOT NULL,
             name            TEXT NOT NULL,
             description     TEXT NOT NULL DEFAULT '',
@@ -383,7 +383,7 @@ fn init_schema(conn: &Connection) -> Result<()> {
             installed_at    TEXT
         );
 
-        CREATE TABLE IF NOT EXISTS sync_states (
+        CREATE TABLE IF NOT EXISTS sync_state (
             key   TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
@@ -455,7 +455,44 @@ pub struct InstalledSkillEntry {
     pub slug: String,
     pub installed_at: String,
     #[serde(default)]
-    pub repo_sign: Option<String>,
+    pub repo: String,
+    #[serde(default)]
+    pub path: String,
+}
+
+fn normalize_skill_repo_path(value: &str) -> String {
+    value
+        .trim()
+        .replace('\\', "/")
+        .trim_matches('/')
+        .to_string()
+}
+
+fn upsert_installed_entry(entries: &mut Vec<InstalledSkillEntry>, entry: InstalledSkillEntry) {
+    if let Some(existing) = entries
+        .iter_mut()
+        .find(|current| current.slug == entry.slug)
+    {
+        if !entry.repo.is_empty() {
+            existing.repo = entry.repo;
+        }
+        if !entry.path.is_empty() {
+            existing.path = entry.path;
+        }
+        if !entry.installed_at.is_empty() {
+            existing.installed_at = entry.installed_at;
+        }
+    } else {
+        entries.push(entry);
+    }
+}
+
+pub fn installed_skill_local_path(entry: &InstalledSkillEntry) -> Option<PathBuf> {
+    if entry.repo.is_empty() || entry.path.is_empty() {
+        return None;
+    }
+    let repos_root = repos_dir().ok()?;
+    Some(repos_root.join(&entry.repo).join(Path::new(&entry.path)))
 }
 
 /// Read `installed_skills.json`.
@@ -464,7 +501,7 @@ pub fn read_installed_skills_file() -> Result<Vec<InstalledSkillEntry>> {
     let Ok(raw) = fs::read_to_string(&path) else {
         return Ok(Vec::new());
     };
-    Ok(serde_json::from_str(&raw).unwrap_or_default())
+    Ok(serde_json::from_str::<Vec<InstalledSkillEntry>>(&raw).unwrap_or_default())
 }
 
 /// Write `installed_skills.json`.
@@ -488,14 +525,16 @@ pub fn install_skill(slug: &str) -> Result<bool> {
     )?;
     // Also write to JSON file
     let mut entries = read_installed_skills_file().unwrap_or_default();
-    if !entries.iter().any(|e| e.slug == slug) {
-        entries.push(InstalledSkillEntry {
+    upsert_installed_entry(
+        &mut entries,
+        InstalledSkillEntry {
             slug: slug.to_string(),
+            repo: String::new(),
+            path: String::new(),
             installed_at: now,
-            repo_sign: None,
-        });
-        let _ = write_installed_skills_file(&entries);
-    }
+        },
+    );
+    let _ = write_installed_skills_file(&entries);
     Ok(updated > 0)
 }
 
@@ -526,6 +565,7 @@ pub fn sync_installed_from_json() -> Result<()> {
             params![entry.installed_at, entry.slug],
         )?;
     }
+    let _ = write_installed_skills_file(&entries);
     Ok(())
 }
 
@@ -602,12 +642,12 @@ fn repo_dir_name(git_url: &str) -> String {
     stripped.replace('/', "-").replace(':', "-")
 }
 
-/// Construct a skill sign from repo_sign and skill path: `{repo_sign}/{skill_path}`.
+/// Construct a skill sign from repo id and skill path: `{repo_id}/{skill_path}`.
 ///
 /// Example: `make_skill_sign("github.com/salvo-rs/salvo-skills", "skills/salvo-auth")`
 /// → `"github.com/salvo-rs/salvo-skills/skills/salvo-auth"`
-pub fn make_skill_sign(repo_sign: &str, skill_path: &str) -> String {
-    format!("{repo_sign}/{skill_path}")
+pub fn make_skill_sign(repo_id: &str, skill_path: &str) -> String {
+    format!("{repo_id}/{skill_path}")
 }
 
 /// Look up the repo-level source for a given skill slug.
@@ -856,11 +896,17 @@ pub fn install_skill_from_registry(slug: &str) -> Result<PathBuf> {
     let skill_path = find_skill_in_repo(&repo_sign, &source_path)
         .unwrap_or_else(|| repo_sign.join(&source_path));
 
-    // Update repo_sign in installed_skills.json
+    // Update repo/path metadata in installed_skills.json
     let mut entries = read_installed_skills_file().unwrap_or_default();
-    if let Some(entry) = entries.iter_mut().find(|e| e.slug == slug) {
-        entry.repo_sign = Some(skill_path.display().to_string());
-    }
+    upsert_installed_entry(
+        &mut entries,
+        InstalledSkillEntry {
+            slug: slug.to_string(),
+            repo: repo_name,
+            path: normalize_skill_repo_path(&source_path),
+            installed_at: chrono::Utc::now().to_rfc3339(),
+        },
+    );
     let _ = write_installed_skills_file(&entries);
 
     Ok(skill_path)
@@ -1049,9 +1095,15 @@ pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>>
             let _ = install_skill(&info.slug);
             let skill_path = find_skill_in_repo(&repo_sign, &info.source_path)
                 .unwrap_or_else(|| repo_sign.join(&info.source_path));
-            if let Some(entry) = entries.iter_mut().find(|e| e.slug == info.slug) {
-                entry.repo_sign = Some(skill_path.display().to_string());
-            }
+            upsert_installed_entry(
+                &mut entries,
+                InstalledSkillEntry {
+                    slug: info.slug.clone(),
+                    repo: repo_name.clone(),
+                    path: normalize_skill_repo_path(&info.source_path),
+                    installed_at: chrono::Utc::now().to_rfc3339(),
+                },
+            );
             results.push(InstalledSkillInfo {
                 slug: info.slug.clone(),
                 repo_sign: info.repo_id.clone(),
@@ -1123,6 +1175,7 @@ pub fn ensure_registry_synced() -> Result<bool> {
     let state = read_registry_state()?;
 
     if !state.synced_commit.is_empty() && state.synced_commit == head_sha {
+        let _ = sync_installed_from_json();
         return Ok(false); // Already synced
     }
 
@@ -1435,12 +1488,14 @@ fn write_parsed_to_db(
 
     // Insert repos
     for (id, repo, raw) in repos {
-        // Use sign from parsed data, fall back to derived id
-        let sign = if repo.sign.is_empty() {
+        let repo_id = if repo.sign.is_empty() {
             id.clone()
         } else {
             repo.sign.clone()
         };
+        let mut repo_parts = repo_id.splitn(2, '/');
+        let domain = repo_parts.next().unwrap_or_default().to_string();
+        let path_slug = repo_parts.next().unwrap_or_default().to_string();
         // Extract git_url: prefer new git_url field, fall back to legacy source
         let git_url = repo.git_url.as_deref().or_else(|| {
             repo.source.as_ref().and_then(|s| match s {
@@ -1449,16 +1504,17 @@ fn write_parsed_to_db(
             })
         });
         tx.execute(
-            "INSERT OR REPLACE INTO repos (id, name, description, git_url, git_rev, git_branch, sign, visibility, verified, data_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT OR REPLACE INTO repos (id, name, description, git_url, git_rev, git_branch, domain, path_slug, visibility, verified, data_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
-                id,
+                repo_id,
                 repo.name,
                 repo.description,
                 git_url,
                 repo.git_rev,
                 repo.git_branch,
-                sign,
+                domain,
+                path_slug,
                 repo.visibility,
                 repo.verified.unwrap_or(false) as i32,
                 raw,
@@ -1677,11 +1733,11 @@ pub fn get_skill_by_slug(slug: &str) -> Result<Option<RegistrySkill>> {
     }
 }
 
-pub fn get_skill(repo_sign: &str, path: &str) -> Result<Option<RegistrySkill>> {
+pub fn get_skill(repo_id: &str, path: &str) -> Result<Option<RegistrySkill>> {
     let conn = open_cache()?;
     let result = conn.query_row(
-        "SELECT data_json FROM skills WHERE repo_sign = ?1 AND path = ?2 LIMIT 1",
-        params![repo_sign, path],
+        "SELECT data_json FROM skills WHERE repo_id = ?1 AND path = ?2 LIMIT 1",
+        params![repo_id, path],
         |row| {
             let json: String = row.get(0)?;
             Ok(json)

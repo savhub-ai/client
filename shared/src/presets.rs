@@ -2,18 +2,16 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-
 use crate::clients::{global_skills_dir, home_dir};
 use crate::config::get_config_dir;
 use crate::skills::{
     LockEntry, Lockfile, RepoSkillFolder, RepoSkillOrigin, SkillFolder, copy_skill_folder,
-    find_repo_skill_folders, find_skill_folders, read_lockfile, read_skill_version_info,
-    repo_git_commit, skill_folder_from_path, write_repo_skill_origin,
+    find_repo_skill_folders, find_skill_folders, read_skill_version_info, repo_git_commit,
+    skill_folder_from_path, write_repo_skill_origin,
 };
 use crate::utils::sanitize_slug;
+use anyhow::{Context, Result, bail};
+use serde::{Deserialize, Serialize};
 
 /// A named combination of skills.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -300,10 +298,6 @@ pub fn project_skills_dir(workdir: &Path) -> PathBuf {
     workdir.join("skills")
 }
 
-pub fn legacy_project_skills_dir(workdir: &Path) -> PathBuf {
-    workdir.join(".savhub").join("skills")
-}
-
 /// Compute the local directory name for a skill given the layout.
 ///
 /// - `Flat`: `{slug}` (or `{slug}-2`, `{slug}-3` on conflict)
@@ -356,10 +350,6 @@ pub fn read_project_skill_layout(workdir: &Path) -> SkillLayout {
 
 pub fn repo_checkout_root() -> PathBuf {
     home_dir().join(".savhub").join("repos")
-}
-
-fn legacy_project_preset_path(workdir: &Path) -> PathBuf {
-    workdir.join(".savhub").join("profile.json")
 }
 
 fn normalize_unique_slugs<I>(values: I) -> Vec<String>
@@ -521,73 +511,6 @@ fn project_added_skills_to_lockfile(skills: &[ProjectAddedSkill]) -> Lockfile {
     lockfile
 }
 
-fn read_legacy_project_bindings(workdir: &Path) -> Result<ProjectBindings> {
-    let path = legacy_project_preset_path(workdir);
-    let Ok(raw) = fs::read_to_string(&path) else {
-        return Ok(ProjectBindings::default());
-    };
-    let payload: Value = serde_json::from_str(&raw)
-        .with_context(|| format!("invalid project preset at {}", path.display()))?;
-
-    let presets = if let Some(name) = payload.get("profile").and_then(Value::as_str) {
-        normalize_unique_slugs([name.to_string()])
-    } else if let Some(items) = payload.get("presets").and_then(Value::as_array) {
-        normalize_unique_slugs(
-            items
-                .iter()
-                .filter_map(Value::as_str)
-                .map(String::from)
-                .collect::<Vec<_>>(),
-        )
-    } else {
-        Vec::new()
-    };
-
-    let matched_selectors = payload
-        .get("matchedSelectors")
-        .and_then(Value::as_array)
-        .map(|items| {
-            normalize_selector_matches(
-                &items
-                    .iter()
-                    .map(|item| ProjectSelectorMatch {
-                        selector: item
-                            .get("selector")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_string(),
-                        presets: item
-                            .get("presets")
-                            .and_then(Value::as_array)
-                            .map(|presets| {
-                                presets
-                                    .iter()
-                                    .filter_map(Value::as_str)
-                                    .map(String::from)
-                                    .collect::<Vec<_>>()
-                            })
-                            .unwrap_or_default(),
-                        flocks: Vec::new(),
-                        skills: Vec::new(),
-                    })
-                    .collect::<Vec<_>>(),
-            )
-        })
-        .unwrap_or_default();
-
-    Ok(ProjectBindings {
-        presets: ProjectPresetsConfig {
-            matched: presets,
-            ..Default::default()
-        },
-        selectors: ProjectSelectorsConfig {
-            matched: matched_selectors,
-            manual_added: Vec::new(),
-            manual_skipped: Vec::new(),
-        },
-    })
-}
-
 pub fn read_project_config(workdir: &Path) -> Result<ProjectConfigFile> {
     let path = project_config_path(workdir);
     if let Ok(raw) = fs::read_to_string(&path) {
@@ -599,24 +522,7 @@ pub fn read_project_config(workdir: &Path) -> Result<ProjectConfigFile> {
         config.skills.manual_added = normalize_added_skills(&config.skills.manual_added);
         return Ok(config);
     }
-
-    let bindings = read_legacy_project_bindings(workdir)?;
-    let manual_skills = lockfile_to_project_added_skills(&read_lockfile(workdir)?);
-    Ok(ProjectConfigFile {
-        presets: bindings.presets,
-        selectors: bindings.selectors,
-        skills: ProjectSkillsConfig {
-            layout: SkillLayout::default(),
-            manual_added: manual_skills,
-            manual_skipped: Vec::new(),
-        },
-        ..ProjectConfigFile::default()
-    })
-}
-
-fn remove_legacy_project_files(workdir: &Path) {
-    let _ = fs::remove_file(legacy_project_preset_path(workdir));
-    let _ = fs::remove_file(workdir.join(".savhub").join("lock.json"));
+    Ok(ProjectConfigFile::default())
 }
 
 pub fn write_project_config(workdir: &Path, config: &ProjectConfigFile) -> Result<()> {
@@ -657,7 +563,6 @@ fn write_project_config_inner(
         if path.exists() {
             fs::remove_file(path)?;
         }
-        remove_legacy_project_files(workdir);
         return Ok(());
     }
 
@@ -667,7 +572,6 @@ fn write_project_config_inner(
 
     let payload = toml::to_string_pretty(&normalized)?;
     fs::write(path, format!("{payload}\n"))?;
-    remove_legacy_project_files(workdir);
     Ok(())
 }
 
@@ -1116,12 +1020,7 @@ pub fn list_repo_skills() -> Result<Vec<RepoSkillFolder>> {
 
 fn project_skill_search_dirs(workdir: &Path) -> Vec<PathBuf> {
     let primary = project_skills_dir(workdir);
-    let legacy = legacy_project_skills_dir(workdir);
-    if primary == legacy {
-        vec![primary]
-    } else {
-        vec![primary, legacy]
-    }
+    vec![primary]
 }
 
 fn collect_skill_folders(workdir: &Path) -> Vec<SkillFolder> {
@@ -1149,8 +1048,7 @@ fn collect_skill_folders(workdir: &Path) -> Vec<SkillFolder> {
     // 3. Repo-installed skills (from installed_skills.json)
     if let Ok(installed) = crate::registry::read_installed_skills_file() {
         for entry in installed {
-            if let Some(repo_sign) = &entry.repo_sign {
-                let path = PathBuf::from(repo_sign);
+            if let Some(path) = crate::registry::installed_skill_local_path(&entry) {
                 if path.is_dir() {
                     if let Some(skill) = skill_folder_from_path(&path) {
                         if !all_folders.iter().any(|e| e.slug == skill.slug) {
