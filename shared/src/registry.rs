@@ -330,7 +330,8 @@ fn init_schema(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "
         CREATE TABLE IF NOT EXISTS repos (
-            sign        TEXT PRIMARY KEY,
+            id          TEXT PRIMARY KEY,
+            sign        TEXT NOT NULL,
             name        TEXT NOT NULL DEFAULT '',
             description TEXT NOT NULL DEFAULT '',
             git_url     TEXT,
@@ -342,8 +343,9 @@ fn init_schema(conn: &Connection) -> Result<()> {
         );
 
         CREATE TABLE IF NOT EXISTS flocks (
-            sign            TEXT PRIMARY KEY,
-            repo_sign       TEXT NOT NULL DEFAULT '',
+            id              TEXT PRIMARY KEY,
+            sign        TEXT NOT NULL,
+            repo_id       TEXT NOT NULL DEFAULT '',
             slug            TEXT NOT NULL,
             name            TEXT NOT NULL,
             description     TEXT NOT NULL DEFAULT '',
@@ -355,9 +357,9 @@ fn init_schema(conn: &Connection) -> Result<()> {
         );
 
         CREATE TABLE IF NOT EXISTS skills (
-            sign              TEXT PRIMARY KEY,
-            flock_sign        TEXT NOT NULL DEFAULT '',
-            repo_sign         TEXT NOT NULL DEFAULT '',
+            id              TEXT PRIMARY KEY,
+            flock_id        TEXT NOT NULL DEFAULT '',
+            repo_id         TEXT NOT NULL DEFAULT '',
             slug            TEXT NOT NULL,
             name            TEXT NOT NULL,
             path            TEXT NOT NULL DEFAULT '',
@@ -380,9 +382,10 @@ fn init_schema(conn: &Connection) -> Result<()> {
             value TEXT NOT NULL
         );
 
-        CREATE INDEX IF NOT EXISTS idx_skills_flock ON skills(flock_sign);
+        CREATE INDEX IF NOT EXISTS idx_skills_slug ON skills(slug);
+        CREATE INDEX IF NOT EXISTS idx_skills_flock ON skills(flock_id);
         CREATE INDEX IF NOT EXISTS idx_skills_status ON skills(status);
-        CREATE INDEX IF NOT EXISTS idx_flocks_repo ON flocks(repo_sign);
+        CREATE INDEX IF NOT EXISTS idx_flocks_repo ON flocks(repo_id);
 
         ",
     )?;
@@ -918,8 +921,7 @@ pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>>
                 "SELECT repo_id FROM skills WHERE slug = ?1 LIMIT 1",
                 params![slug],
                 |row| row.get::<_, String>(0),
-            )
-            .unwrap_or_default()
+            ).unwrap_or_default()
         };
         let source = get_repo_source_for_skill(slug)?;
         match &source {
