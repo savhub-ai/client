@@ -2,11 +2,11 @@ use std::collections::BTreeSet;
 
 use dioxus::prelude::*;
 
+use savhub_local::presets::read_presets_store;
 use savhub_local::selectors::{
-    SelectorDefinition, SelectorRule, MatchMode, create_selector, delete_selector,
+    MatchMode, SelectorDefinition, SelectorRule, create_selector, delete_selector,
     generate_selector_id, read_selectors_store, update_selector,
 };
-use savhub_local::presets::read_presets_store;
 
 use crate::components::pagination::{self, PaginationControls};
 use crate::components::view_toggle::{ViewMode, ViewToggleButton};
@@ -63,22 +63,48 @@ impl SelectorForm {
             .rules
             .iter()
             .map(|r| match r {
-                SelectorRule::FileExists { path } => ("file_exists".to_string(), path.clone(), String::new()),
-                SelectorRule::FolderExists { path } => ("folder_exists".to_string(), path.clone(), String::new()),
-                SelectorRule::GlobMatch { pattern } => ("glob_match".to_string(), pattern.clone(), String::new()),
-                SelectorRule::FileContains { path, contains } => ("file_contains".to_string(), path.clone(), contains.clone()),
-                SelectorRule::FileRegex { path, pattern } => ("file_regex".to_string(), path.clone(), pattern.clone()),
-                SelectorRule::EnvVarSet { name } => ("env_var_set".to_string(), name.clone(), String::new()),
-                SelectorRule::CommandExits { command } => ("command_exits".to_string(), command.clone(), String::new()),
+                SelectorRule::FileExists { path } => {
+                    ("file_exists".to_string(), path.clone(), String::new())
+                }
+                SelectorRule::FolderExists { path } => {
+                    ("folder_exists".to_string(), path.clone(), String::new())
+                }
+                SelectorRule::GlobMatch { pattern } => {
+                    ("glob_match".to_string(), pattern.clone(), String::new())
+                }
+                SelectorRule::FileContains { path, contains } => {
+                    ("file_contains".to_string(), path.clone(), contains.clone())
+                }
+                SelectorRule::FileRegex { path, pattern } => {
+                    ("file_regex".to_string(), path.clone(), pattern.clone())
+                }
+                SelectorRule::EnvVarSet { name } => {
+                    ("env_var_set".to_string(), name.clone(), String::new())
+                }
+                SelectorRule::CommandExits { command } => {
+                    ("command_exits".to_string(), command.clone(), String::new())
+                }
             })
             .collect();
         Self {
-            editing_id: if as_template { None } else { Some(d.id.clone()) },
-            name: if as_template { format!("{} (copy)", d.name) } else { d.name.clone() },
+            editing_id: if as_template {
+                None
+            } else {
+                Some(d.id.clone())
+            },
+            name: if as_template {
+                format!("{} (copy)", d.name)
+            } else {
+                d.name.clone()
+            },
             description: d.description.clone(),
             folder_scope: d.folder_scope.clone(),
             rules,
-            match_mode: match d.match_mode { MatchMode::AllMatch => 0, MatchMode::AnyMatch => 1, MatchMode::Custom => 2 },
+            match_mode: match d.match_mode {
+                MatchMode::AllMatch => 0,
+                MatchMode::AnyMatch => 1,
+                MatchMode::Custom => 2,
+            },
             custom_expr: d.custom_expression.clone(),
             presets: d.presets.iter().cloned().collect(),
             skills: d.add_skills.iter().cloned().collect(),
@@ -94,13 +120,29 @@ impl SelectorForm {
             .iter()
             .filter(|(_, v1, _)| !v1.trim().is_empty())
             .map(|(kind, v1, v2)| match kind.as_str() {
-                "folder_exists" => SelectorRule::FolderExists { path: v1.trim().to_string() },
-                "glob_match" => SelectorRule::GlobMatch { pattern: v1.trim().to_string() },
-                "file_contains" => SelectorRule::FileContains { path: v1.trim().to_string(), contains: v2.trim().to_string() },
-                "file_regex" => SelectorRule::FileRegex { path: v1.trim().to_string(), pattern: v2.trim().to_string() },
-                "env_var_set" => SelectorRule::EnvVarSet { name: v1.trim().to_string() },
-                "command_exits" => SelectorRule::CommandExits { command: v1.trim().to_string() },
-                _ => SelectorRule::FileExists { path: v1.trim().to_string() },
+                "folder_exists" => SelectorRule::FolderExists {
+                    path: v1.trim().to_string(),
+                },
+                "glob_match" => SelectorRule::GlobMatch {
+                    pattern: v1.trim().to_string(),
+                },
+                "file_contains" => SelectorRule::FileContains {
+                    path: v1.trim().to_string(),
+                    contains: v2.trim().to_string(),
+                },
+                "file_regex" => SelectorRule::FileRegex {
+                    path: v1.trim().to_string(),
+                    pattern: v2.trim().to_string(),
+                },
+                "env_var_set" => SelectorRule::EnvVarSet {
+                    name: v1.trim().to_string(),
+                },
+                "command_exits" => SelectorRule::CommandExits {
+                    command: v1.trim().to_string(),
+                },
+                _ => SelectorRule::FileExists {
+                    path: v1.trim().to_string(),
+                },
             })
             .collect();
         SelectorDefinition {
@@ -109,7 +151,11 @@ impl SelectorForm {
             description: self.description.trim().to_string(),
             folder_scope: self.folder_scope.trim().to_string(),
             rules,
-            match_mode: match self.match_mode { 1 => MatchMode::AnyMatch, 2 => MatchMode::Custom, _ => MatchMode::AllMatch },
+            match_mode: match self.match_mode {
+                1 => MatchMode::AnyMatch,
+                2 => MatchMode::Custom,
+                _ => MatchMode::AllMatch,
+            },
             custom_expression: self.custom_expr.clone(),
             presets: self.presets.iter().cloned().collect(),
             add_skills: self.skills.iter().cloned().collect(),
@@ -146,13 +192,17 @@ pub fn SelectorsPage() -> Element {
     let selectors: Vec<_> = if search_val.is_empty() {
         all_selectors
     } else {
-        all_selectors.into_iter().filter(|d| {
-            d.name.to_lowercase().contains(&search_val)
-                || d.description.to_lowercase().contains(&search_val)
-                || d.folder_scope.to_lowercase().contains(&search_val)
-        }).collect()
+        all_selectors
+            .into_iter()
+            .filter(|d| {
+                d.name.to_lowercase().contains(&search_val)
+                    || d.description.to_lowercase().contains(&search_val)
+                    || d.folder_scope.to_lowercase().contains(&search_val)
+            })
+            .collect()
     };
-    let current_page = pagination::clamp_page(*selectors_page.read(), selectors.len(), SELECTORS_PAGE_SIZE);
+    let current_page =
+        pagination::clamp_page(*selectors_page.read(), selectors.len(), SELECTORS_PAGE_SIZE);
     let visible = pagination::slice_for_page(&selectors, current_page, SELECTORS_PAGE_SIZE);
     let total_pages = pagination::total_pages(selectors.len(), SELECTORS_PAGE_SIZE);
     let form_is_open = form.read().is_some();
@@ -279,8 +329,7 @@ pub fn SelectorsPage() -> Element {
 fn SelectorRow(
     selector: SelectorDefinition,
     form_is_open: bool,
-    #[props(default = false)]
-    card_mode: bool,
+    #[props(default = false)] card_mode: bool,
     on_click: EventHandler<()>,
     on_template: EventHandler<()>,
     on_edit: EventHandler<()>,
@@ -363,13 +412,19 @@ fn SelectorDetailPopup(selector: Signal<Option<SelectorDefinition>>) -> Element 
     let t = i18n::texts(*state.lang.read());
     let mut backdrop_pressed = use_signal(|| false);
     let guard = selector.read();
-    let Some(d) = guard.as_ref() else { return rsx! {}; };
+    let Some(d) = guard.as_ref() else {
+        return rsx! {};
+    };
 
     let name = d.name.clone();
     let desc = d.description.clone();
     let scope = d.folder_scope.clone();
     let expr = d.display_expression();
-    let mode = match d.match_mode { MatchMode::AllMatch => t.selectors_match_all, MatchMode::AnyMatch => t.selectors_match_any, MatchMode::Custom => t.selectors_match_custom };
+    let mode = match d.match_mode {
+        MatchMode::AllMatch => t.selectors_match_all,
+        MatchMode::AnyMatch => t.selectors_match_any,
+        MatchMode::Custom => t.selectors_match_custom,
+    };
     let rules = d.rules.clone();
     let presets = d.presets.clone();
     let skills = d.add_skills.clone();
@@ -435,7 +490,12 @@ fn SelectorDetailPopup(selector: Signal<Option<SelectorDefinition>>) -> Element 
 }
 
 #[component]
-fn SmallButton(label: &'static str, disabled: bool, #[props(default = Theme::MUTED)] accent: &'static str, onclick: EventHandler<()>) -> Element {
+fn SmallButton(
+    label: &'static str,
+    disabled: bool,
+    #[props(default = Theme::MUTED)] accent: &'static str,
+    onclick: EventHandler<()>,
+) -> Element {
     let opacity = if disabled { "0.5" } else { "1" };
     let cursor = if disabled { "not-allowed" } else { "pointer" };
     rsx! { button { disabled, style: "padding: 5px 10px; background: transparent; color: {accent}; border: 1px solid {Theme::LINE}; border-radius: 8px; font-size: 11px; font-weight: 600; cursor: {cursor}; opacity: {opacity};", onclick: move |_| onclick.call(()), "{label}" } }
@@ -447,7 +507,13 @@ fn InfoBadge(label: String, color: &'static str) -> Element {
 }
 
 #[component]
-fn TagGroup(label: &'static str, items: Vec<String>, bg: &'static str, color: &'static str, border: &'static str) -> Element {
+fn TagGroup(
+    label: &'static str,
+    items: Vec<String>,
+    bg: &'static str,
+    color: &'static str,
+    border: &'static str,
+) -> Element {
     rsx! {
         div { style: "padding: 12px; background: rgba(255, 255, 255, 0.82); border: 1px solid {Theme::LINE}; border-radius: 14px;",
             p { style: "font-size: 11px; font-weight: 700; color: {Theme::MUTED}; margin-bottom: 8px;", "{label}" }
@@ -474,15 +540,28 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
     let mut flock_search = use_signal(String::new);
 
     let is_editing = form.read().as_ref().is_some_and(|f| f.editing_id.is_some());
-    let title = if is_editing { t.selectors_edit_title } else { t.selectors_new_title };
+    let title = if is_editing {
+        t.selectors_edit_title
+    } else {
+        t.selectors_new_title
+    };
 
     let mut set_field = move |mutator: Box<dyn FnOnce(&mut SelectorForm)>| {
-        form.with_mut(|opt| { if let Some(f) = opt.as_mut() { mutator(f); } });
+        form.with_mut(|opt| {
+            if let Some(f) = opt.as_mut() {
+                mutator(f);
+            }
+        });
     };
 
     // Collect available presets and skills
     let all_presets: Vec<(String, Option<String>)> = read_presets_store()
-        .map(|s| s.presets.into_iter().map(|(k, v)| (k, v.description)).collect())
+        .map(|s| {
+            s.presets
+                .into_iter()
+                .map(|(k, v)| (k, v.description))
+                .collect()
+        })
         .unwrap_or_default();
     let installed_skills = savhub_local::registry::list_installed_slugs().unwrap_or_default();
 
@@ -497,7 +576,9 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
         let def = f.to_definition();
         if def.rules.is_empty() {
             drop(guard);
-            set_field(Box::new(|f| f.error = "At least one rule is required".to_string()));
+            set_field(Box::new(|f| {
+                f.error = "At least one rule is required".to_string()
+            }));
             return;
         }
         if let Err(e) = def.build_expression() {
@@ -508,7 +589,11 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
         }
         let is_edit = f.editing_id.is_some();
         drop(guard);
-        let result = if is_edit { update_selector(def) } else { create_selector(def) };
+        let result = if is_edit {
+            update_selector(def)
+        } else {
+            create_selector(def)
+        };
         if let Err(e) = result {
             let msg = format!("{e}");
             set_field(Box::new(move |f| f.error = msg));
@@ -520,7 +605,9 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
 
     // Read form snapshot
     let guard = form.read();
-    let Some(f) = guard.as_ref() else { return rsx! {}; };
+    let Some(f) = guard.as_ref() else {
+        return rsx! {};
+    };
     let name_val = f.name.clone();
     let desc_val = f.description.clone();
     let scope_val = f.folder_scope.clone();
@@ -552,14 +639,24 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
     let flock_suggestions: Vec<&String> = if flock_search_val.is_empty() {
         Vec::new()
     } else {
-        all_flock_slugs.iter()
-            .filter(|s| !selected_flocks.contains(*s) && s.to_lowercase().contains(&flock_search_val))
+        all_flock_slugs
+            .iter()
+            .filter(|s| {
+                !selected_flocks.contains(*s) && s.to_lowercase().contains(&flock_search_val)
+            })
             .take(20)
             .collect()
     };
 
-    let input_style = format!("width: 100%; padding: 8px 12px; border: 1px solid {}; border-radius: 8px; font-size: 13px; background: white; color: {};", Theme::LINE, Theme::TEXT);
-    let label_style = format!("font-size: 12px; font-weight: 700; color: {}; margin-bottom: 4px;", Theme::MUTED);
+    let input_style = format!(
+        "width: 100%; padding: 8px 12px; border: 1px solid {}; border-radius: 8px; font-size: 13px; background: white; color: {};",
+        Theme::LINE,
+        Theme::TEXT
+    );
+    let label_style = format!(
+        "font-size: 12px; font-weight: 700; color: {}; margin-bottom: 4px;",
+        Theme::MUTED
+    );
 
     rsx! {
         // Backdrop

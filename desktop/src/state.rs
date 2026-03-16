@@ -55,9 +55,14 @@ fn load_config() -> (String, Option<String>, Language, PathBuf, Vec<String>) {
                     .filter(|v| !v.trim().is_empty())
                     .map(PathBuf::from)
                     .unwrap_or_else(default_workdir);
-                agents = cfg.get("agents")
+                agents = cfg
+                    .get("agents")
                     .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
                     .unwrap_or_default();
             }
         }

@@ -8,9 +8,8 @@ use savhub_local::presets::{
     EnableProjectRepoSkillResult, ProjectSkillConflict, ProjectSkillConflictChoice,
     ResolvedSkillSources, add_skills_to_preset, create_preset, delete_preset,
     disable_project_preset, disable_project_skill, enable_project_preset,
-    enable_repo_skill_in_project, list_repo_skills, read_presets_store,
-    read_project_selector_matches, read_project_presets, remove_skills_from_preset,
-    resolve_project_skills_with_sources,
+    enable_repo_skill_in_project, list_repo_skills, read_presets_store, read_project_presets,
+    read_project_selector_matches, remove_skills_from_preset, resolve_project_skills_with_sources,
 };
 
 use crate::components::pagination::{self, PaginationControls};
@@ -834,7 +833,11 @@ fn AddProjectSkillDialog(
 }
 
 #[component]
-fn PresetsSection(mut version: Signal<u32>, show_title: bool, #[props(default = true)] card_mode: bool) -> Element {
+fn PresetsSection(
+    mut version: Signal<u32>,
+    show_title: bool,
+    #[props(default = true)] card_mode: bool,
+) -> Element {
     let state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
     let mut presets_page = use_signal(|| 0usize);
@@ -920,7 +923,8 @@ fn CreatePresetModal(show: Signal<bool>, version: Signal<u32>) -> Element {
     let suggestions: Vec<&String> = if search_val.is_empty() {
         Vec::new()
     } else {
-        installed.iter()
+        installed
+            .iter()
             .filter(|s| !selected.read().contains(*s) && s.to_lowercase().contains(&search_val))
             .take(20)
             .collect()
@@ -929,17 +933,27 @@ fn CreatePresetModal(show: Signal<bool>, version: Signal<u32>) -> Element {
     let flock_suggestions: Vec<&String> = if flock_search_val.is_empty() {
         Vec::new()
     } else {
-        all_flock_slugs.iter()
-            .filter(|s| !selected_flocks.read().contains(*s) && s.to_lowercase().contains(&flock_search_val))
+        all_flock_slugs
+            .iter()
+            .filter(|s| {
+                !selected_flocks.read().contains(*s) && s.to_lowercase().contains(&flock_search_val)
+            })
             .take(20)
             .collect()
     };
 
     let do_save = move |_| {
         let n = name.read().trim().to_string();
-        if n.is_empty() { error.set(Some("Name is required".to_string())); return; }
+        if n.is_empty() {
+            error.set(Some("Name is required".to_string()));
+            return;
+        }
         let desc_val = desc.read().trim().to_string();
-        let d = if desc_val.is_empty() { None } else { Some(desc_val.as_str()) };
+        let d = if desc_val.is_empty() {
+            None
+        } else {
+            Some(desc_val.as_str())
+        };
         match create_preset(&n, d) {
             Ok(()) => {
                 let slugs: Vec<String> = selected.read().iter().cloned().collect();
@@ -957,8 +971,15 @@ fn CreatePresetModal(show: Signal<bool>, version: Signal<u32>) -> Element {
         }
     };
 
-    let label_style = format!("font-size: 12px; font-weight: 700; color: {}; margin-bottom: 4px;", Theme::MUTED);
-    let input_style = format!("width: 100%; padding: 8px 12px; border: 1px solid {}; border-radius: 8px; font-size: 13px; background: white; color: {};", Theme::LINE, Theme::TEXT);
+    let label_style = format!(
+        "font-size: 12px; font-weight: 700; color: {}; margin-bottom: 4px;",
+        Theme::MUTED
+    );
+    let input_style = format!(
+        "width: 100%; padding: 8px 12px; border: 1px solid {}; border-radius: 8px; font-size: 13px; background: white; color: {};",
+        Theme::LINE,
+        Theme::TEXT
+    );
 
     rsx! {
         div {
@@ -1212,8 +1233,13 @@ fn AddSkillsToPresetModal(
     let suggestions: Vec<&String> = if search_val.is_empty() {
         Vec::new()
     } else {
-        installed.iter()
-            .filter(|s| !current_set.contains(*s) && !selected.read().contains(*s) && s.to_lowercase().contains(&search_val))
+        installed
+            .iter()
+            .filter(|s| {
+                !current_set.contains(*s)
+                    && !selected.read().contains(*s)
+                    && s.to_lowercase().contains(&search_val)
+            })
             .take(20)
             .collect()
     };
@@ -1311,8 +1337,14 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
     let scan_result = savhub_local::selectors::run_selectors(&workdir).ok();
 
     // Collect skills from matched selectors + presets + flocks
-    let (matched_signs, preset_signs, flock_signs, skill_signs) = if let Some(ref result) = scan_result {
-        let matched: Vec<String> = result.matched.iter().map(|m| m.selector.name.clone()).collect();
+    let (matched_signs, preset_signs, flock_signs, skill_signs) = if let Some(ref result) =
+        scan_result
+    {
+        let matched: Vec<String> = result
+            .matched
+            .iter()
+            .map(|m| m.selector.name.clone())
+            .collect();
         let presets = result.presets.clone();
         let flocks = result.flocks.clone();
 
@@ -1321,14 +1353,18 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
         for preset_name in &presets {
             if let Some(preset) = preset_store.presets.get(preset_name) {
                 for s in &preset.skills {
-                    if !skills.contains(s) { skills.push(s.clone()); }
+                    if !skills.contains(s) {
+                        skills.push(s.clone());
+                    }
                 }
             }
         }
         for flock_sign in &flocks {
             if let Ok(flock_skills) = savhub_local::registry::list_flock_skill_slugs(flock_sign) {
                 for s in flock_skills {
-                    if !skills.contains(&s) { skills.push(s); }
+                    if !skills.contains(&s) {
+                        skills.push(s);
+                    }
                 }
             }
         }
@@ -1357,8 +1393,8 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
     let mut apply_status = use_signal(|| 0u8); // 0=idle, 1=applying, 2=done
 
     let project_path_clone = project_path.clone();
-    let preset_names_cl = preset_names.clone();
-    let skill_slugs_cl = skill_slugs.clone();
+    let preset_signs_cl = preset_signs.clone();
+    let skill_signs_cl = skill_signs.clone();
     let do_apply = move |_| {
         apply_status.set(1);
         let workdir = PathBuf::from(&project_path_clone);
@@ -1372,8 +1408,12 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
 
         if has_match {
             if let Ok(mut cfg) = savhub_local::presets::read_project_config(&workdir) {
-                cfg.presets.matched = preset_names_cl.clone();
-                cfg.selectors.matched = scan_result.as_ref().unwrap().matched.iter()
+                cfg.presets.matched = preset_signs_cl.clone();
+                cfg.selectors.matched = scan_result
+                    .as_ref()
+                    .unwrap()
+                    .matched
+                    .iter()
                     .map(|m| savhub_local::presets::ProjectSelectorMatch {
                         selector: m.selector.name.clone(),
                         presets: m.presets.clone(),
@@ -1386,7 +1426,7 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
 
             let config = savhub_local::presets::read_project_config(&workdir).unwrap_or_default();
             let skipped = &config.skills.manual_skipped;
-            let filtered: Vec<String> = skill_slugs_cl
+            let filtered: Vec<String> = skill_signs_cl
                 .iter()
                 .filter(|s| !savhub_local::registry::skill_matches_skipped(s, skipped))
                 .cloned()
@@ -1396,17 +1436,23 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                 let agents = savhub_local::clients::resolve_clients(&checked);
                 for info in &results {
                     for client in &agents {
-                        if !client.installed { continue; }
-                        let Some(rel_dir) = client.kind.project_skills_dir() else { continue; };
+                        if !client.installed {
+                            continue;
+                        }
+                        let Some(rel_dir) = client.kind.project_skills_dir() else {
+                            continue;
+                        };
                         let target = workdir.join(rel_dir).join(&info.slug);
                         let _ = std::fs::create_dir_all(target.parent().unwrap());
                         let _ = savhub_local::skills::copy_skill_folder(&info.local_path, &target);
                     }
                 }
-                let mut lock = savhub_local::presets::read_project_lockfile(&workdir).unwrap_or_default();
+                let mut lock =
+                    savhub_local::presets::read_project_lockfile(&workdir).unwrap_or_default();
                 for info in &results {
                     if !lock.skills.iter().any(|s| s.slug() == info.slug) {
-                        let vi = savhub_local::skills::read_skill_version_info(&info.local_path).unwrap_or_default();
+                        let vi = savhub_local::skills::read_skill_version_info(&info.local_path)
+                            .unwrap_or_default();
                         lock.skills.push(savhub_local::presets::ProjectLockedSkill {
                             repo: info.repo_sign.clone(),
                             path: info.skill_path.clone(),
@@ -1422,8 +1468,12 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
             let agents = savhub_local::clients::resolve_clients(&checked);
             for skill in &lock.skills {
                 for client in &agents {
-                    if !client.installed { continue; }
-                    let Some(rel_dir) = client.kind.project_skills_dir() else { continue; };
+                    if !client.installed {
+                        continue;
+                    }
+                    let Some(rel_dir) = client.kind.project_skills_dir() else {
+                        continue;
+                    };
                     let _ = std::fs::remove_dir_all(workdir.join(rel_dir).join(skill.slug()));
                 }
             }
@@ -1462,22 +1512,22 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                 } else {
                     div { style: "margin-bottom: 14px;",
                         h3 { style: "font-size: 13px; color: {Theme::MUTED}; margin-bottom: 6px;",
-                            "{t.project_rescan_matched} ({matched_names.len()})"
+                            "{t.project_rescan_matched} ({matched_signs.len()})"
                         }
-                        for name in matched_names.iter() {
+                        for name in matched_signs.iter() {
                             div { style: "padding: 4px 0; font-size: 13px; color: {Theme::ACCENT_STRONG};",
                                 "\u{2713} {name}"
                             }
                         }
                     }
 
-                    if !preset_names.is_empty() {
+                    if !preset_signs.is_empty() {
                         div { style: "margin-bottom: 14px;",
                             h3 { style: "font-size: 13px; color: {Theme::MUTED}; margin-bottom: 6px;",
                                 "{t.project_rescan_presets}"
                             }
                             div { style: "display: flex; flex-wrap: wrap; gap: 6px;",
-                                for p in preset_names.iter() {
+                                for p in preset_signs.iter() {
                                     span { style: "padding: 3px 10px; background: {Theme::ACCENT_LIGHT}; border-radius: 12px; font-size: 12px; color: {Theme::ACCENT_STRONG};",
                                         "{p}"
                                     }
@@ -1486,13 +1536,13 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                         }
                     }
 
-                    if !flock_names.is_empty() {
+                    if !flock_signs.is_empty() {
                         div { style: "margin-bottom: 14px;",
                             h3 { style: "font-size: 13px; color: {Theme::MUTED}; margin-bottom: 6px;",
                                 "{t.project_rescan_flocks}"
                             }
                             div { style: "display: flex; flex-wrap: wrap; gap: 6px;",
-                                for f in flock_names.iter() {
+                                for f in flock_signs.iter() {
                                     span { style: "padding: 3px 10px; background: {Theme::ACCENT_LIGHT}; border-radius: 12px; font-size: 12px; color: {Theme::ACCENT_STRONG};",
                                         "{f}"
                                     }
@@ -1501,13 +1551,13 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                         }
                     }
 
-                    if !skill_slugs.is_empty() {
+                    if !skill_signs.is_empty() {
                         div { style: "margin-bottom: 14px;",
                             h3 { style: "font-size: 13px; color: {Theme::MUTED}; margin-bottom: 6px;",
-                                "{t.project_rescan_skills} ({skill_slugs.len()})"
+                                "{t.project_rescan_skills} ({skill_signs.len()})"
                             }
                             div { style: "max-height: 120px; overflow-y: auto;",
-                                for s in skill_slugs.iter() {
+                                for s in skill_signs.iter() {
                                     div { style: "padding: 2px 0; font-size: 13px; color: {Theme::TEXT};",
                                         "{s}"
                                     }

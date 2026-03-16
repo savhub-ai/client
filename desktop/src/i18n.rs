@@ -359,12 +359,10 @@ impl Texts {
 
     pub fn fmt_compat_detail(&self, client_ver: u32, registry_ver: u32) -> String {
         match self.lang {
-            Language::English => format!(
-                "Client API: v{client_ver}, Registry API: v{registry_ver}"
-            ),
-            Language::Chinese => format!(
-                "客户端 API：v{client_ver}，注册表 API：v{registry_ver}"
-            ),
+            Language::English => {
+                format!("Client API: v{client_ver}, Registry API: v{registry_ver}")
+            }
+            Language::Chinese => format!("客户端 API：v{client_ver}，注册表 API：v{registry_ver}"),
         }
     }
 

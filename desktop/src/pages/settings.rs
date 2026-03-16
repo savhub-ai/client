@@ -760,8 +760,7 @@ pub async fn perform_github_login(api_base: &str) -> Result<String, String> {
     let mut url = client
         .v1_url("/auth/github/start")
         .map_err(|e| format!("Failed to build login URL: {e}"))?;
-    url.query_pairs_mut()
-        .append_pair("return_to", &return_to);
+    url.query_pairs_mut().append_pair("return_to", &return_to);
     let login_url = url.to_string();
 
     open_browser(&login_url).map_err(|e| format!("Failed to open browser: {e}"))?;

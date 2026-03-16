@@ -156,7 +156,9 @@ pub fn resolve_clients(configured_agents: &[String]) -> Vec<DetectedClient> {
         return all;
     }
     all.retain(|c| {
-        configured_agents.iter().any(|a| a.eq_ignore_ascii_case(c.kind.as_str()))
+        configured_agents
+            .iter()
+            .any(|a| a.eq_ignore_ascii_case(c.kind.as_str()))
     });
     // Mark retained clients as installed even if dir doesn't exist
     // (user explicitly chose them)

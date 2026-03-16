@@ -926,7 +926,8 @@ pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>>
                 "SELECT repo_id FROM skills WHERE slug = ?1 LIMIT 1",
                 params![slug],
                 |row| row.get::<_, String>(0),
-            ).unwrap_or_default()
+            )
+            .unwrap_or_default()
         };
         let source = get_repo_source_for_skill(slug)?;
         match &source {
@@ -1435,7 +1436,11 @@ fn write_parsed_to_db(
     // Insert repos
     for (id, repo, raw) in repos {
         // Use sign from parsed data, fall back to derived id
-        let sign = if repo.sign.is_empty() { id.clone() } else { repo.sign.clone() };
+        let sign = if repo.sign.is_empty() {
+            id.clone()
+        } else {
+            repo.sign.clone()
+        };
         // Extract git_url: prefer new git_url field, fall back to legacy source
         let git_url = repo.git_url.as_deref().or_else(|| {
             repo.source.as_ref().and_then(|s| match s {

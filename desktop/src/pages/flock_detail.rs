@@ -49,22 +49,31 @@ pub fn FlockDetailPage(slug: String) -> Element {
                     } else {
                         registry::install_skill_from_registry(&s).map(|_| ())
                     }
-                }).await.map_err(|e| e.to_string()).and_then(|r| r.map_err(|e| e.to_string()));
+                })
+                .await
+                .map_err(|e| e.to_string())
+                .and_then(|r| r.map_err(|e| e.to_string()));
                 if let Err(e) = result {
                     action_error.set(Some(e.to_string()));
                     break;
                 }
                 installed.with_mut(|map| {
-                    if uninstall { map.remove(slug); } else { map.insert(slug.clone(), true); }
+                    if uninstall {
+                        map.remove(slug);
+                    } else {
+                        map.insert(slug.clone(), true);
+                    }
                 });
                 if !uninstall {
                     let track_slug = slug.clone();
                     let track_client = state.api_client();
                     tokio::spawn(async move {
-                        let _ = track_client.post_json::<serde_json::Value, serde_json::Value>(
-                            &format!("/skills/{track_slug}/install"),
-                            &serde_json::json!({ "client_type": "desktop" }),
-                        ).await;
+                        let _ = track_client
+                            .post_json::<serde_json::Value, serde_json::Value>(
+                                &format!("/skills/{track_slug}/install"),
+                                &serde_json::json!({ "client_type": "desktop" }),
+                            )
+                            .await;
                     });
                 }
             }
@@ -165,10 +174,7 @@ pub fn FlockDetailPage(slug: String) -> Element {
 }
 
 #[component]
-fn FlockSkillRow(
-    skill: RegistrySkill,
-    mut installed: Signal<BTreeMap<String, bool>>,
-) -> Element {
+fn FlockSkillRow(skill: RegistrySkill, mut installed: Signal<BTreeMap<String, bool>>) -> Element {
     let state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
     let mut working = use_signal(|| false);
@@ -192,21 +198,30 @@ fn FlockSkillRow(
                     } else {
                         registry::install_skill_from_registry(&s).map(|_| ())
                     }
-                }).await.map_err(|e| e.to_string()).and_then(|r| r.map_err(|e| e.to_string()))
+                })
+                .await
+                .map_err(|e| e.to_string())
+                .and_then(|r| r.map_err(|e| e.to_string()))
             };
             match result {
                 Ok(()) => {
                     installed.with_mut(|map| {
-                        if uninstall { map.remove(&slug); } else { map.insert(slug.clone(), true); }
+                        if uninstall {
+                            map.remove(&slug);
+                        } else {
+                            map.insert(slug.clone(), true);
+                        }
                     });
                     if !uninstall {
                         let track_slug = slug.clone();
                         let track_client = state.api_client();
                         tokio::spawn(async move {
-                            let _ = track_client.post_json::<serde_json::Value, serde_json::Value>(
-                                &format!("/skills/{track_slug}/install"),
-                                &serde_json::json!({ "client_type": "desktop" }),
-                            ).await;
+                            let _ = track_client
+                                .post_json::<serde_json::Value, serde_json::Value>(
+                                    &format!("/skills/{track_slug}/install"),
+                                    &serde_json::json!({ "client_type": "desktop" }),
+                                )
+                                .await;
                         });
                     }
                 }

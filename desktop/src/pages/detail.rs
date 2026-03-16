@@ -139,10 +139,12 @@ fn DetailContent(detail: SkillDetailResponse, slug: String) -> Element {
                                     let track_slug = slug.clone();
                                     let track_client = state.api_client();
                                     tokio::spawn(async move {
-                                        let _ = track_client.post_json::<serde_json::Value, serde_json::Value>(
-                                            &format!("/skills/{track_slug}/install"),
-                                            &serde_json::json!({ "client_type": "desktop" }),
-                                        ).await;
+                                        let _ = track_client
+                                            .post_json::<serde_json::Value, serde_json::Value>(
+                                                &format!("/skills/{track_slug}/install"),
+                                                &serde_json::json!({ "client_type": "desktop" }),
+                                            )
+                                            .await;
                                     });
                                 }
                             }

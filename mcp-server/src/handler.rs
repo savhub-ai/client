@@ -441,7 +441,7 @@ impl McpHandler {
                 .map(String::from)
                 .collect();
             if !slugs.is_empty() {
-                let slug = savhub_local::skills::sanitize_slug(name);
+                let slug = savhub_local::utils::sanitize_slug(name);
                 if let Err(e) = add_skills_to_preset(&slug, &slugs) {
                     return JsonRpcResponse::success(
                         id,
@@ -553,10 +553,7 @@ impl McpHandler {
                     }),
                 )
             }
-            Err(e) => JsonRpcResponse::success(
-                id,
-                tool_error(&format!("Search failed: {e}")),
-            ),
+            Err(e) => JsonRpcResponse::success(id, tool_error(&format!("Search failed: {e}"))),
         }
     }
 

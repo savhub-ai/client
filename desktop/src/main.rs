@@ -7,17 +7,17 @@ mod state;
 mod theme;
 mod updater;
 
-use dioxus::prelude::*;
 use api::{ApiCompatibility, CLIENT_API_VERSION};
+use dioxus::prelude::*;
 use savhub_shared::{UserSummary, WhoAmIResponse};
 
 use pages::dashboard::DashboardPage;
 use pages::detail::DetailPage;
-use pages::selectors::SelectorsPage;
 use pages::explore::ExplorePage;
 use pages::installed::InstalledPage;
 use pages::mcp::McpPage;
 use pages::profiles::{PresetsPage, ProjectsPage};
+use pages::selectors::SelectorsPage;
 use pages::settings::SettingsPage;
 use state::AppState;
 use theme::Theme;

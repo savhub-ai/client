@@ -4,14 +4,14 @@ use std::collections::BTreeSet;
 use std::io;
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::execute;
+use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
+use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
-use ratatui::Terminal;
-use ratatui::backend::CrosstermBackend;
 
 /// A matched selector with its contributed presets and flocks.
 pub struct MatchedSelector {
@@ -56,8 +56,10 @@ pub fn apply_select(
     }
 
     // Derived presets/flocks with user overrides
-    let mut preset_overrides: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
-    let mut flock_overrides: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
+    let mut preset_overrides: std::collections::HashMap<String, bool> =
+        std::collections::HashMap::new();
+    let mut flock_overrides: std::collections::HashMap<String, bool> =
+        std::collections::HashMap::new();
 
     // Initialize overrides from existing skip sets
     for p in preset_skip_set {
@@ -68,18 +70,22 @@ pub fn apply_select(
     }
 
     // Recompute derived presets/flocks from checked selectors
-    fn compute_derived(
-        selectors: &[MatchedSelector],
-    ) -> (Vec<String>, Vec<String>) {
+    fn compute_derived(selectors: &[MatchedSelector]) -> (Vec<String>, Vec<String>) {
         let mut presets = Vec::new();
         let mut flocks = Vec::new();
         for sel in selectors {
-            if !sel.checked { continue; }
+            if !sel.checked {
+                continue;
+            }
             for p in &sel.presets {
-                if !presets.contains(p) { presets.push(p.clone()); }
+                if !presets.contains(p) {
+                    presets.push(p.clone());
+                }
             }
             for f in &sel.flocks {
-                if !flocks.contains(f) { flocks.push(f.clone()); }
+                if !flocks.contains(f) {
+                    flocks.push(f.clone());
+                }
             }
         }
         (presets, flocks)
@@ -92,10 +98,7 @@ pub fn apply_select(
         overrides.get(preset).copied().unwrap_or(true)
     }
 
-    fn is_flock_checked(
-        flock: &str,
-        overrides: &std::collections::HashMap<String, bool>,
-    ) -> bool {
+    fn is_flock_checked(flock: &str, overrides: &std::collections::HashMap<String, bool>) -> bool {
         overrides.get(flock).copied().unwrap_or(true)
     }
 
@@ -146,8 +149,14 @@ pub fn apply_select(
 
         // Count totals for title
         let sel_count = selectors.iter().filter(|s| s.checked).count();
-        let preset_count = derived_presets.iter().filter(|p| is_preset_checked(p, &preset_overrides)).count();
-        let flock_count = derived_flocks.iter().filter(|f| is_flock_checked(f, &flock_overrides)).count();
+        let preset_count = derived_presets
+            .iter()
+            .filter(|p| is_preset_checked(p, &preset_overrides))
+            .count();
+        let flock_count = derived_flocks
+            .iter()
+            .filter(|f| is_flock_checked(f, &flock_overrides))
+            .count();
 
         let rows_snapshot = rows.clone();
 
@@ -157,35 +166,47 @@ pub fn apply_select(
                 Constraint::Length(3),
                 Constraint::Min(1),
                 Constraint::Length(2),
-            ]).split(area);
+            ])
+            .split(area);
 
             // Title
             let title = Paragraph::new(Line::from(vec![
-                Span::styled(" savhub apply", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
                 Span::styled(
-                    format!("  {sel_count} selectors, {preset_count} presets, {flock_count} flocks"),
+                    " savhub apply",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!(
+                        "  {sel_count} selectors, {preset_count} presets, {flock_count} flocks"
+                    ),
                     Style::default().fg(Color::DarkGray),
                 ),
             ]))
-            .block(Block::default().borders(Borders::BOTTOM).border_style(Style::default().fg(Color::DarkGray)));
+            .block(
+                Block::default()
+                    .borders(Borders::BOTTOM)
+                    .border_style(Style::default().fg(Color::DarkGray)),
+            );
             frame.render_widget(title, chunks[0]);
 
             // List
             let list_items: Vec<ListItem> = rows_snapshot
                 .iter()
                 .map(|row| match row {
-                    Row::Header(name) => {
-                        ListItem::new(Line::from(vec![
-                            Span::styled(
-                                format!(" ── {name} "),
-                                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-                            ),
-                            Span::styled(
-                                "──────────────────────────────",
-                                Style::default().fg(Color::DarkGray),
-                            ),
-                        ]))
-                    }
+                    Row::Header(name) => ListItem::new(Line::from(vec![
+                        Span::styled(
+                            format!(" ── {name} "),
+                            Style::default()
+                                .fg(Color::Cyan)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(
+                            "──────────────────────────────",
+                            Style::default().fg(Color::DarkGray),
+                        ),
+                    ])),
                     Row::Selector(i) => {
                         let sel = &selectors[*i];
                         let (marker, mc, lc) = if sel.checked {
@@ -194,7 +215,10 @@ pub fn apply_select(
                             ("[-]", Color::Red, Color::DarkGray)
                         };
                         ListItem::new(Line::from(vec![
-                            Span::styled(format!("   {marker} "), Style::default().fg(mc).add_modifier(Modifier::BOLD)),
+                            Span::styled(
+                                format!("   {marker} "),
+                                Style::default().fg(mc).add_modifier(Modifier::BOLD),
+                            ),
                             Span::styled(&sel.label, Style::default().fg(lc)),
                         ]))
                     }
@@ -206,7 +230,10 @@ pub fn apply_select(
                             ("[-]", Color::Red, Color::DarkGray)
                         };
                         ListItem::new(Line::from(vec![
-                            Span::styled(format!("   {marker} "), Style::default().fg(mc).add_modifier(Modifier::BOLD)),
+                            Span::styled(
+                                format!("   {marker} "),
+                                Style::default().fg(mc).add_modifier(Modifier::BOLD),
+                            ),
                             Span::styled(name.as_str(), Style::default().fg(lc)),
                         ]))
                     }
@@ -219,8 +246,14 @@ pub fn apply_select(
                             ("[-]", Color::Red, Color::DarkGray)
                         };
                         ListItem::new(Line::from(vec![
-                            Span::styled(format!("   {marker} "), Style::default().fg(mc).add_modifier(Modifier::BOLD)),
-                            Span::styled(format!("{slug} ({count} skills)"), Style::default().fg(lc)),
+                            Span::styled(
+                                format!("   {marker} "),
+                                Style::default().fg(mc).add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(
+                                format!("{slug} ({count} skills)"),
+                                Style::default().fg(lc),
+                            ),
                         ]))
                     }
                 })
@@ -236,15 +269,40 @@ pub fn apply_select(
 
             // Help bar
             let help = Paragraph::new(Line::from(vec![
-                Span::styled(" Space", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    " Space",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" toggle  ", Style::default().fg(Color::DarkGray)),
-                Span::styled("a", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "a",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" all  ", Style::default().fg(Color::DarkGray)),
-                Span::styled("n", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "n",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" none  ", Style::default().fg(Color::DarkGray)),
-                Span::styled("Enter", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Enter",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" confirm  ", Style::default().fg(Color::DarkGray)),
-                Span::styled("Esc", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Esc",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" cancel", Style::default().fg(Color::DarkGray)),
             ]));
             frame.render_widget(help, chunks[2]);
@@ -276,29 +334,31 @@ pub fn apply_select(
                         }
                     }
                 }
-                KeyCode::Char(' ') => {
-                    match &rows[cursor] {
-                        Row::Selector(i) => {
-                            selectors[*i].checked = !selectors[*i].checked;
-                        }
-                        Row::Preset(name) => {
-                            let current = is_preset_checked(name, &preset_overrides);
-                            preset_overrides.insert(name.clone(), !current);
-                        }
-                        Row::Flock(slug) => {
-                            let current = is_flock_checked(slug, &flock_overrides);
-                            flock_overrides.insert(slug.clone(), !current);
-                        }
-                        _ => {}
+                KeyCode::Char(' ') => match &rows[cursor] {
+                    Row::Selector(i) => {
+                        selectors[*i].checked = !selectors[*i].checked;
                     }
-                }
+                    Row::Preset(name) => {
+                        let current = is_preset_checked(name, &preset_overrides);
+                        preset_overrides.insert(name.clone(), !current);
+                    }
+                    Row::Flock(slug) => {
+                        let current = is_flock_checked(slug, &flock_overrides);
+                        flock_overrides.insert(slug.clone(), !current);
+                    }
+                    _ => {}
+                },
                 KeyCode::Char('a') => {
-                    for sel in selectors.iter_mut() { sel.checked = true; }
+                    for sel in selectors.iter_mut() {
+                        sel.checked = true;
+                    }
                     preset_overrides.values_mut().for_each(|v| *v = true);
                     flock_overrides.values_mut().for_each(|v| *v = true);
                 }
                 KeyCode::Char('n') => {
-                    for sel in selectors.iter_mut() { sel.checked = false; }
+                    for sel in selectors.iter_mut() {
+                        sel.checked = false;
+                    }
                     preset_overrides.values_mut().for_each(|v| *v = false);
                     flock_overrides.values_mut().for_each(|v| *v = false);
                 }

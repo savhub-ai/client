@@ -167,12 +167,8 @@ impl RuleExpression {
             RuleExpression::Check { index } => {
                 rules.get(*index).is_some_and(|rule| rule.evaluate(base))
             }
-            RuleExpression::And { operands } => {
-                operands.iter().all(|op| op.evaluate(base, rules))
-            }
-            RuleExpression::Or { operands } => {
-                operands.iter().any(|op| op.evaluate(base, rules))
-            }
+            RuleExpression::And { operands } => operands.iter().all(|op| op.evaluate(base, rules)),
+            RuleExpression::Or { operands } => operands.iter().any(|op| op.evaluate(base, rules)),
             RuleExpression::Not { operand } => !operand.evaluate(base, rules),
         }
     }
@@ -548,10 +544,7 @@ impl Parser {
         match self.advance() {
             Some(Token::Number(n)) => {
                 if n == 0 || n > self.max_index {
-                    bail!(
-                        "rule number {n} out of range (1..={})",
-                        self.max_index
-                    );
+                    bail!("rule number {n} out of range (1..={})", self.max_index);
                 }
                 Ok(RuleExpression::Check { index: n - 1 })
             }
@@ -784,9 +777,9 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             name: "Rust Project".to_string(),
             description: "Detects Rust projects by the presence of Cargo.toml.".to_string(),
             folder_scope: ".".to_string(),
-            rules: vec![
-                SelectorRule::FileExists { path: "Cargo.toml".to_string() },
-            ],
+            rules: vec![SelectorRule::FileExists {
+                path: "Cargo.toml".to_string(),
+            }],
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
             presets: vec![],
@@ -797,12 +790,19 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
         SelectorDefinition {
             id: "builtin-python-project".to_string(),
             name: "Python Project".to_string(),
-            description: "Detects Python projects by pyproject.toml or requirements.txt.".to_string(),
+            description: "Detects Python projects by pyproject.toml or requirements.txt."
+                .to_string(),
             folder_scope: ".".to_string(),
             rules: vec![
-                SelectorRule::FileExists { path: "pyproject.toml".to_string() },
-                SelectorRule::FileExists { path: "requirements.txt".to_string() },
-                SelectorRule::FileExists { path: "setup.py".to_string() },
+                SelectorRule::FileExists {
+                    path: "pyproject.toml".to_string(),
+                },
+                SelectorRule::FileExists {
+                    path: "requirements.txt".to_string(),
+                },
+                SelectorRule::FileExists {
+                    path: "setup.py".to_string(),
+                },
             ],
             match_mode: MatchMode::AnyMatch,
             custom_expression: String::new(),
@@ -816,9 +816,9 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             name: "Go Project".to_string(),
             description: "Detects Go projects by the presence of go.mod.".to_string(),
             folder_scope: ".".to_string(),
-            rules: vec![
-                SelectorRule::FileExists { path: "go.mod".to_string() },
-            ],
+            rules: vec![SelectorRule::FileExists {
+                path: "go.mod".to_string(),
+            }],
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
             presets: vec![],
@@ -832,9 +832,15 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             description: "Detects JVM projects via pom.xml or build.gradle.".to_string(),
             folder_scope: ".".to_string(),
             rules: vec![
-                SelectorRule::FileExists { path: "pom.xml".to_string() },
-                SelectorRule::FileExists { path: "build.gradle".to_string() },
-                SelectorRule::FileExists { path: "build.gradle.kts".to_string() },
+                SelectorRule::FileExists {
+                    path: "pom.xml".to_string(),
+                },
+                SelectorRule::FileExists {
+                    path: "build.gradle".to_string(),
+                },
+                SelectorRule::FileExists {
+                    path: "build.gradle.kts".to_string(),
+                },
             ],
             match_mode: MatchMode::AnyMatch,
             custom_expression: String::new(),
@@ -850,7 +856,9 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             description: "Detects Rust projects using the Salvo web framework.".to_string(),
             folder_scope: ".".to_string(),
             rules: vec![
-                SelectorRule::FileExists { path: "Cargo.toml".to_string() },
+                SelectorRule::FileExists {
+                    path: "Cargo.toml".to_string(),
+                },
                 SelectorRule::FileRegex {
                     path: "Cargo.toml".to_string(),
                     pattern: r#"salvo\s*="#.to_string(),
@@ -869,7 +877,9 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             description: "Detects Rust projects using the Actix-web framework.".to_string(),
             folder_scope: ".".to_string(),
             rules: vec![
-                SelectorRule::FileExists { path: "Cargo.toml".to_string() },
+                SelectorRule::FileExists {
+                    path: "Cargo.toml".to_string(),
+                },
                 SelectorRule::FileRegex {
                     path: "Cargo.toml".to_string(),
                     pattern: r#"actix-web\s*="#.to_string(),
@@ -888,7 +898,9 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             description: "Detects Rust projects using the Axum web framework.".to_string(),
             folder_scope: ".".to_string(),
             rules: vec![
-                SelectorRule::FileExists { path: "Cargo.toml".to_string() },
+                SelectorRule::FileExists {
+                    path: "Cargo.toml".to_string(),
+                },
                 SelectorRule::FileRegex {
                     path: "Cargo.toml".to_string(),
                     pattern: r#"axum\s*="#.to_string(),
@@ -907,7 +919,9 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             description: "Detects Rust projects using the Dioxus UI framework.".to_string(),
             folder_scope: ".".to_string(),
             rules: vec![
-                SelectorRule::FileExists { path: "Cargo.toml".to_string() },
+                SelectorRule::FileExists {
+                    path: "Cargo.toml".to_string(),
+                },
                 SelectorRule::FileRegex {
                     path: "Cargo.toml".to_string(),
                     pattern: r#"dioxus\s*="#.to_string(),
@@ -927,8 +941,12 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             description: "Detects Node.js or TypeScript frontend projects.".to_string(),
             folder_scope: ".".to_string(),
             rules: vec![
-                SelectorRule::FileExists { path: "package.json".to_string() },
-                SelectorRule::FileExists { path: "tsconfig.json".to_string() },
+                SelectorRule::FileExists {
+                    path: "package.json".to_string(),
+                },
+                SelectorRule::FileExists {
+                    path: "tsconfig.json".to_string(),
+                },
             ],
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
@@ -940,10 +958,13 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
         SelectorDefinition {
             id: "builtin-react-project".to_string(),
             name: "React".to_string(),
-            description: "Detects React projects by checking package.json for react dependency.".to_string(),
+            description: "Detects React projects by checking package.json for react dependency."
+                .to_string(),
             folder_scope: ".".to_string(),
             rules: vec![
-                SelectorRule::FileExists { path: "package.json".to_string() },
+                SelectorRule::FileExists {
+                    path: "package.json".to_string(),
+                },
                 SelectorRule::FileRegex {
                     path: "package.json".to_string(),
                     pattern: r#""react"\s*:"#.to_string(),
@@ -959,10 +980,13 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
         SelectorDefinition {
             id: "builtin-vue-project".to_string(),
             name: "Vue".to_string(),
-            description: "Detects Vue.js projects by checking package.json for vue dependency.".to_string(),
+            description: "Detects Vue.js projects by checking package.json for vue dependency."
+                .to_string(),
             folder_scope: ".".to_string(),
             rules: vec![
-                SelectorRule::FileExists { path: "package.json".to_string() },
+                SelectorRule::FileExists {
+                    path: "package.json".to_string(),
+                },
                 SelectorRule::FileRegex {
                     path: "package.json".to_string(),
                     pattern: r#""vue"\s*:"#.to_string(),
@@ -978,10 +1002,13 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
         SelectorDefinition {
             id: "builtin-angular-project".to_string(),
             name: "Angular".to_string(),
-            description: "Detects Angular projects by checking package.json for @angular/core.".to_string(),
+            description: "Detects Angular projects by checking package.json for @angular/core."
+                .to_string(),
             folder_scope: ".".to_string(),
             rules: vec![
-                SelectorRule::FileExists { path: "package.json".to_string() },
+                SelectorRule::FileExists {
+                    path: "package.json".to_string(),
+                },
                 SelectorRule::FileRegex {
                     path: "package.json".to_string(),
                     pattern: r#""@angular/core"\s*:"#.to_string(),
@@ -997,10 +1024,13 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
         SelectorDefinition {
             id: "builtin-svelte-project".to_string(),
             name: "Svelte".to_string(),
-            description: "Detects Svelte projects by checking package.json for svelte dependency.".to_string(),
+            description: "Detects Svelte projects by checking package.json for svelte dependency."
+                .to_string(),
             folder_scope: ".".to_string(),
             rules: vec![
-                SelectorRule::FileExists { path: "package.json".to_string() },
+                SelectorRule::FileExists {
+                    path: "package.json".to_string(),
+                },
                 SelectorRule::FileRegex {
                     path: "package.json".to_string(),
                     pattern: r#""svelte"\s*:"#.to_string(),
@@ -1016,10 +1046,13 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
         SelectorDefinition {
             id: "builtin-nextjs-project".to_string(),
             name: "Next.js".to_string(),
-            description: "Detects Next.js projects by checking package.json for next dependency.".to_string(),
+            description: "Detects Next.js projects by checking package.json for next dependency."
+                .to_string(),
             folder_scope: ".".to_string(),
             rules: vec![
-                SelectorRule::FileExists { path: "package.json".to_string() },
+                SelectorRule::FileExists {
+                    path: "package.json".to_string(),
+                },
                 SelectorRule::FileRegex {
                     path: "package.json".to_string(),
                     pattern: r#""next"\s*:"#.to_string(),
@@ -1035,10 +1068,13 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
         SelectorDefinition {
             id: "builtin-nuxt-project".to_string(),
             name: "Nuxt".to_string(),
-            description: "Detects Nuxt projects by checking package.json for nuxt dependency.".to_string(),
+            description: "Detects Nuxt projects by checking package.json for nuxt dependency."
+                .to_string(),
             folder_scope: ".".to_string(),
             rules: vec![
-                SelectorRule::FileExists { path: "package.json".to_string() },
+                SelectorRule::FileExists {
+                    path: "package.json".to_string(),
+                },
                 SelectorRule::FileRegex {
                     path: "package.json".to_string(),
                     pattern: r#""nuxt"\s*:"#.to_string(),
@@ -1058,9 +1094,15 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             description: "Scopes detection to a workspace folder inside a monorepo.".to_string(),
             folder_scope: "apps/web".to_string(),
             rules: vec![
-                SelectorRule::FileExists { path: "package.json".to_string() },
-                SelectorRule::FileExists { path: "vite.config.ts".to_string() },
-                SelectorRule::FileExists { path: "../pnpm-workspace.yaml".to_string() },
+                SelectorRule::FileExists {
+                    path: "package.json".to_string(),
+                },
+                SelectorRule::FileExists {
+                    path: "vite.config.ts".to_string(),
+                },
+                SelectorRule::FileExists {
+                    path: "../pnpm-workspace.yaml".to_string(),
+                },
             ],
             match_mode: MatchMode::Custom,
             custom_expression: "(1 && 2) || 3".to_string(),

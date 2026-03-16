@@ -64,7 +64,6 @@ enum SkillInstallState {
     Outdated,
 }
 
-
 fn skill_install_state(
     skill: &DisplaySkill,
     installed_versions: &BTreeMap<String, String>,
@@ -271,7 +270,9 @@ pub fn ExplorePage() -> Element {
     // Filter flocks by search query when grouped
     let filtered_flocks: Vec<RegistryFlock> = if is_grouped {
         let search_lower = query.read().to_lowercase();
-        flocks_data.read().iter()
+        flocks_data
+            .read()
+            .iter()
             .filter(|f| {
                 search_lower.is_empty()
                     || f.name.to_lowercase().contains(&search_lower)
@@ -593,21 +594,30 @@ fn SkillListRow(
                     } else {
                         savhub_local::registry::install_skill_from_registry(&s).map(|_| ())
                     }
-                }).await.map_err(|e| e.to_string()).and_then(|r| r.map_err(|e| e.to_string()))
+                })
+                .await
+                .map_err(|e| e.to_string())
+                .and_then(|r| r.map_err(|e| e.to_string()))
             };
             match result {
                 Ok(()) => {
                     installed_versions.with_mut(|entries| {
-                        if uninstall { entries.remove(&slug); } else { entries.insert(slug.clone(), "installed".to_string()); }
+                        if uninstall {
+                            entries.remove(&slug);
+                        } else {
+                            entries.insert(slug.clone(), "installed".to_string());
+                        }
                     });
                     if !uninstall {
                         let track_slug = slug.clone();
                         let track_client = state.api_client();
                         tokio::spawn(async move {
-                            let _ = track_client.post_json::<serde_json::Value, serde_json::Value>(
-                                &format!("/skills/{track_slug}/install"),
-                                &serde_json::json!({ "client_type": "desktop" }),
-                            ).await;
+                            let _ = track_client
+                                .post_json::<serde_json::Value, serde_json::Value>(
+                                    &format!("/skills/{track_slug}/install"),
+                                    &serde_json::json!({ "client_type": "desktop" }),
+                                )
+                                .await;
                         });
                     }
                 }
@@ -702,21 +712,30 @@ fn SkillCard(
                     } else {
                         savhub_local::registry::install_skill_from_registry(&s).map(|_| ())
                     }
-                }).await.map_err(|e| e.to_string()).and_then(|r| r.map_err(|e| e.to_string()))
+                })
+                .await
+                .map_err(|e| e.to_string())
+                .and_then(|r| r.map_err(|e| e.to_string()))
             };
             match result {
                 Ok(()) => {
                     installed_versions.with_mut(|entries| {
-                        if uninstall { entries.remove(&slug); } else { entries.insert(slug.clone(), "installed".to_string()); }
+                        if uninstall {
+                            entries.remove(&slug);
+                        } else {
+                            entries.insert(slug.clone(), "installed".to_string());
+                        }
                     });
                     if !uninstall {
                         let track_slug = slug.clone();
                         let track_client = state.api_client();
                         tokio::spawn(async move {
-                            let _ = track_client.post_json::<serde_json::Value, serde_json::Value>(
-                                &format!("/skills/{track_slug}/install"),
-                                &serde_json::json!({ "client_type": "desktop" }),
-                            ).await;
+                            let _ = track_client
+                                .post_json::<serde_json::Value, serde_json::Value>(
+                                    &format!("/skills/{track_slug}/install"),
+                                    &serde_json::json!({ "client_type": "desktop" }),
+                                )
+                                .await;
                         });
                     }
                 }
@@ -794,7 +813,8 @@ fn FlockListRow(
     let mut working = use_signal(|| false);
     let mut action_error = use_signal(|| Option::<String>::None);
     let flock_slug = flock.slug.clone();
-    let skill_slugs = savhub_local::registry::list_flock_skill_slugs(&flock_slug).unwrap_or_default();
+    let skill_slugs =
+        savhub_local::registry::list_flock_skill_slugs(&flock_slug).unwrap_or_default();
     let skill_count = skill_slugs.len();
     let all_installed = skill_count > 0 && {
         let map = installed_versions.read();
@@ -822,22 +842,31 @@ fn FlockListRow(
                     } else {
                         savhub_local::registry::install_skill_from_registry(&s).map(|_| ())
                     }
-                }).await.map_err(|e| e.to_string()).and_then(|r| r.map_err(|e| e.to_string()));
+                })
+                .await
+                .map_err(|e| e.to_string())
+                .and_then(|r| r.map_err(|e| e.to_string()));
                 if let Err(e) = result {
                     action_error.set(Some(e.to_string()));
                     break;
                 }
                 installed_versions.with_mut(|map| {
-                    if uninstall { map.remove(slug); } else { map.insert(slug.clone(), "installed".to_string()); }
+                    if uninstall {
+                        map.remove(slug);
+                    } else {
+                        map.insert(slug.clone(), "installed".to_string());
+                    }
                 });
                 if !uninstall {
                     let track_slug = slug.clone();
                     let track_client = state.api_client();
                     tokio::spawn(async move {
-                        let _ = track_client.post_json::<serde_json::Value, serde_json::Value>(
-                            &format!("/skills/{track_slug}/install"),
-                            &serde_json::json!({ "client_type": "desktop" }),
-                        ).await;
+                        let _ = track_client
+                            .post_json::<serde_json::Value, serde_json::Value>(
+                                &format!("/skills/{track_slug}/install"),
+                                &serde_json::json!({ "client_type": "desktop" }),
+                            )
+                            .await;
                     });
                 }
             }
@@ -910,7 +939,8 @@ fn FlockCard(
     let mut working = use_signal(|| false);
     let mut action_error = use_signal(|| Option::<String>::None);
     let flock_slug = flock.slug.clone();
-    let skill_slugs = savhub_local::registry::list_flock_skill_slugs(&flock_slug).unwrap_or_default();
+    let skill_slugs =
+        savhub_local::registry::list_flock_skill_slugs(&flock_slug).unwrap_or_default();
     let skill_count = skill_slugs.len();
     let all_installed = skill_count > 0 && {
         let map = installed_versions.read();
@@ -938,22 +968,31 @@ fn FlockCard(
                     } else {
                         savhub_local::registry::install_skill_from_registry(&s).map(|_| ())
                     }
-                }).await.map_err(|e| e.to_string()).and_then(|r| r.map_err(|e| e.to_string()));
+                })
+                .await
+                .map_err(|e| e.to_string())
+                .and_then(|r| r.map_err(|e| e.to_string()));
                 if let Err(e) = result {
                     action_error.set(Some(e.to_string()));
                     break;
                 }
                 installed_versions.with_mut(|map| {
-                    if uninstall { map.remove(slug); } else { map.insert(slug.clone(), "installed".to_string()); }
+                    if uninstall {
+                        map.remove(slug);
+                    } else {
+                        map.insert(slug.clone(), "installed".to_string());
+                    }
                 });
                 if !uninstall {
                     let track_slug = slug.clone();
                     let track_client = state.api_client();
                     tokio::spawn(async move {
-                        let _ = track_client.post_json::<serde_json::Value, serde_json::Value>(
-                            &format!("/skills/{track_slug}/install"),
-                            &serde_json::json!({ "client_type": "desktop" }),
-                        ).await;
+                        let _ = track_client
+                            .post_json::<serde_json::Value, serde_json::Value>(
+                                &format!("/skills/{track_slug}/install"),
+                                &serde_json::json!({ "client_type": "desktop" }),
+                            )
+                            .await;
                     });
                 }
             }

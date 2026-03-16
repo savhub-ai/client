@@ -201,10 +201,7 @@ impl ApiClient {
 /// Convert a server API `SkillListItem` into our unified `SkillEntry`.
 #[allow(dead_code)]
 pub fn skill_list_item_to_entry(item: &SkillListItem) -> SkillEntry {
-    let version = item
-        .latest_version
-        .as_ref()
-        .map(|v| v.version.clone());
+    let version = item.latest_version.as_ref().map(|v| v.version.clone());
     SkillEntry {
         slug: item.slug.clone(),
         name: item.display_name.clone(),
@@ -244,7 +241,10 @@ pub async fn fetch_remote_skills(
     let resp = client
         .get_json::<PagedResponse<SkillListItem>>(&format!(
             "/skills?limit={limit}{}{}",
-            query.filter(|q| !q.is_empty()).map(|q| format!("&q={q}")).unwrap_or_default(),
+            query
+                .filter(|q| !q.is_empty())
+                .map(|q| format!("&q={q}"))
+                .unwrap_or_default(),
             cursor.map(|c| format!("&cursor={c}")).unwrap_or_default(),
         ))
         .await?;

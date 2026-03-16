@@ -25,12 +25,12 @@ use savhub_local::presets::{
 };
 use savhub_local::skills::LockEntry as ProjectLockEntry;
 use savhub_shared::{
-    BanUserRequest, BanUserResponse, DeleteResponse, FileContentResponse, MAX_BUNDLE_BYTES,
-    ModerationStatus, ModerationUpdateRequest, PagedResponse, PublishBundleFile, IndexRequest,
+    BanUserRequest, BanUserResponse, DeleteResponse, FileContentResponse, IndexRequest,
+    MAX_BUNDLE_BYTES, ModerationStatus, ModerationUpdateRequest, PagedResponse, PublishBundleFile,
     PublishResponse, ResolveResponse, RoleUpdateResponse, SearchResponse, SetUserRoleRequest,
-    SkillDetailResponse, SkillListItem, ToggleStarResponse,
-    UserListResponse, UserRole, UserSummary, WhoAmIResponse, is_slug,
-    normalize_bundle_files, normalize_tags, total_bundle_bytes,
+    SkillDetailResponse, SkillListItem, ToggleStarResponse, UserListResponse, UserRole,
+    UserSummary, WhoAmIResponse, is_slug, normalize_bundle_files, normalize_tags,
+    total_bundle_bytes,
 };
 use semver::Version;
 use serde_json::json;
@@ -79,7 +79,11 @@ struct TransferDecisionResponse {
 }
 
 #[derive(Debug, Parser)]
-#[command(name = "savhub", version, about = "Savhub CLI\n\nDocumentation: https://savhub.ai/docs/en/client")]
+#[command(
+    name = "savhub",
+    version,
+    about = "Savhub CLI\n\nDocumentation: https://savhub.ai/docs/en/client"
+)]
 struct Cli {
     #[arg(long, global = true)]
     workdir: Option<PathBuf>,
@@ -474,17 +478,78 @@ struct TransferListArgs {
 
 // Retained for internal handler code (commands removed from CLI surface)
 #[derive(Debug, Args)]
-struct PublishArgs { path: PathBuf, #[arg(long)] slug: Option<String>, #[arg(long="name")] display_name: Option<String>, #[arg(long)] version: Option<String>, #[arg(long)] changelog: Option<String>, #[arg(long, default_value="latest")] tags: String }
+struct PublishArgs {
+    path: PathBuf,
+    #[arg(long)]
+    slug: Option<String>,
+    #[arg(long = "name")]
+    display_name: Option<String>,
+    #[arg(long)]
+    version: Option<String>,
+    #[arg(long)]
+    changelog: Option<String>,
+    #[arg(long, default_value = "latest")]
+    tags: String,
+}
 #[derive(Debug, Args)]
-struct SyncArgs { #[arg(long="root")] roots: Vec<PathBuf>, #[arg(long, action=ArgAction::SetTrue)] all: bool, #[arg(long="dry-run", action=ArgAction::SetTrue)] dry_run: bool, #[arg(long, default_value="patch")] bump: String, #[arg(long)] changelog: Option<String>, #[arg(long, default_value="latest")] tags: String, #[arg(long, default_value_t=4)] concurrency: usize }
+struct SyncArgs {
+    #[arg(long = "root")]
+    roots: Vec<PathBuf>,
+    #[arg(long, action=ArgAction::SetTrue)]
+    all: bool,
+    #[arg(long="dry-run", action=ArgAction::SetTrue)]
+    dry_run: bool,
+    #[arg(long, default_value = "patch")]
+    bump: String,
+    #[arg(long)]
+    changelog: Option<String>,
+    #[arg(long, default_value = "latest")]
+    tags: String,
+    #[arg(long, default_value_t = 4)]
+    concurrency: usize,
+}
 #[derive(Debug, Args)]
-struct BanUserArgs { handle_or_id: String, #[arg(long, action=ArgAction::SetTrue)] id: bool, #[arg(long, action=ArgAction::SetTrue)] fuzzy: bool, #[arg(long)] reason: Option<String>, #[arg(long, action=ArgAction::SetTrue)] yes: bool }
+struct BanUserArgs {
+    handle_or_id: String,
+    #[arg(long, action=ArgAction::SetTrue)]
+    id: bool,
+    #[arg(long, action=ArgAction::SetTrue)]
+    fuzzy: bool,
+    #[arg(long)]
+    reason: Option<String>,
+    #[arg(long, action=ArgAction::SetTrue)]
+    yes: bool,
+}
 #[derive(Debug, Args)]
-struct SetRoleArgs { handle_or_id: String, role: String, #[arg(long, action=ArgAction::SetTrue)] id: bool, #[arg(long, action=ArgAction::SetTrue)] fuzzy: bool, #[arg(long, action=ArgAction::SetTrue)] yes: bool }
+struct SetRoleArgs {
+    handle_or_id: String,
+    role: String,
+    #[arg(long, action=ArgAction::SetTrue)]
+    id: bool,
+    #[arg(long, action=ArgAction::SetTrue)]
+    fuzzy: bool,
+    #[arg(long, action=ArgAction::SetTrue)]
+    yes: bool,
+}
 #[allow(dead_code)]
-#[derive(Debug, Clone)] struct SyncCandidate { skill: SkillFolder, local_version: String, latest_version: Option<String>, matched_version: Option<String>, file_count: usize, status: SyncStatus, issue: Option<String> }
+#[derive(Debug, Clone)]
+struct SyncCandidate {
+    skill: SkillFolder,
+    local_version: String,
+    latest_version: Option<String>,
+    matched_version: Option<String>,
+    file_count: usize,
+    status: SyncStatus,
+    issue: Option<String>,
+}
 #[allow(dead_code)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)] enum SyncStatus { New, Update, Synced, Blocked }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SyncStatus {
+    New,
+    Update,
+    Synced,
+    Blocked,
+}
 
 #[derive(Debug, Clone)]
 struct GlobalOpts {
@@ -537,11 +602,19 @@ async fn main() -> Result<()> {
             let url = "https://savhub.ai/docs/en/client";
             println!("Documentation: {url}");
             #[cfg(target_os = "windows")]
-            { let _ = std::process::Command::new("cmd").args(["/C", "start", "", url]).spawn(); }
+            {
+                let _ = std::process::Command::new("cmd")
+                    .args(["/C", "start", "", url])
+                    .spawn();
+            }
             #[cfg(target_os = "macos")]
-            { let _ = std::process::Command::new("open").arg(url).spawn(); }
+            {
+                let _ = std::process::Command::new("open").arg(url).spawn();
+            }
             #[cfg(target_os = "linux")]
-            { let _ = std::process::Command::new("xdg-open").arg(url).spawn(); }
+            {
+                let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+            }
         }
         None => println!("Run `savhub --help` for available commands."),
     }
@@ -792,7 +865,11 @@ fn handle_login_callback(stream: &mut TcpStream) -> Result<Option<String>> {
 }
 
 fn write_callback_page(stream: &mut TcpStream, message: &str, is_error: bool) -> Result<()> {
-    let title = if is_error { "Login Failed" } else { "Login Complete" };
+    let title = if is_error {
+        "Login Failed"
+    } else {
+        "Login Complete"
+    };
     let accent = if is_error { "#c0392b" } else { "#287850" };
     let body = format!(
         r##"<!doctype html><html><head><meta charset="utf-8"><title>Savhub — {title}</title>
@@ -2077,10 +2154,13 @@ async fn publish_folder(
         );
     }
 
-    let publish_files: Vec<PublishBundleFile> = files.into_iter().map(|f| PublishBundleFile {
-        path: f.path,
-        content: f.content,
-    }).collect();
+    let publish_files: Vec<PublishBundleFile> = files
+        .into_iter()
+        .map(|f| PublishBundleFile {
+            path: f.path,
+            content: f.content,
+        })
+        .collect();
     let request = IndexRequest {
         slug: slug.clone(),
         display_name,
@@ -2469,11 +2549,7 @@ fn cmd_preset(opts: &GlobalOpts, command: PresetCommand) -> Result<()> {
                 bail!("preset '{}' not found", args.name);
             }
             presets::write_project_preset(&opts.workdir, &args.name)?;
-            println!(
-                "Bound preset '{}' to {}",
-                args.name,
-                opts.workdir.display()
-            );
+            println!("Bound preset '{}' to {}", args.name, opts.workdir.display());
         }
         PresetCommand::Unbind => {
             presets::remove_project_preset(&opts.workdir)?;
@@ -2635,19 +2711,17 @@ async fn cmd_registry(_opts: &GlobalOpts, command: RegistryCommand) -> Result<()
                 false => println!("Already up to date."),
             }
         }
-        RegistryCommand::Info => {
-            match registry::sync_info()? {
-                Some(info) => {
-                    println!("Registry cache:");
-                    println!("  Commit:  {}", info.commit_sha);
-                    println!("  Synced:  {}", info.synced_at);
-                    println!("  Skills:  {}", info.skill_count);
-                }
-                None => {
-                    println!("Registry cache is empty. Run `savhub registry sync` first.");
-                }
+        RegistryCommand::Info => match registry::sync_info()? {
+            Some(info) => {
+                println!("Registry cache:");
+                println!("  Commit:  {}", info.commit_sha);
+                println!("  Synced:  {}", info.synced_at);
+                println!("  Skills:  {}", info.skill_count);
             }
-        }
+            None => {
+                println!("Registry cache is empty. Run `savhub registry sync` first.");
+            }
+        },
         RegistryCommand::Search(args) => {
             ensure_registry_cache().await?;
             let query = args.query.join(" ");
@@ -2660,7 +2734,9 @@ async fn cmd_registry(_opts: &GlobalOpts, command: RegistryCommand) -> Result<()
                 let summary = truncate(skill.description.as_deref().unwrap_or(""), 60);
                 println!(
                     "  {:<30} v{:<10} {}",
-                    skill.slug, skill.version.as_deref().unwrap_or("-"), summary
+                    skill.slug,
+                    skill.version.as_deref().unwrap_or("-"),
+                    summary
                 );
             }
             println!("\n{} result(s)", results.len());
@@ -2668,8 +2744,12 @@ async fn cmd_registry(_opts: &GlobalOpts, command: RegistryCommand) -> Result<()
         RegistryCommand::List(args) => {
             ensure_registry_cache().await?;
             let page = args.page.saturating_sub(1); // user-facing 1-based
-            let (skills, total) =
-                registry::list_skills(args.query.as_deref(), args.status.as_deref(), page, args.page_size)?;
+            let (skills, total) = registry::list_skills(
+                args.query.as_deref(),
+                args.status.as_deref(),
+                page,
+                args.page_size,
+            )?;
 
             if args.json {
                 let out = serde_json::json!({
@@ -2691,7 +2771,9 @@ async fn cmd_registry(_opts: &GlobalOpts, command: RegistryCommand) -> Result<()
                 let summary = truncate(skill.description.as_deref().unwrap_or(""), 55);
                 println!(
                     "  {:<30} v{:<10} {}",
-                    skill.slug, skill.version.as_deref().unwrap_or("-"), summary
+                    skill.slug,
+                    skill.version.as_deref().unwrap_or("-"),
+                    summary
                 );
             }
 
@@ -2738,7 +2820,11 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
                 return Ok(());
             }
             for d in &store.selectors {
-                let pri = if d.priority != 0 { format!(" [P{}]", d.priority) } else { String::new() };
+                let pri = if d.priority != 0 {
+                    format!(" [P{}]", d.priority)
+                } else {
+                    String::new()
+                };
                 let rules = d.rules.len();
                 let skills = d.add_skills.len();
                 let presets = d.presets.len();
@@ -2756,11 +2842,18 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
         SelectorCommand::Show(args) => {
             let store = read_selectors_store()?;
             let query = args.name.to_lowercase();
-            let found: Vec<_> = store.selectors.iter()
-                .filter(|d| d.name.to_lowercase().contains(&query) || d.id.to_lowercase().contains(&query))
+            let found: Vec<_> = store
+                .selectors
+                .iter()
+                .filter(|d| {
+                    d.name.to_lowercase().contains(&query) || d.id.to_lowercase().contains(&query)
+                })
                 .collect();
             if found.is_empty() {
-                println!("No selector matching \"{}\". Use `savhub selector list` to see all.", args.name);
+                println!(
+                    "No selector matching \"{}\". Use `savhub selector list` to see all.",
+                    args.name
+                );
                 return Ok(());
             }
             for d in &found {
@@ -2802,7 +2895,10 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
             println!("Matched selectors for {}:", opts.workdir.display());
             for m in &result.matched {
                 let pri = m.selector.priority;
-                println!("  [+] {} (P{pri}) — {}", m.selector.name, m.selector.description);
+                println!(
+                    "  [+] {} (P{pri}) — {}",
+                    m.selector.name, m.selector.description
+                );
             }
             if !result.presets.is_empty() {
                 println!("\nPresets: {}", result.presets.join(", "));
@@ -2836,7 +2932,10 @@ fn cmd_flock(_opts: &GlobalOpts, command: FlockCommand) -> Result<()> {
                 let skill_count = registry::list_flock_skill_slugs(&flock.slug)
                     .map(|s| s.len())
                     .unwrap_or(0);
-                println!("  {:<24} {:>3} skill(s)  {}", flock.slug, skill_count, flock.name);
+                println!(
+                    "  {:<24} {:>3} skill(s)  {}",
+                    flock.slug, skill_count, flock.name
+                );
                 if !flock.description.is_empty() {
                     let desc: String = flock.description.chars().take(72).collect();
                     println!("    {desc}");
@@ -2847,7 +2946,10 @@ fn cmd_flock(_opts: &GlobalOpts, command: FlockCommand) -> Result<()> {
         FlockCommand::Show(args) => {
             let flock = registry::get_flock_by_slug(&args.slug)?;
             let Some(flock) = flock else {
-                println!("Flock \"{}\" not found. Run `savhub flock list` to see available flocks.", args.slug);
+                println!(
+                    "Flock \"{}\" not found. Run `savhub flock list` to see available flocks.",
+                    args.slug
+                );
                 return Ok(());
             };
             println!("Name:        {}", flock.name);
@@ -2883,7 +2985,11 @@ fn cmd_flock(_opts: &GlobalOpts, command: FlockCommand) -> Result<()> {
             }
             if !args.yes {
                 let proceed = Confirm::new()
-                    .with_prompt(format!("Install {} skill(s) from flock \"{}\"?", skill_slugs.len(), flock.slug))
+                    .with_prompt(format!(
+                        "Install {} skill(s) from flock \"{}\"?",
+                        skill_slugs.len(),
+                        flock.slug
+                    ))
                     .default(true)
                     .interact()?;
                 if !proceed {
@@ -2901,7 +3007,10 @@ fn cmd_flock(_opts: &GlobalOpts, command: FlockCommand) -> Result<()> {
                 if !lockfile.skills.contains_key(slug) {
                     lockfile.skills.insert(
                         slug.clone(),
-                        ProjectLockEntry { version: "latest".to_string(), installed_at: now },
+                        ProjectLockEntry {
+                            version: "latest".to_string(),
+                            installed_at: now,
+                        },
                     );
                     added += 1;
                     println!("  Added: {slug}");
@@ -2912,7 +3021,10 @@ fn cmd_flock(_opts: &GlobalOpts, command: FlockCommand) -> Result<()> {
             if added > 0 {
                 write_project_added_skills(&_opts.workdir, &lockfile)?;
             }
-            println!("\nDone. {added} skill(s) added from flock \"{}\".", flock.slug);
+            println!(
+                "\nDone. {added} skill(s) added from flock \"{}\".",
+                flock.slug
+            );
         }
     }
     Ok(())
@@ -2923,13 +3035,17 @@ fn cmd_flock(_opts: &GlobalOpts, command: FlockCommand) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
-    use savhub_local::selectors::run_selectors;
     use savhub_local::presets::read_presets_store;
     use savhub_local::registry;
+    use savhub_local::selectors::run_selectors;
 
     // Trim and deduplicate all list args
     fn clean(v: &mut Vec<String>) {
-        *v = v.iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+        *v = v
+            .iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
         v.dedup();
     }
     clean(&mut args.agents);
@@ -2957,21 +3073,31 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     let result = run_selectors(workdir)?;
 
     if result.matched.is_empty() {
-        println!("No selectors matched this project. All skills previously applied by savhub will be removed.");
+        println!(
+            "No selectors matched this project. All skills previously applied by savhub will be removed."
+        );
 
         // Read savhub.lock for installed skills
         let lockfile = savhub_local::presets::read_project_lockfile(workdir)?;
 
         if !lockfile.skills.is_empty() {
             // Group by repo for display
-            let mut by_repo: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
+            let mut by_repo: std::collections::BTreeMap<String, Vec<String>> =
+                std::collections::BTreeMap::new();
             for s in &lockfile.skills {
-                by_repo.entry(s.repo.clone()).or_default().push(s.slug().to_string());
+                by_repo
+                    .entry(s.repo.clone())
+                    .or_default()
+                    .push(s.slug().to_string());
             }
             println!("\nSkills to remove:");
             for (repo, slugs) in &by_repo {
-                if !repo.is_empty() { println!("  \x1b[2m{repo}\x1b[0m"); }
-                for slug in slugs { println!("    \x1b[31m[-]\x1b[0m {slug}"); }
+                if !repo.is_empty() {
+                    println!("  \x1b[2m{repo}\x1b[0m");
+                }
+                for slug in slugs {
+                    println!("    \x1b[31m[-]\x1b[0m {slug}");
+                }
             }
 
             if !args.yes && opts.input_allowed {
@@ -2993,8 +3119,12 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             for skill in &lockfile.skills {
                 let slug = skill.slug();
                 for client in &all_clients {
-                    if !client.installed { continue; }
-                    let Some(rel_dir) = client.kind.project_skills_dir() else { continue; };
+                    if !client.installed {
+                        continue;
+                    }
+                    let Some(rel_dir) = client.kind.project_skills_dir() else {
+                        continue;
+                    };
                     let _ = std::fs::remove_dir_all(workdir.join(rel_dir).join(slug));
                 }
             }
@@ -3016,7 +3146,10 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         if lockfile.skills.is_empty() {
             println!("No installed skills to remove.");
         } else {
-            println!("\n\x1b[32mDone.\x1b[0m {} skill(s) removed.", lockfile.skills.len());
+            println!(
+                "\n\x1b[32mDone.\x1b[0m {} skill(s) removed.",
+                lockfile.skills.len()
+            );
         }
 
         return Ok(());
@@ -3026,7 +3159,11 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     let existing_config = savhub_local::presets::read_project_config(workdir)?;
 
     // ── Collect all matched items ──
-    let matched_selector_names: Vec<String> = result.matched.iter().map(|m| m.selector.name.clone()).collect();
+    let matched_selector_names: Vec<String> = result
+        .matched
+        .iter()
+        .map(|m| m.selector.name.clone())
+        .collect();
     let matched_presets: Vec<String> = result.presets.clone();
     let mut matched_flocks: Vec<String> = result.flocks.clone();
     for preset_name in &matched_presets {
@@ -3055,47 +3192,72 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         // Print summary
         if !selected_selectors.is_empty() {
             println!("\nSelectors:");
-            for s in &selected_selectors { println!("  \x1b[32m[+]\x1b[0m {s}"); }
+            for s in &selected_selectors {
+                println!("  \x1b[32m[+]\x1b[0m {s}");
+            }
         }
         if !selected_presets.is_empty() {
             println!("\nPresets:");
-            for p in &selected_presets { println!("  \x1b[32m[+]\x1b[0m {p}"); }
+            for p in &selected_presets {
+                println!("  \x1b[32m[+]\x1b[0m {p}");
+            }
         }
         if !selected_flocks.is_empty() {
             println!("\nFlocks:");
-            for f in &selected_flocks { println!("  \x1b[32m[+]\x1b[0m {f}"); }
+            for f in &selected_flocks {
+                println!("  \x1b[32m[+]\x1b[0m {f}");
+            }
         }
     } else {
         // Build TUI selectors with their contributed presets/flocks
-        let mut tui_selectors: Vec<tui::MatchedSelector> = result.matched.iter().map(|m| {
-            let pri = m.selector.priority;
-            // Collect flocks: direct from selector + from presets it contributes
-            let mut sel_flocks = m.flocks.clone();
-            for preset_name in &m.presets {
-                if let Some(preset) = preset_store.presets.get(preset_name) {
-                    for f in &preset.flocks {
-                        if !sel_flocks.contains(f) { sel_flocks.push(f.clone()); }
+        let mut tui_selectors: Vec<tui::MatchedSelector> = result
+            .matched
+            .iter()
+            .map(|m| {
+                let pri = m.selector.priority;
+                // Collect flocks: direct from selector + from presets it contributes
+                let mut sel_flocks = m.flocks.clone();
+                for preset_name in &m.presets {
+                    if let Some(preset) = preset_store.presets.get(preset_name) {
+                        for f in &preset.flocks {
+                            if !sel_flocks.contains(f) {
+                                sel_flocks.push(f.clone());
+                            }
+                        }
                     }
                 }
-            }
-            tui::MatchedSelector {
-                name: m.selector.name.clone(),
-                label: format!("{} (P{pri}) — {}", m.selector.name, m.selector.description),
-                checked: !existing_config.selectors.manual_skipped.contains(&m.selector.name),
-                presets: m.presets.clone(),
-                flocks: sel_flocks,
-            }
-        }).collect();
+                tui::MatchedSelector {
+                    name: m.selector.name.clone(),
+                    label: format!("{} (P{pri}) — {}", m.selector.name, m.selector.description),
+                    checked: !existing_config
+                        .selectors
+                        .manual_skipped
+                        .contains(&m.selector.name),
+                    presets: m.presets.clone(),
+                    flocks: sel_flocks,
+                }
+            })
+            .collect();
 
-        let preset_skip: BTreeSet<String> = existing_config.presets.manual_skipped.iter().cloned().collect();
-        let flock_skip: BTreeSet<String> = existing_config.flocks.manual_skipped.iter().cloned().collect();
+        let preset_skip: BTreeSet<String> = existing_config
+            .presets
+            .manual_skipped
+            .iter()
+            .cloned()
+            .collect();
+        let flock_skip: BTreeSet<String> = existing_config
+            .flocks
+            .manual_skipped
+            .iter()
+            .cloned()
+            .collect();
 
-        let sel_result = tui::apply_select(
-            &mut tui_selectors,
-            &preset_skip,
-            &flock_skip,
-            &|slug| registry::list_flock_skill_slugs(slug).map(|v| v.len()).unwrap_or(0),
-        )?;
+        let sel_result =
+            tui::apply_select(&mut tui_selectors, &preset_skip, &flock_skip, &|slug| {
+                registry::list_flock_skill_slugs(slug)
+                    .map(|v| v.len())
+                    .unwrap_or(0)
+            })?;
 
         let Some(sel) = sel_result else {
             println!("Cancelled.");
@@ -3112,54 +3274,80 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         // Print summary after TUI
         if !selected_selectors.is_empty() || !skipped_selectors.is_empty() {
             println!("\nSelectors:");
-            for s in &selected_selectors { println!("  \x1b[32m[+]\x1b[0m {s}"); }
-            for s in &skipped_selectors { println!("  \x1b[31m[-]\x1b[0m {s}"); }
+            for s in &selected_selectors {
+                println!("  \x1b[32m[+]\x1b[0m {s}");
+            }
+            for s in &skipped_selectors {
+                println!("  \x1b[31m[-]\x1b[0m {s}");
+            }
         }
         if !selected_presets.is_empty() || !skipped_presets.is_empty() {
             println!("Presets:");
-            for p in &selected_presets { println!("  \x1b[32m[+]\x1b[0m {p}"); }
-            for p in &skipped_presets { println!("  \x1b[31m[-]\x1b[0m {p}"); }
+            for p in &selected_presets {
+                println!("  \x1b[32m[+]\x1b[0m {p}");
+            }
+            for p in &skipped_presets {
+                println!("  \x1b[31m[-]\x1b[0m {p}");
+            }
         }
         if !selected_flocks.is_empty() || !skipped_flocks.is_empty() {
             println!("Flocks:");
-            for f in &selected_flocks { println!("  \x1b[32m[+]\x1b[0m {f}"); }
-            for f in &skipped_flocks { println!("  \x1b[31m[-]\x1b[0m {f}"); }
+            for f in &selected_flocks {
+                println!("  \x1b[32m[+]\x1b[0m {f}");
+            }
+            for f in &skipped_flocks {
+                println!("  \x1b[31m[-]\x1b[0m {f}");
+            }
         }
     }
 
     // Merge CLI --skip-* args into skipped lists
     let mut skipped_presets = skipped_presets;
     for p in &args.skip_presets {
-        if !skipped_presets.contains(p) { skipped_presets.push(p.clone()); }
+        if !skipped_presets.contains(p) {
+            skipped_presets.push(p.clone());
+        }
     }
     let mut skipped_flocks = skipped_flocks;
     for f in &args.skip_flocks {
-        if !skipped_flocks.contains(f) { skipped_flocks.push(f.clone()); }
+        if !skipped_flocks.contains(f) {
+            skipped_flocks.push(f.clone());
+        }
     }
 
     // ── Expand selected presets + flocks into skill slugs ──
     // Only use selectors that were selected (not skipped)
     let mut all_skills: Vec<String> = Vec::new();
     for m in &result.matched {
-        if !selected_selectors.contains(&m.selector.name) { continue; }
+        if !selected_selectors.contains(&m.selector.name) {
+            continue;
+        }
         for skill in &m.skills {
-            if !all_skills.contains(skill) { all_skills.push(skill.clone()); }
+            if !all_skills.contains(skill) {
+                all_skills.push(skill.clone());
+            }
         }
     }
     for preset_name in &selected_presets {
         if let Some(preset) = preset_store.presets.get(preset_name) {
             for skill in &preset.skills {
-                if !all_skills.contains(skill) { all_skills.push(skill.clone()); }
+                if !all_skills.contains(skill) {
+                    all_skills.push(skill.clone());
+                }
             }
         }
     }
     for flock_slug in &selected_flocks {
         if let Ok(flock_skills) = registry::list_flock_skill_slugs(flock_slug) {
             if flock_skills.is_empty() {
-                eprintln!("  \x1b[33m!\x1b[0m flock \"{flock_slug}\" has 0 skills in cache. Try: savhub registry sync");
+                eprintln!(
+                    "  \x1b[33m!\x1b[0m flock \"{flock_slug}\" has 0 skills in cache. Try: savhub registry sync"
+                );
             }
             for skill in flock_skills {
-                if !all_skills.contains(&skill) { all_skills.push(skill); }
+                if !all_skills.contains(&skill) {
+                    all_skills.push(skill);
+                }
             }
         }
     }
@@ -3168,12 +3356,16 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     for preset_name in &args.add_presets {
         if let Some(preset) = preset_store.presets.get(preset_name) {
             for skill in &preset.skills {
-                if !all_skills.contains(skill) { all_skills.push(skill.clone()); }
+                if !all_skills.contains(skill) {
+                    all_skills.push(skill.clone());
+                }
             }
             for flock_slug in &preset.flocks {
                 if let Ok(flock_skills) = registry::list_flock_skill_slugs(flock_slug) {
                     for skill in flock_skills {
-                        if !all_skills.contains(&skill) { all_skills.push(skill); }
+                        if !all_skills.contains(&skill) {
+                            all_skills.push(skill);
+                        }
                     }
                 }
             }
@@ -3184,7 +3376,9 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     for flock_slug in &args.add_flocks {
         if let Ok(flock_skills) = registry::list_flock_skill_slugs(flock_slug) {
             for skill in flock_skills {
-                if !all_skills.contains(&skill) { all_skills.push(skill); }
+                if !all_skills.contains(&skill) {
+                    all_skills.push(skill);
+                }
             }
         }
     }
@@ -3201,7 +3395,9 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     let config = savhub_local::presets::read_project_config(workdir)?;
     let mut skipped = config.skills.manual_skipped.clone();
     for s in &args.skip_skills {
-        if !s.is_empty() && !skipped.contains(s) { skipped.push(s.clone()); }
+        if !s.is_empty() && !skipped.contains(s) {
+            skipped.push(s.clone());
+        }
     }
     let skipped = &skipped;
     let desired_skills: BTreeSet<String> = all_skills
@@ -3211,23 +3407,45 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
 
     // ── Compute diff against current lockfile ──
     let current_lock = savhub_local::presets::read_project_lockfile(workdir)?;
-    let current_locked_slugs: BTreeSet<String> = current_lock.skills.iter().map(|s| s.slug().to_string()).collect();
+    let current_locked_slugs: BTreeSet<String> = current_lock
+        .skills
+        .iter()
+        .map(|s| s.slug().to_string())
+        .collect();
 
-    let to_add: Vec<String> = desired_skills.difference(&current_locked_slugs).cloned().collect();
-    let to_remove: Vec<String> = current_locked_slugs.difference(&desired_skills).cloned().collect();
+    let to_add: Vec<String> = desired_skills
+        .difference(&current_locked_slugs)
+        .cloned()
+        .collect();
+    let to_remove: Vec<String> = current_locked_slugs
+        .difference(&desired_skills)
+        .cloned()
+        .collect();
 
     // ── Check if anything actually changed ──
     let toml_exists = workdir.join("savhub.toml").exists();
     let lock_exists = workdir.join("savhub.lock").exists();
     if to_add.is_empty() && to_remove.is_empty() && toml_exists && lock_exists {
         // Also check if selectors/presets/flocks config changed
-        let old_matched_names: BTreeSet<String> = config.selectors.matched.iter().map(|m| m.selector.clone()).collect();
-        let new_matched_names: BTreeSet<String> = result.matched.iter().map(|m| m.selector.name.clone()).collect();
+        let old_matched_names: BTreeSet<String> = config
+            .selectors
+            .matched
+            .iter()
+            .map(|m| m.selector.clone())
+            .collect();
+        let new_matched_names: BTreeSet<String> = result
+            .matched
+            .iter()
+            .map(|m| m.selector.name.clone())
+            .collect();
         let old_presets: BTreeSet<String> = config.presets.matched.iter().cloned().collect();
         let new_presets: BTreeSet<String> = result.presets.iter().cloned().collect();
         let old_flocks: BTreeSet<String> = config.flocks.matched.iter().cloned().collect();
         let new_flocks: BTreeSet<String> = selected_flocks.iter().cloned().collect();
-        if old_matched_names == new_matched_names && old_presets == new_presets && old_flocks == new_flocks {
+        if old_matched_names == new_matched_names
+            && old_presets == new_presets
+            && old_flocks == new_flocks
+        {
             println!("\nProject is already up to date. Nothing to do.");
             return Ok(());
         }
@@ -3236,11 +3454,15 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     // ── Show plan ──
     if !to_add.is_empty() {
         println!("\nSkills to add:");
-        for s in &to_add { println!("  \x1b[32m[+]\x1b[0m {s}"); }
+        for s in &to_add {
+            println!("  \x1b[32m[+]\x1b[0m {s}");
+        }
     }
     if !to_remove.is_empty() {
         println!("\nSkills to remove:");
-        for s in &to_remove { println!("  \x1b[31m[-]\x1b[0m {s}"); }
+        for s in &to_remove {
+            println!("  \x1b[31m[-]\x1b[0m {s}");
+        }
     }
     if to_add.is_empty() && to_remove.is_empty() {
         println!("\nNo skill changes, updating selector/preset configuration only.");
@@ -3266,18 +3488,24 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     {
         let mut cfg = savhub_local::presets::read_project_config(workdir)?;
         cfg.presets.matched = result.presets.clone();
-        cfg.selectors.matched = result.matched.iter().map(|m| {
-            let selector_flocks: Vec<String> = m.flocks.iter()
-                .filter(|f| selected_flocks.contains(f))
-                .cloned()
-                .collect();
-            savhub_local::presets::ProjectSelectorMatch {
-                selector: m.selector.name.clone(),
-                presets: m.presets.clone(),
-                flocks: selector_flocks,
-                skills: m.skills.clone(),
-            }
-        }).collect();
+        cfg.selectors.matched = result
+            .matched
+            .iter()
+            .map(|m| {
+                let selector_flocks: Vec<String> = m
+                    .flocks
+                    .iter()
+                    .filter(|f| selected_flocks.contains(f))
+                    .cloned()
+                    .collect();
+                savhub_local::presets::ProjectSelectorMatch {
+                    selector: m.selector.name.clone(),
+                    presets: m.presets.clone(),
+                    flocks: selector_flocks,
+                    skills: m.skills.clone(),
+                }
+            })
+            .collect();
         // Collect all matched flocks into flocks.matched
         let mut all_matched_flocks: Vec<String> = Vec::new();
         for m in &cfg.selectors.matched {
@@ -3296,21 +3524,27 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             }
         }
         // Remove re-checked items from manual_skipped
-        cfg.selectors.manual_skipped.retain(|s| !selected_selectors.contains(s) || !matched_selector_names.contains(s));
+        cfg.selectors
+            .manual_skipped
+            .retain(|s| !selected_selectors.contains(s) || !matched_selector_names.contains(s));
 
         for p in &skipped_presets {
             if !cfg.presets.manual_skipped.contains(p) {
                 cfg.presets.manual_skipped.push(p.clone());
             }
         }
-        cfg.presets.manual_skipped.retain(|p| !selected_presets.contains(p) || !matched_presets.contains(p));
+        cfg.presets
+            .manual_skipped
+            .retain(|p| !selected_presets.contains(p) || !matched_presets.contains(p));
 
         for f in &skipped_flocks {
             if !cfg.flocks.manual_skipped.contains(f) {
                 cfg.flocks.manual_skipped.push(f.clone());
             }
         }
-        cfg.flocks.manual_skipped.retain(|f| !selected_flocks.contains(f) || !matched_flocks.contains(f));
+        cfg.flocks
+            .manual_skipped
+            .retain(|f| !selected_flocks.contains(f) || !matched_flocks.contains(f));
 
         // Merge CLI --presets/--skip-presets/--skills/--skip-skills/--flocks/--skip-flocks
         for p in &args.add_presets {
@@ -3324,15 +3558,27 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             }
         }
         for s in &args.add_skills {
-            if !s.is_empty() && !cfg.skills.manual_added.iter().any(|e| e.path == *s || e.sign.as_deref() == Some(s)) {
-                cfg.skills.manual_added.push(savhub_local::presets::ProjectAddedSkill {
-                    sign: if s.contains('/') { Some(s.clone()) } else { None },
-                    path: s.rsplit('/').next().unwrap_or(s).to_string(),
-                    slug: s.rsplit('/').next().unwrap_or(s).to_string(),
-                    local: None,
-                    version: None,
-                    installed_at: 0,
-                });
+            if !s.is_empty()
+                && !cfg
+                    .skills
+                    .manual_added
+                    .iter()
+                    .any(|e| e.path == *s || e.sign.as_deref() == Some(s))
+            {
+                cfg.skills
+                    .manual_added
+                    .push(savhub_local::presets::ProjectAddedSkill {
+                        sign: if s.contains('/') {
+                            Some(s.clone())
+                        } else {
+                            None
+                        },
+                        path: s.rsplit('/').next().unwrap_or(s).to_string(),
+                        slug: s.rsplit('/').next().unwrap_or(s).to_string(),
+                        local: None,
+                        version: None,
+                        installed_at: 0,
+                    });
             }
         }
         for s in &args.skip_skills {
@@ -3358,9 +3604,12 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     if !to_remove.is_empty() {
         let all_clients = savhub_local::clients::detect_clients();
         // Group by repo from current lock
-        let mut by_repo: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
+        let mut by_repo: std::collections::BTreeMap<String, Vec<String>> =
+            std::collections::BTreeMap::new();
         for slug in &to_remove {
-            let repo = current_lock.skills.iter()
+            let repo = current_lock
+                .skills
+                .iter()
                 .find(|s| s.slug() == slug)
                 .map(|s| s.repo.clone())
                 .unwrap_or_default();
@@ -3372,8 +3621,12 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             }
             for slug in slugs {
                 for client in &all_clients {
-                    if !client.installed { continue; }
-                    let Some(rel_dir) = client.kind.project_skills_dir() else { continue; };
+                    if !client.installed {
+                        continue;
+                    }
+                    let Some(rel_dir) = client.kind.project_skills_dir() else {
+                        continue;
+                    };
                     let _ = std::fs::remove_dir_all(workdir.join(rel_dir).join(slug));
                 }
                 println!("    \x1b[31m\u{2717}\x1b[0m {slug} (removed)");
@@ -3396,7 +3649,10 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
                 return args.agents.iter().any(|a| a.eq_ignore_ascii_case(name));
             }
             if !args.skip_agents.is_empty() {
-                return !args.skip_agents.iter().any(|s| s.eq_ignore_ascii_case(name));
+                return !args
+                    .skip_agents
+                    .iter()
+                    .any(|s| s.eq_ignore_ascii_case(name));
             }
             true
         })
@@ -3406,13 +3662,20 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
 
     // Build lock entries: start from current, remove deleted, add new
     let mut lock = current_lock.clone();
-    lock.skills.retain(|s| !to_remove.iter().any(|r| r == s.slug()));
+    lock.skills
+        .retain(|s| !to_remove.iter().any(|r| r == s.slug()));
 
     // Group by repo for display
     {
-        let mut by_repo: std::collections::BTreeMap<String, Vec<&savhub_local::registry::InstalledSkillInfo>> = std::collections::BTreeMap::new();
+        let mut by_repo: std::collections::BTreeMap<
+            String,
+            Vec<&savhub_local::registry::InstalledSkillInfo>,
+        > = std::collections::BTreeMap::new();
         for info in &batch_results {
-            by_repo.entry(info.repo_sign.clone()).or_default().push(info);
+            by_repo
+                .entry(info.repo_sign.clone())
+                .or_default()
+                .push(info);
         }
         for (repo_id, skills) in &by_repo {
             if !repo_id.is_empty() {
@@ -3421,17 +3684,27 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             for info in skills {
                 let mut copied_to_any_client = false;
                 for client in &filtered_clients {
-                    if !client.installed { continue; }
-                    let Some(rel_dir) = client.kind.project_skills_dir() else { continue; };
+                    if !client.installed {
+                        continue;
+                    }
+                    let Some(rel_dir) = client.kind.project_skills_dir() else {
+                        continue;
+                    };
                     let target_dir = workdir.join(rel_dir);
                     let _ = std::fs::create_dir_all(&target_dir);
                     let target = target_dir.join(&info.slug);
                     if let Err(e) = copy_skill_folder(&info.local_path, &target) {
-                        eprintln!("  \x1b[33m!\x1b[0m {}: failed to copy to {}: {e}", info.slug, rel_dir);
+                        eprintln!(
+                            "  \x1b[33m!\x1b[0m {}: failed to copy to {}: {e}",
+                            info.slug, rel_dir
+                        );
                         continue;
                     }
                     copied_to_any_client = true;
-                    println!("    \x1b[32m\u{2713}\x1b[0m {} -> {rel_dir}/{}", info.slug, info.slug);
+                    println!(
+                        "    \x1b[32m\u{2713}\x1b[0m {} -> {rel_dir}/{}",
+                        info.slug, info.slug
+                    );
                 }
                 if !copied_to_any_client {
                     println!("    \x1b[32m\u{2713}\x1b[0m {} (cached)", info.slug);
@@ -3439,7 +3712,8 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
 
                 // Record in savhub.lock
                 if !lock.skills.iter().any(|s| s.slug() == info.slug) {
-                    let vi = savhub_local::skills::read_skill_version_info(&info.local_path).unwrap_or_default();
+                    let vi = savhub_local::skills::read_skill_version_info(&info.local_path)
+                        .unwrap_or_default();
                     lock.skills.push(savhub_local::presets::ProjectLockedSkill {
                         repo: info.repo_sign.clone(),
                         path: info.skill_path.clone(),
@@ -3485,7 +3759,10 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             result.matched.len()
         );
     } else {
-        println!("\n\x1b[32mDone.\x1b[0m Configuration updated, {} selector(s) matched.", result.matched.len());
+        println!(
+            "\n\x1b[32mDone.\x1b[0m Configuration updated, {} selector(s) matched.",
+            result.matched.len()
+        );
     }
     Ok(())
 }

@@ -6,13 +6,15 @@ use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use savhub_shared::{
-    BUNDLE_META_FILE, BundleMetadata, BundleSourceKind, ResourceKind,
-    StoredBundleFile, load_bundle_metadata,
+    BUNDLE_META_FILE, BundleMetadata, BundleSourceKind, ResourceKind, StoredBundleFile,
+    load_bundle_metadata,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use walkdir::{DirEntry, WalkDir};
 use zip::ZipArchive;
+
+use crate::utils::{sanitize_slug, title_case};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -290,8 +292,7 @@ pub fn load_local_skill_metadata(files: &[LocalSkillFile]) -> Result<Option<Bund
             sha256: String::new(),
         })
         .collect::<Vec<_>>();
-    load_bundle_metadata(&stored_files, ResourceKind::Skill)
-        .map_err(|error| anyhow::anyhow!(error))
+    load_bundle_metadata(&stored_files, ResourceKind::Skill).map_err(|error| anyhow::anyhow!(error))
 }
 
 pub fn extract_zip_to_dir(bytes: &[u8], target: &Path) -> Result<()> {
@@ -379,7 +380,9 @@ pub fn find_skill_folders(root: &Path) -> Result<Vec<SkillFolder>> {
                 for child in children {
                     let Ok(child) = child else { continue };
                     let child_path = child.path();
-                    let Ok(child_meta) = child.metadata() else { continue };
+                    let Ok(child_meta) = child.metadata() else {
+                        continue;
+                    };
                     if !child_meta.is_dir() {
                         continue;
                     }
@@ -462,48 +465,6 @@ pub fn repo_git_commit(repo_root: &Path) -> Option<String> {
     }
     let stdout = String::from_utf8(output.stdout).ok()?;
     normalize_git_commit(stdout.trim()).or_else(|| clean_optional_string(Some(stdout)))
-}
-
-pub fn sanitize_slug(value: &str) -> String {
-    let mut slug = String::new();
-    let mut last_dash = false;
-    for ch in value.trim().chars().flat_map(char::to_lowercase) {
-        let keep = ch.is_ascii_lowercase() || ch.is_ascii_digit();
-        if keep {
-            slug.push(ch);
-            last_dash = false;
-        } else if !last_dash {
-            slug.push('-');
-            last_dash = true;
-        }
-    }
-    while slug.starts_with('-') {
-        slug.remove(0);
-    }
-    while slug.ends_with('-') {
-        slug.pop();
-    }
-    slug
-}
-
-pub fn title_case(value: &str) -> String {
-    value
-        .trim()
-        .replace(['-', '_'], " ")
-        .split_whitespace()
-        .map(|part| {
-            let mut chars = part.chars();
-            match chars.next() {
-                Some(first) => {
-                    let mut chunk = first.to_uppercase().to_string();
-                    chunk.push_str(chars.as_str());
-                    chunk
-                }
-                None => String::new(),
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
 }
 
 /// Read the SKILL.md content from a skill folder, trying both casing variants.

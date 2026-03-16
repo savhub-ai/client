@@ -11,8 +11,9 @@ use crate::config::get_config_dir;
 use crate::skills::{
     LockEntry, Lockfile, RepoSkillFolder, RepoSkillOrigin, SkillFolder, copy_skill_folder,
     find_repo_skill_folders, find_skill_folders, read_lockfile, read_skill_version_info,
-    repo_git_commit, sanitize_slug, skill_folder_from_path, write_repo_skill_origin,
+    repo_git_commit, skill_folder_from_path, write_repo_skill_origin,
 };
+use crate::utils::sanitize_slug;
 
 /// A named combination of skills.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -389,7 +390,12 @@ fn normalize_selector_matches(matches: &[ProjectSelectorMatch]) -> Vec<ProjectSe
             existing.selector == selector && existing.presets == presets
         });
         if !duplicate {
-            normalized.push(ProjectSelectorMatch { selector, presets, flocks, skills });
+            normalized.push(ProjectSelectorMatch {
+                selector,
+                presets,
+                flocks,
+                skills,
+            });
         }
     }
     normalized
@@ -398,7 +404,11 @@ fn normalize_selector_matches(matches: &[ProjectSelectorMatch]) -> Vec<ProjectSe
 fn normalize_added_skills(skills: &[ProjectAddedSkill]) -> Vec<ProjectAddedSkill> {
     let mut normalized = Vec::new();
     for skill in skills {
-        let sign = skill.sign.as_deref().map(|s| s.trim()).filter(|s| !s.is_empty());
+        let sign = skill
+            .sign
+            .as_deref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty());
         let path = sanitize_slug(&skill.path);
         let slug = skill.slug.trim().to_string();
 
@@ -427,7 +437,11 @@ fn normalize_added_skills(skills: &[ProjectAddedSkill]) -> Vec<ProjectAddedSkill
             .iter_mut()
             .find(|existing: &&mut ProjectAddedSkill| existing.path == effective_path)
         {
-            let existing_empty = existing.version.as_deref().map(|v| v.trim().is_empty()).unwrap_or(true);
+            let existing_empty = existing
+                .version
+                .as_deref()
+                .map(|v| v.trim().is_empty())
+                .unwrap_or(true);
             let existing_latest = existing.version.as_deref() == Some("latest");
             if existing_empty || existing_latest {
                 existing.version = skill.version.clone();
@@ -614,7 +628,11 @@ pub fn write_project_config_force(workdir: &Path, config: &ProjectConfigFile) ->
     write_project_config_inner(workdir, config, true)
 }
 
-fn write_project_config_inner(workdir: &Path, config: &ProjectConfigFile, force: bool) -> Result<()> {
+fn write_project_config_inner(
+    workdir: &Path,
+    config: &ProjectConfigFile,
+    force: bool,
+) -> Result<()> {
     let path = project_config_path(workdir);
     let mut normalized = config.clone();
     normalized.version = 1;
@@ -674,7 +692,11 @@ pub fn write_project_lockfile_force(workdir: &Path, lockfile: &ProjectLockFile) 
     write_project_lockfile_inner(workdir, lockfile, true)
 }
 
-fn write_project_lockfile_inner(workdir: &Path, lockfile: &ProjectLockFile, force: bool) -> Result<()> {
+fn write_project_lockfile_inner(
+    workdir: &Path,
+    lockfile: &ProjectLockFile,
+    force: bool,
+) -> Result<()> {
     let path = project_lock_path(workdir);
     let mut normalized = lockfile.clone();
     normalized.version = 1;
@@ -741,7 +763,8 @@ pub fn read_project_added_skills(workdir: &Path) -> Result<Lockfile> {
 fn upsert_project_added_skill(workdir: &Path, skill: ProjectAddedSkill) -> Result<()> {
     let mut config = read_project_config(workdir)?;
     if let Some(existing) = config
-        .skills.manual_added
+        .skills
+        .manual_added
         .iter_mut()
         .find(|existing| existing.path == skill.path)
     {
@@ -756,7 +779,10 @@ fn upsert_project_added_skill(workdir: &Path, skill: ProjectAddedSkill) -> Resul
 
 fn remove_project_added_skill(workdir: &Path, slug: &str) -> Result<()> {
     let mut config = read_project_config(workdir)?;
-    config.skills.manual_added.retain(|skill| skill.path != slug);
+    config
+        .skills
+        .manual_added
+        .retain(|skill| skill.path != slug);
     write_project_config(workdir, &config)?;
     sync_project_lock(workdir)
 }
@@ -917,7 +943,11 @@ pub fn disable_project_skill(workdir: &Path, slug: &str) -> Result<bool> {
     }
 
     let config = read_project_config(workdir)?;
-    let had_manual_entry = config.skills.manual_added.iter().any(|skill| skill.path == slug);
+    let had_manual_entry = config
+        .skills
+        .manual_added
+        .iter()
+        .any(|skill| skill.path == slug);
     if had_manual_entry {
         remove_project_added_skill(workdir, &slug)?;
         removed_any = true;
@@ -944,7 +974,7 @@ pub fn create_preset(name: &str, description: Option<&str>) -> Result<()> {
     store.presets.insert(
         sign.clone(),
         PresetConfig {
-            sign: Some(sign.clone()),
+            sign: sign.clone(),
             name: name.to_string(),
             description: description.map(String::from),
             skills: Vec::new(),
