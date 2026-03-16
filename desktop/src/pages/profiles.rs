@@ -1311,7 +1311,7 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
     let scan_result = savhub_local::selectors::run_selectors(&workdir).ok();
 
     // Collect skills from matched selectors + presets + flocks
-    let (matched_names, preset_names, flock_names, skill_slugs) = if let Some(ref result) = scan_result {
+    let (matched_signs, preset_signs, flock_signs, skill_signs) = if let Some(ref result) = scan_result {
         let matched: Vec<String> = result.matched.iter().map(|m| m.selector.name.clone()).collect();
         let presets = result.presets.clone();
         let flocks = result.flocks.clone();
@@ -1325,8 +1325,8 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                 }
             }
         }
-        for flock_slug in &flocks {
-            if let Ok(flock_skills) = savhub_local::registry::list_flock_skill_slugs(flock_slug) {
+        for flock_sign in &flocks {
+            if let Ok(flock_skills) = savhub_local::registry::list_flock_skill_slugs(flock_sign) {
                 for s in flock_skills {
                     if !skills.contains(&s) { skills.push(s); }
                 }
@@ -1337,7 +1337,7 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
         (Vec::new(), Vec::new(), Vec::new(), Vec::new())
     };
 
-    let has_match = !matched_names.is_empty();
+    let has_match = !matched_signs.is_empty();
 
     // Resolve AI agents with checkboxes
     let configured_agents = state.agents.read().clone();
@@ -1388,7 +1388,7 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
             let skipped = &config.skills.manual_skipped;
             let filtered: Vec<String> = skill_slugs_cl
                 .iter()
-                .filter(|s| !savhub_local::registry::skill_matches_skipped(s, None, skipped))
+                .filter(|s| !savhub_local::registry::skill_matches_skipped(s, skipped))
                 .cloned()
                 .collect();
 

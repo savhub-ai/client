@@ -86,10 +86,10 @@ pub fn FlockDetailPage(slug: String) -> Element {
     };
 
     let version_display = flock.version.as_deref().unwrap_or("\u{2014}");
-    let slug_display = if flock.repo_id.is_empty() {
+    let slug_display = if flock.repo.is_empty() {
         flock.slug.clone()
     } else {
-        format!("{}/{}", flock.repo_id, flock.slug)
+        format!("{}/{}", flock.repo, flock.slug)
     };
 
     rsx! {

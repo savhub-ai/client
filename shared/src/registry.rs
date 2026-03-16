@@ -142,6 +142,9 @@ pub struct SkillEntryPoint {
 pub struct RegistryRepo {
     #[serde(default)]
     pub schema_version: u32,
+    /// Canonical identifier for the repository (e.g. `github.com/owner/repo`).
+    #[serde(default)]
+    pub sign: String,
     #[serde(default)]
     pub name: String,
     #[serde(default)]
@@ -168,8 +171,11 @@ pub struct RegistryRepo {
 pub struct RegistryFlock {
     #[serde(default)]
     pub schema_version: u32,
+    /// Canonical identifier for the flock (e.g. `github.com/owner/repo/flock-slug`).
     #[serde(default)]
-    pub repo_id: String,
+    pub sign: String,
+    #[serde(default, alias = "repo_sign")]
+    pub repo: String,
     #[serde(default)]
     pub slug: String,
     pub name: String,
@@ -721,21 +727,20 @@ fn find_skill_in_repo(repo_sign: &std::path::Path, skill_path: &str) -> Option<P
 /// - A full sign: `github.com/salvo-rs/salvo-skills/skills/salvo-auth` (matches by sign)
 /// - A partial path suffix: `skills/salvo-auth` (matches slug extracted from last segment)
 ///
-/// `slug` is the skill slug. `sign` is optional `{repo_id}/{path}`.
+/// `sign` is the skill sign (e.g. `github.com/owner/repo/skills/slug`).
 pub fn skill_matches_skipped(sign: &str, skipped: &[String]) -> bool {
     if skipped.is_empty() {
         return false;
     }
+    let slug = sign.rsplit('/').next().unwrap_or(sign);
     for entry in skipped {
         // Exact slug match
         if entry == slug {
             return true;
         }
-        // Sign match (if sign provided)
-        if let Some(sign) = sign {
-            if entry == sign {
-                return true;
-            }
+        // Sign match
+        if entry == sign {
+            return true;
         }
         // Entry's last segment matches slug
         if let Some(last) = entry.rsplit('/').next() {
@@ -1254,12 +1259,12 @@ pub fn sync_from_local_clone() -> Result<SyncStats> {
                     let (repo_id, flock_slug) =
                         match stripped.rsplitn(2, '/').collect::<Vec<_>>().as_slice() {
                             [flock, repo] => (repo.to_string(), flock.to_string()),
-                            _ => (parsed.flock.repo_id.clone(), String::new()),
+                            _ => (parsed.flock.repo.clone(), String::new()),
                         };
                     let flock_id = format!("{}/{}", repo_id, flock_slug);
                     let mut flock = parsed.flock;
-                    if flock.repo_id.is_empty() {
-                        flock.repo_id = repo_id;
+                    if flock.repo.is_empty() {
+                        flock.repo = repo_id;
                     }
                     flocks.push((flock_id, flock_slug, flock, buf));
                 }
@@ -1359,12 +1364,12 @@ pub fn sync_from_zip(zip_bytes: &[u8], commit_sha: &str) -> Result<SyncStats> {
                         path_parts[2].to_string(),
                     )
                 } else {
-                    (parsed.flock.repo_id.clone(), String::new())
+                    (parsed.flock.repo.clone(), String::new())
                 };
                 let flock_id = format!("{}/{}", repo_id, flock_slug);
                 let mut flock = parsed.flock;
-                if flock.repo_id.is_empty() {
-                    flock.repo_id = repo_id;
+                if flock.repo.is_empty() {
+                    flock.repo = repo_id;
                 }
                 flocks.push((flock_id, flock_slug, flock, buf));
             }
@@ -1429,8 +1434,8 @@ fn write_parsed_to_db(
 
     // Insert repos
     for (id, repo, raw) in repos {
-        // Derive domain and path_slug from the repo id (format: {domain}/{path_slug})
-        let (domain, path_slug) = id.split_once('/').unwrap_or(("", id.as_str()));
+        // Use sign from parsed data, fall back to derived id
+        let sign = if repo.sign.is_empty() { id.clone() } else { repo.sign.clone() };
         // Extract git_url: prefer new git_url field, fall back to legacy source
         let git_url = repo.git_url.as_deref().or_else(|| {
             repo.source.as_ref().and_then(|s| match s {
@@ -1439,8 +1444,8 @@ fn write_parsed_to_db(
             })
         });
         tx.execute(
-            "INSERT OR REPLACE INTO repos (id, name, description, git_url, git_rev, git_branch, domain, path_slug, visibility, verified, data_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT OR REPLACE INTO repos (id, name, description, git_url, git_rev, git_branch, sign, visibility, verified, data_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 id,
                 repo.name,
@@ -1448,8 +1453,7 @@ fn write_parsed_to_db(
                 git_url,
                 repo.git_rev,
                 repo.git_branch,
-                domain,
-                path_slug,
+                sign,
                 repo.visibility,
                 repo.verified.unwrap_or(false) as i32,
                 raw,
@@ -1464,7 +1468,7 @@ fn write_parsed_to_db(
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 id,
-                flock.repo_id,
+                flock.repo,
                 slug,
                 flock.name,
                 flock.description,
@@ -1743,7 +1747,24 @@ pub fn list_skills_in_flock(flock_slug: &str) -> Result<Vec<RegistrySkill>> {
     Ok(skills)
 }
 
-/// List just the slugs of skills in a flock (lightweight).
+/// List skill slugs belonging to a flock.
+pub fn list_flock_skill_slugs(flock_slug: &str) -> Result<Vec<String>> {
+    let conn = open_cache()?;
+    let pattern = format!("%/{flock_slug}");
+    let mut stmt = conn.prepare(
+        "SELECT slug FROM skills WHERE flock_id LIKE ?1 OR flock_id = ?2 ORDER BY slug ASC",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![pattern, flock_slug], |row| {
+        row.get::<_, String>(0)
+    })?;
+    let mut slugs = Vec::new();
+    for row in rows {
+        slugs.push(row?);
+    }
+    Ok(slugs)
+}
+
+/// List just the paths of skills in a flock (lightweight).
 pub fn list_flock_skill_paths(flock_sign: &str) -> Result<Vec<String>> {
     let conn = open_cache()?;
     let pattern = format!("%/{flock_sign}");

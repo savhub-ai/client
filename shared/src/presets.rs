@@ -17,12 +17,13 @@ use crate::skills::{
 /// A named combination of skills.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PresetConfig {
+    pub sign: String,
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    /// Skill slugs included in this preset.
+    /// Skill signs included in this preset.
     pub skills: Vec<String>,
-    /// Flock slugs included in this preset.
+    /// Flock signs included in this preset.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub flocks: Vec<String>,
 }
@@ -932,18 +933,19 @@ pub fn disable_project_skill(workdir: &Path, slug: &str) -> Result<bool> {
 // ---------------------------------------------------------------------------
 
 pub fn create_preset(name: &str, description: Option<&str>) -> Result<()> {
-    let slug = sanitize_slug(name);
-    if slug.is_empty() {
+    let sign = sanitize_slug(name);
+    if sign.is_empty() {
         bail!("invalid preset name: {name}");
     }
     let mut store = read_presets_store()?;
-    if store.presets.contains_key(&slug) {
-        bail!("preset '{slug}' already exists");
+    if store.presets.contains_key(&sign) {
+        bail!("preset '{sign}' already exists");
     }
     store.presets.insert(
-        slug.clone(),
+        sign.clone(),
         PresetConfig {
-            name: slug,
+            sign: Some(sign.clone()),
+            name: name.to_string(),
             description: description.map(String::from),
             skills: Vec::new(),
             flocks: Vec::new(),

@@ -3206,7 +3206,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     let skipped = &skipped;
     let desired_skills: BTreeSet<String> = all_skills
         .into_iter()
-        .filter(|s| !registry::skill_matches_skipped(s, None, skipped))
+        .filter(|s| !registry::skill_matches_skipped(s, skipped))
         .collect();
 
     // ── Compute diff against current lockfile ──
