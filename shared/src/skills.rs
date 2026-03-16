@@ -17,7 +17,6 @@ use zip::ZipArchive;
 use crate::utils::{sanitize_slug, title_case};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct LockEntry {
     pub version: String,
     pub installed_at: i64,
@@ -39,7 +38,6 @@ impl Default for Lockfile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct SkillOrigin {
     pub version: u8,
     pub registry: String,
@@ -49,7 +47,6 @@ pub struct SkillOrigin {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct RepoSkillOrigin {
     pub version: u8,
     pub repo: String,

@@ -57,9 +57,8 @@ pub enum RuleExpression {
 
 /// A complete selector definition.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
 pub struct SelectorDefinition {
-    pub id: String,
+    pub sign: String,
     pub name: String,
     #[serde(default)]
     pub description: String,
@@ -73,9 +72,9 @@ pub struct SelectorDefinition {
     #[serde(default)]
     pub presets: Vec<String>,
     #[serde(default)]
-    pub add_skills: Vec<String>,
+    pub skills: Vec<String>,
     #[serde(default)]
-    pub add_flocks: Vec<String>,
+    pub flocks: Vec<String>,
     /// Priority (higher value = higher priority). When multiple selectors
     /// contribute conflicting skills, the selector with the higher priority wins.
     #[serde(default)]

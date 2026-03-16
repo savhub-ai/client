@@ -49,7 +49,6 @@ pub fn read_global_config() -> Result<Option<GlobalConfig>> {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ProjectEntry {
     pub path: String,
     #[serde(default)]

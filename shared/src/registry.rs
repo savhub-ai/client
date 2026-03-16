@@ -651,7 +651,8 @@ pub fn make_skill_sign(repo_sign: &str, skill_path: &str) -> String {
 }
 
 /// Look up the repo-level source for a given skill slug.
-fn get_repo_source_for_skill(slug: &str) -> Result<Option<RegistrySource>> {
+fn get_repo_source_for_skill(sign_or_slug: &str) -> Result<Option<RegistrySource>> {
+    let slug = sign_or_slug.rsplit('/').next().unwrap_or(sign_or_slug);
     let conn = open_cache()?;
     let result = conn.query_row(
         "SELECT r.data_json, r.git_url, r.git_rev, r.git_branch FROM skills s JOIN repos r ON s.repo_id = r.id WHERE s.slug = ?1 LIMIT 1",
@@ -944,10 +945,12 @@ pub struct InstalledSkillInfo {
 }
 
 /// Install multiple skills in batch, grouping by git repo to minimize git operations.
-pub fn install_skills_batch(signs: &[String]) -> Result<Vec<InstalledSkillInfo>> {
+///
+/// Accepts slugs or signs. Slugs are looked up by slug; signs by sign.
+pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>> {
     use std::collections::BTreeMap;
 
-    if signs.is_empty() {
+    if slugs.is_empty() {
         return Ok(Vec::new());
     }
 
@@ -960,15 +963,15 @@ pub fn install_skills_batch(signs: &[String]) -> Result<Vec<InstalledSkillInfo>>
         source_path: String,
     }
     let mut skill_infos = Vec::new();
-    for sign in signs {
-        let skill = match get_skill_by_sign(sign)? {
+    for slug in slugs {
+        let skill = match get_skill_by_slug(slug)? {
             Some(s) => s,
             None => {
-                eprintln!("  \x1b[33m!\x1b[0m {sign}: not found in registry cache");
+                eprintln!("  \x1b[33m!\x1b[0m {slug}: not found in registry cache");
                 continue;
             }
         };
-        // Get repo_sign from DB
+        // Get repo_sign from DB (repo_id column)
         let skill_repo_sign = {
             let conn = open_cache()?;
             conn.query_row(

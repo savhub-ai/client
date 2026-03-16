@@ -11,7 +11,6 @@ use walkdir::{DirEntry, WalkDir};
 use zip::ZipArchive;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct LockEntry {
     pub version: String,
     pub installed_at: i64,
@@ -33,7 +32,6 @@ impl Default for Lockfile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct SkillOrigin {
     pub version: u8,
     pub registry: String,

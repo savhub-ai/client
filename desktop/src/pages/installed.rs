@@ -13,7 +13,6 @@ use crate::theme::Theme;
 const INSTALLED_SKILLS_PAGE_SIZE: usize = 10;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct LockEntry {
     version: String,
     installed_at: i64,
