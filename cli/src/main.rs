@@ -3206,7 +3206,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     let skipped = &skipped;
     let desired_skills: BTreeSet<String> = all_skills
         .into_iter()
-        .filter(|s| !registry::skill_matches_skipped(s, skipped))
+        .filter(|s| !registry::skill_matches_skipped(s, None, skipped))
         .collect();
 
     // ── Compute diff against current lockfile ──
@@ -3412,7 +3412,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     {
         let mut by_repo: std::collections::BTreeMap<String, Vec<&savhub_local::registry::InstalledSkillInfo>> = std::collections::BTreeMap::new();
         for info in &batch_results {
-            by_repo.entry(info.repo_id.clone()).or_default().push(info);
+            by_repo.entry(info.repo_sign.clone()).or_default().push(info);
         }
         for (repo_id, skills) in &by_repo {
             if !repo_id.is_empty() {
@@ -3441,7 +3441,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
                 if !lock.skills.iter().any(|s| s.slug() == info.slug) {
                     let vi = savhub_local::skills::read_skill_version_info(&info.local_path).unwrap_or_default();
                     lock.skills.push(savhub_local::presets::ProjectLockedSkill {
-                        repo: info.repo_id.clone(),
+                        repo: info.repo_sign.clone(),
                         path: info.skill_path.clone(),
                         version: vi.version,
                         commit_hash: vi.git_commit,

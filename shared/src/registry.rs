@@ -330,21 +330,20 @@ fn init_schema(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "
         CREATE TABLE IF NOT EXISTS repos (
-            id          TEXT PRIMARY KEY,
+            sign        TEXT PRIMARY KEY,
             name        TEXT NOT NULL DEFAULT '',
             description TEXT NOT NULL DEFAULT '',
             git_url     TEXT,
             git_rev     TEXT,
             git_branch  TEXT,
-            path        TEXT NOT NULL,
             visibility  TEXT,
             verified    INTEGER NOT NULL DEFAULT 0,
             data_json   TEXT NOT NULL DEFAULT '{}'
         );
 
         CREATE TABLE IF NOT EXISTS flocks (
-            id              TEXT PRIMARY KEY,
-            repo_id         TEXT NOT NULL DEFAULT '',
+            sign            TEXT PRIMARY KEY,
+            repo_sign       TEXT NOT NULL DEFAULT '',
             slug            TEXT NOT NULL,
             name            TEXT NOT NULL,
             description     TEXT NOT NULL DEFAULT '',
@@ -356,9 +355,9 @@ fn init_schema(conn: &Connection) -> Result<()> {
         );
 
         CREATE TABLE IF NOT EXISTS skills (
-            id              TEXT PRIMARY KEY,
-            flock_id        TEXT NOT NULL DEFAULT '',
-            repo_id         TEXT NOT NULL DEFAULT '',
+            sign              TEXT PRIMARY KEY,
+            flock_sign        TEXT NOT NULL DEFAULT '',
+            repo_sign         TEXT NOT NULL DEFAULT '',
             slug            TEXT NOT NULL,
             name            TEXT NOT NULL,
             path            TEXT NOT NULL DEFAULT '',
@@ -381,10 +380,9 @@ fn init_schema(conn: &Connection) -> Result<()> {
             value TEXT NOT NULL
         );
 
-        CREATE INDEX IF NOT EXISTS idx_skills_slug ON skills(slug);
-        CREATE INDEX IF NOT EXISTS idx_skills_flock ON skills(flock_id);
+        CREATE INDEX IF NOT EXISTS idx_skills_flock ON skills(flock_sign);
         CREATE INDEX IF NOT EXISTS idx_skills_status ON skills(status);
-        CREATE INDEX IF NOT EXISTS idx_flocks_repo ON flocks(repo_id);
+        CREATE INDEX IF NOT EXISTS idx_flocks_repo ON flocks(repo_sign);
 
         ",
     )?;
@@ -448,7 +446,7 @@ pub struct InstalledSkillEntry {
     pub slug: String,
     pub installed_at: String,
     #[serde(default)]
-    pub repo_path: Option<String>,
+    pub repo_sign: Option<String>,
 }
 
 /// Read `installed_skills.json`.
@@ -485,7 +483,7 @@ pub fn install_skill(slug: &str) -> Result<bool> {
         entries.push(InstalledSkillEntry {
             slug: slug.to_string(),
             installed_at: now,
-            repo_path: None,
+            repo_sign: None,
         });
         let _ = write_installed_skills_file(&entries);
     }
@@ -595,24 +593,12 @@ fn repo_dir_name(git_url: &str) -> String {
     stripped.replace('/', "-").replace(':', "-")
 }
 
-/// Compute the "sign" for a skill: `{domain/owner/repo}/{skill_slug}`.
+/// Construct a skill sign from repo_sign and skill path: `{repo_sign}/{skill_path}`.
 ///
-/// Example: `github.com/anthropics/skills/salvo-auth`
-///
-/// Returns `None` if the skill has no git source.
-pub fn get_skill_sign(slug: &str) -> Result<Option<String>> {
-    let source = get_repo_source_for_skill(slug)?;
-    match source {
-        Some(RegistrySource::Git { url, .. }) => {
-            let domain_path = url
-                .trim_end_matches('/')
-                .trim_end_matches(".git")
-                .replace("https://", "")
-                .replace("http://", "");
-            Ok(Some(format!("{domain_path}/{slug}")))
-        }
-        _ => Ok(None),
-    }
+/// Example: `make_skill_sign("github.com/salvo-rs/salvo-skills", "skills/salvo-auth")`
+/// → `"github.com/salvo-rs/salvo-skills/skills/salvo-auth"`
+pub fn make_skill_sign(repo_sign: &str, skill_path: &str) -> String {
+    format!("{repo_sign}/{skill_path}")
 }
 
 /// Look up the repo-level source for a given skill slug.
@@ -671,57 +657,47 @@ fn get_repo_source_for_skill(slug: &str) -> Result<Option<RegistrySource>> {
     }
 }
 
-/// Look up the repo_id and source_path for a skill from the DB.
-/// Returns `(repo_id, source_path)` if available.
-fn get_skill_db_info(slug: &str) -> Option<(String, String)> {
+/// Look up the repo_id and path for a skill from the DB.
+///
+/// Returns `(repo_id, path)` where path is the skill directory relative to repo root.
+/// The sign for this skill is `{repo_id}/{path}`.
+pub fn get_skill_db_info(slug: &str) -> Option<(String, String)> {
     let conn = open_cache().ok()?;
-    conn.query_row(
-        "SELECT repo_id, source_json FROM skills WHERE slug = ?1 LIMIT 1",
+    let result = conn.query_row(
+        "SELECT repo_id, path FROM skills WHERE slug = ?1 LIMIT 1",
         params![slug],
-        |row| {
-            let repo_id: String = row.get(0)?;
-            let source_json: String = row.get(1)?;
-            Ok((repo_id, source_json))
-        },
-    )
-    .ok()
-    .and_then(|(repo_id, source_json)| {
-        // Try to extract path from source_json
-        if let Ok(src) = serde_json::from_str::<RegistrySource>(&source_json) {
-            if let RegistrySource::Git { path, .. } = &src {
-                if let Some(p) = path {
-                    return Some((repo_id, p.clone()));
-                }
-            }
-        }
-        None
-    })
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+    );
+    match result {
+        Ok((repo_id, path)) if !path.is_empty() => Some((repo_id, path)),
+        _ => None,
+    }
 }
 
 /// Find the actual path to a skill directory within a cloned repo.
 ///
 /// `skill_path` is the registry path (e.g. `skills/salvo-auth`).
 /// Falls back to `{slug}` if the explicit path doesn't have SKILL.md.
-fn find_skill_in_repo(repo_path: &std::path::Path, skill_path: &str) -> Option<PathBuf> {
+fn find_skill_in_repo(repo_sign: &std::path::Path, skill_path: &str) -> Option<PathBuf> {
     let has_skill_md = |dir: &std::path::Path| -> bool {
         dir.join("SKILL.md").exists() || dir.join("skill.md").exists()
     };
 
     // 1. Try the explicit path
-    let p = repo_path.join(skill_path);
+    let p = repo_sign.join(skill_path);
     if has_skill_md(&p) {
         return Some(p);
     }
 
     // 2. Try just the last segment (slug) under skills/
     let slug = skill_path.rsplit('/').next().unwrap_or(skill_path);
-    let p = repo_path.join("skills").join(slug);
+    let p = repo_sign.join("skills").join(slug);
     if has_skill_md(&p) {
         return Some(p);
     }
 
     // 3. Try slug directly
-    let p = repo_path.join(slug);
+    let p = repo_sign.join(slug);
     if has_skill_md(&p) {
         return Some(p);
     }
@@ -735,18 +711,34 @@ fn find_skill_in_repo(repo_path: &std::path::Path, skill_path: &str) -> Option<P
 /// - A full sign: `github.com/owner/repo/path/to/skill`
 /// - A partial sign suffix: `path/to/skill`
 /// - A plain slug: `skill-name`
+/// Check if a skill matches any entry in a skipped list.
+///
+/// Each `skipped` entry can be:
+/// - A plain slug: `salvo-auth` (matches by slug)
+/// - A full sign: `github.com/salvo-rs/salvo-skills/skills/salvo-auth` (matches by sign)
+/// - A partial path suffix: `skills/salvo-auth` (matches slug extracted from last segment)
+///
+/// `slug` is the skill slug. `sign` is optional `{repo_id}/{path}`.
 pub fn skill_matches_skipped(sign: &str, skipped: &[String]) -> bool {
     if skipped.is_empty() {
         return false;
     }
-    // Direct slug match
-    if skipped.iter().any(|s| s == sign) {
-        return true;
-    }
-    // Sign match: compute sign and check
     for entry in skipped {
-        if *entry == sign || sign.ends_with(&format!("/{entry}")) {
+        // Exact slug match
+        if entry == slug {
             return true;
+        }
+        // Sign match (if sign provided)
+        if let Some(sign) = sign {
+            if entry == sign {
+                return true;
+            }
+        }
+        // Entry's last segment matches slug
+        if let Some(last) = entry.rsplit('/').next() {
+            if last == slug {
+                return true;
+            }
         }
     }
     false
@@ -760,21 +752,18 @@ pub fn skill_matches_skipped(sign: &str, skipped: &[String]) -> bool {
 ///
 /// Returns the local path to the skill's subdirectory inside the repo.
 pub fn install_skill_from_registry(slug: &str) -> Result<PathBuf> {
-    let _skill = get_skill_by_slug(slug)?
+    let skill = get_skill_by_slug(slug)?
         .with_context(|| format!("skill '{slug}' not found in registry cache"))?;
 
     let source = get_repo_source_for_skill(slug)?
         .with_context(|| format!("no repo source found for skill '{slug}'"))?;
-    let db_info = get_skill_db_info(slug);
     let (git_url, git_ref, source_path) = match &source {
-        RegistrySource::Git {
-            url, r#ref, path, ..
-        } => {
-            let sp = db_info
-                .as_ref()
-                .map(|(_, p)| p.clone())
-                .or_else(|| path.clone())
-                .unwrap_or_else(|| format!("skills/{slug}"));
+        RegistrySource::Git { url, r#ref, .. } => {
+            let sp = if !skill.path.is_empty() {
+                skill.path.clone()
+            } else {
+                format!("skills/{slug}")
+            };
             (url.clone(), r#ref.clone(), sp)
         }
         _ => bail!("skill '{slug}' has no git source"),
@@ -784,15 +773,15 @@ pub fn install_skill_from_registry(slug: &str) -> Result<PathBuf> {
     fs::create_dir_all(&base)?;
 
     let repo_name = repo_dir_name(&git_url);
-    let repo_path = base.join(&repo_name);
+    let repo_sign = base.join(&repo_name);
 
-    if repo_path.exists() {
+    if repo_sign.exists() {
         // Existing repo: add the skill path to sparse-checkout and pull
-        sparse_checkout_add(&repo_path, &[source_path.as_str()])?;
+        sparse_checkout_add(&repo_sign, &[source_path.as_str()])?;
 
         let status = std::process::Command::new("git")
             .args(["pull", "--ff-only"])
-            .current_dir(&repo_path)
+            .current_dir(&repo_sign)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::piped())
             .status();
@@ -802,11 +791,11 @@ pub fn install_skill_from_registry(slug: &str) -> Result<PathBuf> {
                 // Pull failed, try fetch+reset
                 let _ = std::process::Command::new("git")
                     .args(["fetch", "--depth", "1", "origin", &git_ref.value])
-                    .current_dir(&repo_path)
+                    .current_dir(&repo_sign)
                     .status();
                 let _ = std::process::Command::new("git")
                     .args(["checkout", &git_ref.value, "--"])
-                    .current_dir(&repo_path)
+                    .current_dir(&repo_sign)
                     .status();
             }
         }
@@ -824,7 +813,7 @@ pub fn install_skill_from_registry(slug: &str) -> Result<PathBuf> {
             args.push(git_ref.value.clone());
         }
         args.push(git_url.clone());
-        args.push(repo_path.display().to_string());
+        args.push(repo_sign.display().to_string());
 
         let status = std::process::Command::new("git")
             .args(&args)
@@ -840,15 +829,15 @@ pub fn install_skill_from_registry(slug: &str) -> Result<PathBuf> {
         // Initialize sparse-checkout with the skill path
         let _ = std::process::Command::new("git")
             .args(["sparse-checkout", "init", "--cone"])
-            .current_dir(&repo_path)
+            .current_dir(&repo_sign)
             .status();
         let _ = std::process::Command::new("git")
             .args(["sparse-checkout", "set", &source_path])
-            .current_dir(&repo_path)
+            .current_dir(&repo_sign)
             .status();
         let _ = std::process::Command::new("git")
             .args(["checkout"])
-            .current_dir(&repo_path)
+            .current_dir(&repo_sign)
             .status();
     }
 
@@ -856,13 +845,13 @@ pub fn install_skill_from_registry(slug: &str) -> Result<PathBuf> {
     install_skill(slug)?;
 
     // Find the actual skill directory within the repo
-    let skill_path = find_skill_in_repo(&repo_path, &source_path)
-        .unwrap_or_else(|| repo_path.join(&source_path));
+    let skill_path = find_skill_in_repo(&repo_sign, &source_path)
+        .unwrap_or_else(|| repo_sign.join(&source_path));
 
-    // Update repo_path in installed_skills.json
+    // Update repo_sign in installed_skills.json
     let mut entries = read_installed_skills_file().unwrap_or_default();
     if let Some(entry) = entries.iter_mut().find(|e| e.slug == slug) {
-        entry.repo_path = Some(skill_path.display().to_string());
+        entry.repo_sign = Some(skill_path.display().to_string());
     }
     let _ = write_installed_skills_file(&entries);
 
@@ -870,7 +859,7 @@ pub fn install_skill_from_registry(slug: &str) -> Result<PathBuf> {
 }
 
 /// Add one or more paths to the sparse-checkout list of an existing repo.
-fn sparse_checkout_add(repo_path: &std::path::Path, paths: &[&str]) -> Result<()> {
+fn sparse_checkout_add(repo_sign: &std::path::Path, paths: &[&str]) -> Result<()> {
     if paths.is_empty() {
         return Ok(());
     }
@@ -878,7 +867,7 @@ fn sparse_checkout_add(repo_path: &std::path::Path, paths: &[&str]) -> Result<()
     args.extend(paths);
     let _ = std::process::Command::new("git")
         .args(&args)
-        .current_dir(repo_path)
+        .current_dir(repo_sign)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .status();
@@ -890,7 +879,7 @@ fn sparse_checkout_add(repo_path: &std::path::Path, paths: &[&str]) -> Result<()
 pub struct InstalledSkillInfo {
     pub slug: String,
     /// Registry data repo path (e.g. `github.com/salvo-rs/salvo-skills`).
-    pub repo_id: String,
+    pub repo_sign: String,
     /// Skill path in repo (e.g. `skills/salvo-auth`).
     pub skill_path: String,
     /// Local filesystem path to the skill directory in the cloned repo.
@@ -915,28 +904,34 @@ pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>>
     }
     let mut skill_infos = Vec::new();
     for slug in slugs {
-        let _skill = match get_skill_by_slug(slug)? {
+        let skill = match get_skill_by_slug(slug)? {
             Some(s) => s,
             None => {
                 eprintln!("  \x1b[33m!\x1b[0m {slug}: not found in registry cache");
                 continue;
             }
         };
-        let db_info = get_skill_db_info(slug);
+        // Get repo_sign from DB
+        let skill_repo_sign = {
+            let conn = open_cache()?;
+            conn.query_row(
+                "SELECT repo_id FROM skills WHERE slug = ?1 LIMIT 1",
+                params![slug],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap_or_default()
+        };
         let source = get_repo_source_for_skill(slug)?;
         match &source {
-            Some(RegistrySource::Git {
-                url, r#ref, path, ..
-            }) => {
-                let source_path = db_info
-                    .as_ref()
-                    .map(|(_, p)| p.clone())
-                    .or_else(|| path.clone())
-                    .unwrap_or_else(|| format!("skills/{slug}"));
-                let repo_id = db_info.map(|(r, _)| r).unwrap_or_default();
+            Some(RegistrySource::Git { url, r#ref, .. }) => {
+                let source_path = if !skill.path.is_empty() {
+                    skill.path.clone()
+                } else {
+                    format!("skills/{slug}")
+                };
                 skill_infos.push(SkillInfo {
                     slug: slug.clone(),
-                    repo_id,
+                    repo_id: skill_repo_sign,
                     git_url: url.clone(),
                     git_ref: r#ref.clone(),
                     source_path,
@@ -965,18 +960,18 @@ pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>>
     // 3. For each group, clone once (or pull once), sparse-checkout ALL paths at once.
     for ((git_url, _ref_value), skills) in &groups {
         let repo_name = repo_dir_name(git_url);
-        let repo_path = base.join(&repo_name);
+        let repo_sign = base.join(&repo_name);
         let git_ref = &skills[0].git_ref;
 
         let source_paths: Vec<&str> = skills.iter().map(|s| s.source_path.as_str()).collect();
 
-        if repo_path.exists() {
+        if repo_sign.exists() {
             // Existing repo: add ALL skill paths in a single sparse-checkout command.
-            sparse_checkout_add(&repo_path, &source_paths)?;
+            sparse_checkout_add(&repo_sign, &source_paths)?;
 
             let status = std::process::Command::new("git")
                 .args(["pull", "--ff-only"])
-                .current_dir(&repo_path)
+                .current_dir(&repo_sign)
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::piped())
                 .status();
@@ -985,11 +980,11 @@ pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>>
                 _ => {
                     let _ = std::process::Command::new("git")
                         .args(["fetch", "--depth", "1", "origin", &git_ref.value])
-                        .current_dir(&repo_path)
+                        .current_dir(&repo_sign)
                         .status();
                     let _ = std::process::Command::new("git")
                         .args(["checkout", &git_ref.value, "--"])
-                        .current_dir(&repo_path)
+                        .current_dir(&repo_sign)
                         .status();
                 }
             }
@@ -1007,7 +1002,7 @@ pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>>
                 args.push(git_ref.value.clone());
             }
             args.push(git_url.clone());
-            args.push(repo_path.display().to_string());
+            args.push(repo_sign.display().to_string());
 
             let status = std::process::Command::new("git")
                 .args(&args)
@@ -1023,7 +1018,7 @@ pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>>
 
             let _ = std::process::Command::new("git")
                 .args(["sparse-checkout", "init", "--cone"])
-                .current_dir(&repo_path)
+                .current_dir(&repo_sign)
                 .status();
 
             // Set ALL paths in a single sparse-checkout set command.
@@ -1031,12 +1026,12 @@ pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>>
             set_args.extend(source_paths.iter());
             let _ = std::process::Command::new("git")
                 .args(&set_args)
-                .current_dir(&repo_path)
+                .current_dir(&repo_sign)
                 .status();
 
             let _ = std::process::Command::new("git")
                 .args(["checkout"])
-                .current_dir(&repo_path)
+                .current_dir(&repo_sign)
                 .status();
         }
 
@@ -1044,14 +1039,14 @@ pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>>
         let mut entries = read_installed_skills_file().unwrap_or_default();
         for info in skills {
             let _ = install_skill(&info.slug);
-            let skill_path = find_skill_in_repo(&repo_path, &info.source_path)
-                .unwrap_or_else(|| repo_path.join(&info.source_path));
+            let skill_path = find_skill_in_repo(&repo_sign, &info.source_path)
+                .unwrap_or_else(|| repo_sign.join(&info.source_path));
             if let Some(entry) = entries.iter_mut().find(|e| e.slug == info.slug) {
-                entry.repo_path = Some(skill_path.display().to_string());
+                entry.repo_sign = Some(skill_path.display().to_string());
             }
             results.push(InstalledSkillInfo {
                 slug: info.slug.clone(),
-                repo_id: info.repo_id.clone(),
+                repo_sign: info.repo_id.clone(),
                 skill_path: info.source_path.clone(),
                 local_path: skill_path,
             });
@@ -1671,11 +1666,11 @@ pub fn get_skill_by_slug(slug: &str) -> Result<Option<RegistrySkill>> {
     }
 }
 
-pub fn get_skill(repo_path: &str, path: &str) -> Result<Option<RegistrySkill>> {
+pub fn get_skill(repo_sign: &str, path: &str) -> Result<Option<RegistrySkill>> {
     let conn = open_cache()?;
     let result = conn.query_row(
-        "SELECT data_json FROM skills WHERE repo_path = ?1 AND path = ?2 LIMIT 1",
-        params![repo_path, path],
+        "SELECT data_json FROM skills WHERE repo_sign = ?1 AND path = ?2 LIMIT 1",
+        params![repo_sign, path],
         |row| {
             let json: String = row.get(0)?;
             Ok(json)
@@ -1747,13 +1742,13 @@ pub fn list_skills_in_flock(flock_slug: &str) -> Result<Vec<RegistrySkill>> {
 }
 
 /// List just the slugs of skills in a flock (lightweight).
-pub fn list_flock_skill_slugs(flock_slug: &str) -> Result<Vec<String>> {
+pub fn list_flock_skill_paths(flock_sign: &str) -> Result<Vec<String>> {
     let conn = open_cache()?;
-    let pattern = format!("%/{flock_slug}");
+    let pattern = format!("%/{flock_sign}");
     let mut stmt = conn.prepare(
         "SELECT slug FROM skills WHERE flock_id LIKE ?1 OR flock_id = ?2 ORDER BY slug ASC",
     )?;
-    let rows = stmt.query_map(rusqlite::params![pattern, flock_slug], |row| {
+    let rows = stmt.query_map(rusqlite::params![pattern, flock_sign], |row| {
         row.get::<_, String>(0)
     })?;
     let mut slugs = Vec::new();

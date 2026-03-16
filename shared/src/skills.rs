@@ -51,7 +51,7 @@ pub struct SkillOrigin {
 pub struct RepoSkillOrigin {
     pub version: u8,
     pub repo: String,
-    pub repo_path: String,
+    pub repo_sign: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo_commit: Option<String>,
     pub slug: String,

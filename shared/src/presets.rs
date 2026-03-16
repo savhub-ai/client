@@ -871,7 +871,7 @@ pub fn enable_repo_skill_in_project(
         &RepoSkillOrigin {
             version: 1,
             repo: repo_skill.repo_name.clone(),
-            repo_path: repo_skill.repo_root.display().to_string(),
+            repo_sign: repo_skill.repo_root.display().to_string(),
             repo_commit: version_info.git_commit.clone(),
             slug: slug.clone(),
             skill_version: version_info.version.clone(),
@@ -1117,8 +1117,8 @@ fn collect_skill_folders(workdir: &Path) -> Vec<SkillFolder> {
     // 3. Repo-installed skills (from installed_skills.json)
     if let Ok(installed) = crate::registry::read_installed_skills_file() {
         for entry in installed {
-            if let Some(repo_path) = &entry.repo_path {
-                let path = PathBuf::from(repo_path);
+            if let Some(repo_sign) = &entry.repo_sign {
+                let path = PathBuf::from(repo_sign);
                 if path.is_dir() {
                     if let Some(skill) = skill_folder_from_path(&path) {
                         if !all_folders.iter().any(|e| e.slug == skill.slug) {

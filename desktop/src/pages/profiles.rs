@@ -1388,7 +1388,7 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
             let skipped = &config.skills.manual_skipped;
             let filtered: Vec<String> = skill_slugs_cl
                 .iter()
-                .filter(|s| !savhub_local::registry::skill_matches_skipped(s, skipped))
+                .filter(|s| !savhub_local::registry::skill_matches_skipped(s, None, skipped))
                 .cloned()
                 .collect();
 
@@ -1408,7 +1408,7 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                     if !lock.skills.iter().any(|s| s.slug() == info.slug) {
                         let vi = savhub_local::skills::read_skill_version_info(&info.local_path).unwrap_or_default();
                         lock.skills.push(savhub_local::presets::ProjectLockedSkill {
-                            repo: info.repo_id.clone(),
+                            repo: info.repo_sign.clone(),
                             path: info.skill_path.clone(),
                             version: vi.version,
                             commit_hash: vi.git_commit,
