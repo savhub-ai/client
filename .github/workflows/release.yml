@@ -168,14 +168,19 @@ jobs:
         run: |
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
+          ARCH=$(uname -m)
+          case "$ARCH" in
+            x86_64) ARCH="x64" ;;
+            arm64|aarch64) ARCH="arm64" ;;
+          esac
 
           PKG_ROOT="pkg-staging"
           INSTALL_DEST="${PKG_ROOT}/usr/local/bin"
           mkdir -p "${INSTALL_DEST}"
 
           # Extract CLI binary
-          tar -xzf dist/savhub-cli-macos-x64.tar.gz -C /tmp
-          cp /tmp/savhub-cli-macos-x64/savhub "${INSTALL_DEST}/savhub"
+          tar -xzf "dist/savhub-cli-macos-${ARCH}.tar.gz" -C /tmp
+          cp "/tmp/savhub-cli-macos-${ARCH}/savhub" "${INSTALL_DEST}/savhub"
           chmod 755 "${INSTALL_DEST}/savhub"
 
           # Build .pkg using pkgbuild (built into macOS)
@@ -184,7 +189,7 @@ jobs:
             --identifier ai.savhub.cli \
             --version "${VERSION}" \
             --install-location / \
-            "dist/savhub-cli-macos-x64.pkg"
+            "dist/savhub-cli-macos-${ARCH}.pkg"
 
       - name: Upload .pkg artifact
         uses: actions/upload-artifact@v5
