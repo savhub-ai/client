@@ -110,7 +110,10 @@ jobs:
           path: dist
 
       - name: Install WiX Toolset
-        run: dotnet tool install -g wix
+        shell: pwsh
+        run: |
+          dotnet tool install -g wix
+          wix --version
 
       - name: Extract and build MSI
         shell: pwsh
@@ -150,6 +153,7 @@ jobs:
             <Package Name="Savhub" Manufacturer="Savhub AI" Version="$msiVersion"
                      UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
               <MajorUpgrade DowngradeErrorMessage="A newer version of Savhub is already installed." />
+              <MediaTemplate EmbedCab="yes" />
               <StandardDirectory Id="LocalAppDataFolder">
                 <Directory Id="SAVHUBDIR" Name="savhub">
                   <Directory Id="INSTALLDIR" Name="bin">
@@ -178,7 +182,17 @@ jobs:
           Write-Host "--- savhub.wxs first 3 lines ---"
           Get-Content "savhub.wxs" | Select-Object -First 3
 
-          wix build savhub.wxs -o dist/savhub-windows-x64.msi
+          wix build -arch x64 savhub.wxs -o dist/savhub-windows-x64.msi
+
+          $sidecarCabs = Get-ChildItem "dist" -Filter "*.cab" -ErrorAction SilentlyContinue
+          if ($sidecarCabs) {
+            Write-Host "WiX emitted external cabinet(s):"
+            $sidecarCabs | ForEach-Object {
+              $cabSize = $_.Length / 1MB
+              Write-Host " - $($_.FullName) ($cabSize MB)"
+            }
+            throw "WiX produced external cabinet(s); MSI payload is not embedded"
+          }
 
           # Verify MSI size is reasonable (should be > 1MB)
           $msiSize = (Get-Item "dist/savhub-windows-x64.msi").Length / 1MB
@@ -192,10 +206,103 @@ jobs:
           path: dist/*.msi
           if-no-files-found: error
 
+  deb:
+    name: Build Linux .deb Package
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download Linux build artifacts
+        uses: actions/download-artifact@v5
+        with:
+          name: release-assets-ubuntu-latest
+          path: dist
+
+      - name: Build .deb package
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+
+          PKG_ROOT="deb-staging"
+          mkdir -p "${PKG_ROOT}/DEBIAN"
+          mkdir -p "${PKG_ROOT}/usr/local/bin"
+
+          tar -xzf dist/savhub-linux-x64.tar.gz -C /tmp
+          cp /tmp/savhub-linux-x64/savhub "${PKG_ROOT}/usr/local/bin/savhub"
+          cp /tmp/savhub-linux-x64/savhub-desktop "${PKG_ROOT}/usr/local/bin/savhub-desktop"
+          chmod 755 "${PKG_ROOT}/usr/local/bin/savhub"
+          chmod 755 "${PKG_ROOT}/usr/local/bin/savhub-desktop"
+
+          cat > "${PKG_ROOT}/DEBIAN/control" <<CTRL
+          Package: savhub
+          Version: ${VERSION}
+          Section: devel
+          Priority: optional
+          Architecture: amd64
+          Maintainer: Savhub AI <support@savhub.ai>
+          Description: Savhub - AI skills package manager
+           Search, install, and manage AI agent skills from the
+           Savhub registry. Includes CLI and desktop app.
+          CTRL
+          sed -i 's/^          //' "${PKG_ROOT}/DEBIAN/control"
+
+          dpkg-deb --build "${PKG_ROOT}" "dist/savhub-linux-x64.deb"
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: release-assets-deb
+          path: dist/*.deb
+          if-no-files-found: error
+
+  pkg:
+    name: Build macOS .pkg Installer
+    runs-on: macos-latest
+    needs: build
+    steps:
+      - name: Download macOS build artifacts
+        uses: actions/download-artifact@v5
+        with:
+          name: release-assets-macos-latest
+          path: dist
+
+      - name: Build .pkg installer
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          ARCH=$(uname -m)
+          case "$ARCH" in
+            x86_64) ARCH="x64" ;;
+            arm64|aarch64) ARCH="arm64" ;;
+          esac
+
+          PKG_ROOT="pkg-staging"
+          INSTALL_DEST="${PKG_ROOT}/usr/local/bin"
+          mkdir -p "${INSTALL_DEST}"
+
+          tar -xzf "dist/savhub-macos-${ARCH}.tar.gz" -C /tmp
+          cp "/tmp/savhub-macos-${ARCH}/savhub" "${INSTALL_DEST}/savhub"
+          cp "/tmp/savhub-macos-${ARCH}/savhub-desktop" "${INSTALL_DEST}/savhub-desktop"
+          chmod 755 "${INSTALL_DEST}/savhub"
+          chmod 755 "${INSTALL_DEST}/savhub-desktop"
+
+          pkgbuild \
+            --root "${PKG_ROOT}" \
+            --identifier ai.savhub.cli \
+            --version "${VERSION}" \
+            --install-location / \
+            "dist/savhub-macos-${ARCH}.pkg"
+
+      - name: Upload .pkg artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: release-assets-pkg
+          path: dist/*.pkg
+          if-no-files-found: error
+
   publish:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
-    needs: [build, msi]
+    needs: [build, msi, deb, pkg]
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -230,6 +337,12 @@ jobs:
             ```powershell
             irm https://raw.githubusercontent.com/savhub-ai/client/main/scripts/install.ps1 | iex
             ```
+
+            **Linux .deb**:
+            Download `savhub-linux-x64.deb` below and run `sudo dpkg -i savhub-linux-x64.deb`.
+
+            **macOS .pkg**:
+            Download the `.pkg` file below and run the installer.
 
             **Windows MSI** (GUI installer with PATH setup):
             Download `savhub-windows-x64.msi` below and run it.
