@@ -45,7 +45,7 @@ function Install-Savhub {
     }
     Write-Host "Installing savhub $Version..."
 
-    $archiveName = "savhub-cli-$platform.zip"
+    $archiveName = "savhub-$platform.zip"
     $downloadUrl = "https://github.com/$Repo/releases/download/$Version/$archiveName"
 
     $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "savhub-install-$(Get-Random)"
@@ -61,16 +61,20 @@ function Install-Savhub {
 
         New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
-        # Find the binary
-        $binary = Get-ChildItem -Path $tmpDir -Recurse -Filter "savhub.exe" | Select-Object -First 1
-        if (-not $binary) {
-            throw "savhub.exe not found in archive"
+        # Install binaries
+        New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+        foreach ($bin in @("savhub.exe", "savhub-desktop.exe")) {
+            $found = Get-ChildItem -Path $tmpDir -Recurse -Filter $bin | Select-Object -First 1
+            if ($found) {
+                $destPath = Join-Path $InstallDir $bin
+                Copy-Item -Path $found.FullName -Destination $destPath -Force
+                Write-Host "Installed $bin to $destPath"
+            }
         }
 
-        $destPath = Join-Path $InstallDir "savhub.exe"
-        Copy-Item -Path $binary.FullName -Destination $destPath -Force
-
-        Write-Host "Installed savhub to $destPath"
+        if (-not (Test-Path (Join-Path $InstallDir "savhub.exe"))) {
+            throw "savhub.exe not found in archive"
+        }
 
         # Add to user PATH
         Add-ToPath

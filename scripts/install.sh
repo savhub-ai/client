@@ -86,7 +86,7 @@ main() {
     fi
     echo "Installing savhub ${VERSION}..."
 
-    local archive_name="savhub-cli-${platform}.tar.gz"
+    local archive_name="savhub-${platform}.tar.gz"
     local download_url="https://github.com/${REPO}/releases/download/${VERSION}/${archive_name}"
 
     local tmp_dir
@@ -101,18 +101,21 @@ main() {
 
     mkdir -p "$INSTALL_DIR"
 
-    # Find the binary inside the extracted directory
-    local binary_path
-    binary_path="$(find "$tmp_dir" -name "savhub" -type f | head -1)"
-    if [ -z "$binary_path" ]; then
+    # Install binaries from the extracted directory
+    local extract_dir="${tmp_dir}/savhub-${platform}"
+
+    for bin in savhub savhub-desktop; do
+        if [ -f "${extract_dir}/${bin}" ]; then
+            cp "${extract_dir}/${bin}" "${INSTALL_DIR}/${bin}"
+            chmod +x "${INSTALL_DIR}/${bin}"
+            echo "Installed ${bin} to ${INSTALL_DIR}/${bin}"
+        fi
+    done
+
+    if [ ! -f "${INSTALL_DIR}/savhub" ]; then
         echo "Error: savhub binary not found in archive"
         exit 1
     fi
-
-    cp "$binary_path" "${INSTALL_DIR}/savhub"
-    chmod +x "${INSTALL_DIR}/savhub"
-
-    echo "Installed savhub to ${INSTALL_DIR}/savhub"
 
     # Add to PATH if not already present
     add_to_path
