@@ -24,7 +24,7 @@ jobs:
           - macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Linux desktop dependencies
         if: runner.os == 'Linux'
@@ -97,7 +97,7 @@ jobs:
           }
 
       - name: Upload packaged artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: release-assets-${{ matrix.os }}
           path: dist/*
@@ -109,7 +109,7 @@ jobs:
     needs: build
     steps:
       - name: Download Linux build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: release-assets-ubuntu-latest
           path: dist
@@ -147,7 +147,7 @@ jobs:
           dpkg-deb --build "${PKG_ROOT}" "dist/savhub-cli-linux-x64.deb"
 
       - name: Upload .deb artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: release-assets-deb
           path: dist/*.deb
@@ -159,7 +159,7 @@ jobs:
     needs: build
     steps:
       - name: Download macOS build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: release-assets-macos-latest
           path: dist
@@ -187,7 +187,7 @@ jobs:
             "dist/savhub-cli-macos-x64.pkg"
 
       - name: Upload .pkg artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: release-assets-pkg
           path: dist/*.pkg
@@ -199,7 +199,7 @@ jobs:
     needs: build
     steps:
       - name: Download Windows build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: release-assets-windows-latest
           path: dist
@@ -270,7 +270,7 @@ jobs:
           wix build savhub.wxs -o dist/savhub-cli-windows-x64.msi
 
       - name: Upload MSI artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: release-assets-msi
           path: dist/*.msi
@@ -282,10 +282,10 @@ jobs:
     needs: [build, deb, pkg, msi]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download all release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: release-assets-*
           merge-multiple: true

@@ -8,7 +8,7 @@ use crate::api::{ApiClient, ApiCompatibility};
 use crate::i18n::Language;
 
 /// Fallback API base if nothing is configured.
-const DEFAULT_API_BASE: &str = "http://127.0.0.1:5006/api/v1";
+const DEFAULT_API_BASE: &str = "https://savhub.ai/api/v1";
 
 fn default_workdir() -> PathBuf {
     directories::UserDirs::new()

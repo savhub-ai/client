@@ -41,7 +41,7 @@ use skills::{
     write_skill_origin,
 };
 
-const DEFAULT_SITE: &str = "http://127.0.0.1:5006";
+const DEFAULT_SITE: &str = "https://savhub.ai";
 
 // Transfer types (removed from savhub-shared, kept locally for CLI transfer commands)
 #[derive(Debug, serde::Serialize)]
