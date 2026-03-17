@@ -18,10 +18,11 @@ if (-not $InstallDir) {
 }
 
 function Get-Platform {
-    $arch = switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
+    $osArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+    $arch = switch ($osArch) {
         "X64"   { "x64" }
         "Arm64" { "arm64" }
-        default { throw "Unsupported architecture: $_" }
+        default { throw "Unsupported architecture: $osArch" }
     }
     return "windows-$arch"
 }
