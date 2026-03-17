@@ -209,6 +209,9 @@ pub struct Texts {
     pub selectors_search_skills: &'static str,
     pub selectors_add_flocks_label: &'static str,
     pub selectors_search_flocks: &'static str,
+    pub selectors_add_repos_label: &'static str,
+    pub selectors_repos_placeholder: &'static str,
+    pub selectors_repos_hint: &'static str,
     pub selectors_priority: &'static str,
 
     // Projects page
@@ -510,6 +513,9 @@ static EN: Texts = Texts {
     selectors_search_skills: "Search skills...",
     selectors_add_flocks_label: "Flocks (Grouped Skills)",
     selectors_search_flocks: "Search flocks...",
+    selectors_add_repos_label: "Repos",
+    selectors_repos_placeholder: "https://github.com/owner/repo or git@github.com:owner/repo",
+    selectors_repos_hint: "When matched, all flocks and skills from these repos will be installed. URLs are normalized automatically.",
     selectors_priority: "Priority",
 
     projects_title: "Projects",
@@ -736,6 +742,9 @@ static ZH: Texts = Texts {
     selectors_search_skills: "搜索技能...",
     selectors_add_flocks_label: "技能集（分组技能）",
     selectors_search_flocks: "搜索技能集...",
+    selectors_add_repos_label: "仓库",
+    selectors_repos_placeholder: "https://github.com/owner/repo 或 git@github.com:owner/repo",
+    selectors_repos_hint: "匹配时将安装这些仓库中的所有技能集和技能。URL 会自动标准化。",
     selectors_priority: "优先级",
 
     projects_title: "项目",

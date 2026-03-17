@@ -1872,6 +1872,17 @@ pub fn list_flock_slugs() -> Result<Vec<String>> {
     Ok(slugs)
 }
 
+/// Check if a repo with the given sign (e.g. `github.com/owner/repo`) exists in the registry.
+pub fn repo_exists_in_registry(sign: &str) -> Result<bool> {
+    let conn = open_cache()?;
+    let count: usize = conn.query_row(
+        "SELECT COUNT(*) FROM repos WHERE id = ?1 OR sign = ?1",
+        rusqlite::params![sign],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
+
 /// Get total skill count from cache.
 pub fn skill_count() -> Result<usize> {
     let conn = open_cache()?;

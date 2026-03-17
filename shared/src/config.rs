@@ -30,7 +30,7 @@ pub fn get_config_path() -> Result<PathBuf> {
     if let Some(path) = std::env::var_os("SAVHUB_CONFIG_PATH") {
         return Ok(PathBuf::from(path));
     }
-    Ok(get_config_dir()?.join("config.json"))
+    Ok(get_config_dir()?.join("config.toml"))
 }
 
 pub fn read_global_config() -> Result<Option<GlobalConfig>> {
@@ -38,7 +38,7 @@ pub fn read_global_config() -> Result<Option<GlobalConfig>> {
     let Ok(raw) = fs::read_to_string(&path) else {
         return Ok(None);
     };
-    let Ok(config) = serde_json::from_str::<GlobalConfig>(&raw) else {
+    let Ok(config) = toml::from_str::<GlobalConfig>(&raw) else {
         return Ok(None);
     };
     Ok(Some(config))
@@ -151,7 +151,8 @@ pub fn write_global_config(config: &GlobalConfig) -> Result<()> {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create config directory {}", parent.display()))?;
     }
-    let payload = serde_json::to_string_pretty(config)?;
+    let payload = toml::to_string_pretty(config)
+        .with_context(|| "failed to serialize config as TOML")?;
     fs::write(&path, format!("{payload}\n"))
         .with_context(|| format!("failed to write {}", path.display()))?;
 

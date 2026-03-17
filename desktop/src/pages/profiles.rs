@@ -728,6 +728,7 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                         selector: m.selector.name.clone(),
                         flocks: m.flocks.clone(),
                         skills: m.skills.clone(),
+                        repos: m.repos.clone(),
                     })
                     .collect();
                 let _ = savhub_local::presets::write_project_config(&workdir, &cfg);

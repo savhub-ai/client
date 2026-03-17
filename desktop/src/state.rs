@@ -19,18 +19,18 @@ fn default_workdir() -> PathBuf {
 /// Read global config.
 ///
 /// API base URL priority (highest first):
-///   1. `~/.savhub/config.toml` → `[rest_api] base_url` (user override)
+///   1. `~/.savhub/config.toml` → `[rest_api] base_url` (user override via registry)
 ///   2. `~/.savhub/registry.json` → `rest_api.base_url`
-///   3. `~/.savhub/config.json` → `registry`
+///   3. `~/.savhub/config.toml` → `registry`
 ///   4. Default fallback
 fn load_config() -> (String, Option<String>, Language, PathBuf, Vec<String>) {
     // Highest priority: config.toml / registry.json via read_api_base_url()
     let api_override = savhub_local::registry::read_api_base_url();
 
-    // Read config.json from ~/.savhub/
+    // Read config.toml from ~/.savhub/
     let config_path = savhub_local::config::get_config_dir()
         .ok()
-        .map(|d| d.join("config.json"));
+        .map(|d| d.join("config.toml"));
 
     let mut token = None;
     let mut lang = Language::English;
@@ -40,7 +40,7 @@ fn load_config() -> (String, Option<String>, Language, PathBuf, Vec<String>) {
 
     if let Some(path) = config_path {
         if let Ok(raw) = std::fs::read_to_string(&path) {
-            if let Ok(cfg) = serde_json::from_str::<serde_json::Value>(&raw) {
+            if let Ok(cfg) = toml::from_str::<toml::Value>(&raw) {
                 config_registry = cfg
                     .get("registry")
                     .and_then(|v| v.as_str())
@@ -68,7 +68,7 @@ fn load_config() -> (String, Option<String>, Language, PathBuf, Vec<String>) {
         }
     }
 
-    // Priority: config.toml override > registry.json > config.json > default
+    // Priority: config.toml [rest_api] override > registry.json > config.toml registry > default
     let registry = api_override
         .or(config_registry)
         .unwrap_or_else(|| DEFAULT_API_BASE.to_string());
@@ -80,10 +80,10 @@ fn load_config() -> (String, Option<String>, Language, PathBuf, Vec<String>) {
 pub fn read_language() -> Language {
     let config_path = savhub_local::config::get_config_dir()
         .ok()
-        .map(|d| d.join("config.json"));
+        .map(|d| d.join("config.toml"));
     if let Some(path) = config_path {
         if let Ok(raw) = std::fs::read_to_string(&path) {
-            if let Ok(cfg) = serde_json::from_str::<serde_json::Value>(&raw) {
+            if let Ok(cfg) = toml::from_str::<toml::Value>(&raw) {
                 return Language::from_code(
                     cfg.get("language").and_then(|v| v.as_str()).unwrap_or("en"),
                 );

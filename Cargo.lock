@@ -4389,6 +4389,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tokio",
+ "toml 0.9.12+spec-1.1.0",
  "walkdir",
  "zip",
 ]
@@ -4411,6 +4412,7 @@ dependencies = [
  "serde_json",
  "tar",
  "tokio",
+ "toml 0.9.12+spec-1.1.0",
  "winresource",
  "zip",
 ]

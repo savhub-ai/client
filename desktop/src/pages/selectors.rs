@@ -4,7 +4,8 @@ use dioxus::prelude::*;
 
 use savhub_local::selectors::{
     MatchMode, SelectorDefinition, SelectorRule, create_selector, delete_selector,
-    generate_selector_id, read_selectors_store, set_selector_enabled, update_selector,
+    generate_selector_id, normalize_repo_url_to_sign, read_selectors_store,
+    set_selector_enabled, update_selector,
 };
 
 use crate::components::pagination::{self, PaginationControls};
@@ -34,6 +35,7 @@ struct SelectorForm {
     custom_expr: String,
     skills: BTreeSet<String>,
     flocks: BTreeSet<String>,
+    repos: BTreeSet<String>,
     priority: i32,
     enabled: bool,
     error: String,
@@ -51,6 +53,7 @@ impl SelectorForm {
             custom_expr: String::new(),
             skills: BTreeSet::new(),
             flocks: BTreeSet::new(),
+            repos: BTreeSet::new(),
             priority: 0,
             enabled: true,
             error: String::new(),
@@ -107,6 +110,7 @@ impl SelectorForm {
             custom_expr: d.custom_expression.clone(),
             skills: d.skills.iter().cloned().collect(),
             flocks: d.flocks.iter().cloned().collect(),
+            repos: d.repos.iter().cloned().collect(),
             priority: d.priority,
             enabled: d.enabled,
             error: String::new(),
@@ -158,6 +162,7 @@ impl SelectorForm {
             custom_expression: self.custom_expr.clone(),
             skills: self.skills.iter().cloned().collect(),
             flocks: self.flocks.iter().cloned().collect(),
+            repos: self.repos.iter().cloned().collect(),
             priority: self.priority,
             enabled: self.enabled,
         }
@@ -346,6 +351,7 @@ fn SelectorRow(
     let rules_count = selector.rules.len();
     let skills_count = selector.skills.len();
     let flocks_count = selector.flocks.len();
+    let repos_count = selector.repos.len();
     let is_enabled = selector.enabled;
     let opacity = if is_enabled { "1" } else { "0.5" };
     let toggle_label = if is_enabled { t.selectors_disable } else { t.selectors_enable };
@@ -365,7 +371,7 @@ fn SelectorRow(
                 }
                 div { style: "display: flex; flex-wrap: wrap; gap: 5px; margin-top: auto;",
                     span { style: "font-size: 10px; padding: 2px 7px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border-radius: 999px;", "{selector.folder_scope}" }
-                    span { style: "font-size: 10px; color: {Theme::MUTED};", "{rules_count}r \u{00B7} {skills_count}s \u{00B7} {flocks_count}f" }
+                    span { style: "font-size: 10px; color: {Theme::MUTED};", "{rules_count}r \u{00B7} {skills_count}s \u{00B7} {flocks_count}f \u{00B7} {repos_count}rp" }
                     if selector.priority != 0 {
                         span { style: "font-size: 10px; color: {Theme::MUTED};", "P{selector.priority}" }
                     }
@@ -404,7 +410,7 @@ fn SelectorRow(
                 }
                 div { style: "display: flex; flex-wrap: wrap; gap: 6px;",
                     span { style: "font-size: 11px; padding: 2px 8px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border-radius: 999px;", "{selector.folder_scope}" }
-                    span { style: "font-size: 11px; color: {Theme::MUTED};", "{rules_count} rules \u{00B7} {skills_count} skills \u{00B7} {flocks_count} flocks" }
+                    span { style: "font-size: 11px; color: {Theme::MUTED};", "{rules_count} rules \u{00B7} {skills_count} skills \u{00B7} {flocks_count} flocks \u{00B7} {repos_count} repos" }
                     if selector.priority != 0 {
                         span { style: "font-size: 11px; color: {Theme::MUTED};", "P{selector.priority}" }
                     }
@@ -437,6 +443,7 @@ fn SelectorDetailPopup(selector: Signal<Option<SelectorDefinition>>) -> Element 
     let rules = d.rules.clone();
     let skills = d.skills.clone();
     let flocks = d.flocks.clone();
+    let repos = d.repos.clone();
     let priority = d.priority;
     drop(guard);
 
@@ -480,8 +487,11 @@ fn SelectorDetailPopup(selector: Signal<Option<SelectorDefinition>>) -> Element 
                         }
                     }
                 }
-                // Skills + Flocks
+                // Skills + Flocks + Repos
                 div { style: "display: flex; flex-direction: column; gap: 10px;",
+                    if !repos.is_empty() {
+                        TagGroup { label: t.selectors_add_repos_label, items: repos, bg: "rgba(180, 120, 60, 0.10)", color: "rgba(140, 80, 20, 0.9)", border: "rgba(180, 120, 60, 0.16)" }
+                    }
                     if !flocks.is_empty() {
                         TagGroup { label: t.selectors_add_flocks_label, items: flocks, bg: "rgba(90, 120, 200, 0.10)", color: "rgba(50, 80, 160, 0.9)", border: "rgba(90, 120, 200, 0.16)" }
                     }
@@ -543,6 +553,8 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
     let mut skill_search = use_signal(String::new);
     let _skill_manual = use_signal(String::new);
     let mut flock_search = use_signal(String::new);
+    let mut repo_input = use_signal(String::new);
+    let mut repo_error = use_signal(String::new);
 
     let is_editing = form.read().as_ref().is_some_and(|f| f.editing_id.is_some());
     let title = if is_editing {
@@ -614,6 +626,7 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
     let custom_expr_val = f.custom_expr.clone();
     let selected_skills = f.skills.clone();
     let selected_flocks = f.flocks.clone();
+    let selected_repos = f.repos.clone();
     let priority_val = f.priority;
     let error_val = f.error.clone();
     drop(guard);
@@ -783,6 +796,78 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
                                 "+ {t.selectors_add_rule}"
                             }
                         }
+                    }
+                    // Repos — free-text input with URL normalization and registry validation
+                    div {
+                        p { style: "{label_style}", "{t.selectors_add_repos_label}" }
+                        // Selected repos as removable tags
+                        if !selected_repos.is_empty() {
+                            div { style: "display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;",
+                                for repo in selected_repos.iter() {
+                                    { let sign = repo.clone();
+                                      rsx! {
+                                        span { style: "display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; background: rgba(180, 120, 60, 0.10); color: rgba(140, 80, 20, 0.9); border: 1px solid rgba(180, 120, 60, 0.18); border-radius: 999px; font-size: 12px; font-weight: 600;",
+                                            "{sign}"
+                                            button {
+                                                style: "background: none; border: none; color: {Theme::DANGER}; font-size: 13px; cursor: pointer; padding: 0 2px; line-height: 1;",
+                                                onclick: { let sign = sign.clone(); move |_| { let s = sign.clone(); set_field(Box::new(move |f| { f.repos.remove(&s); })); } },
+                                                "\u{00D7}"
+                                            }
+                                        }
+                                    }}
+                                }
+                            }
+                        }
+                        // Input + Add button
+                        div { style: "display: flex; gap: 6px;",
+                            input {
+                                r#type: "text", value: "{repo_input}", placeholder: t.selectors_repos_placeholder,
+                                style: "flex: 1; padding: 6px 10px; border: 1px solid {Theme::LINE}; border-radius: 8px; font-size: 12px; background: white; color: {Theme::TEXT};",
+                                oninput: move |evt: Event<FormData>| { repo_input.set(evt.value().to_string()); repo_error.set(String::new()); },
+                                onkeypress: move |evt: Event<KeyboardData>| {
+                                    if evt.key() == Key::Enter {
+                                        let raw = repo_input.read().trim().to_string();
+                                        if !raw.is_empty() {
+                                            let sign = normalize_repo_url_to_sign(&raw);
+                                            match savhub_local::registry::repo_exists_in_registry(&sign) {
+                                                Ok(true) => {
+                                                    set_field(Box::new(move |f| { f.repos.insert(sign); }));
+                                                    repo_input.set(String::new());
+                                                    repo_error.set(String::new());
+                                                }
+                                                _ => {
+                                                    repo_error.set(format!("Repo '{}' is not indexed in the registry. Sync first or check the URL.", sign));
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                            }
+                            button {
+                                style: "padding: 6px 14px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border: 1px solid rgba(90, 158, 63, 0.18); border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer;",
+                                onclick: move |_| {
+                                    let raw = repo_input.read().trim().to_string();
+                                    if !raw.is_empty() {
+                                        let sign = normalize_repo_url_to_sign(&raw);
+                                        match savhub_local::registry::repo_exists_in_registry(&sign) {
+                                            Ok(true) => {
+                                                set_field(Box::new(move |f| { f.repos.insert(sign); }));
+                                                repo_input.set(String::new());
+                                                repo_error.set(String::new());
+                                            }
+                                            _ => {
+                                                repo_error.set(format!("Repo '{}' is not indexed in the registry. Sync first or check the URL.", sign));
+                                            }
+                                        }
+                                    }
+                                },
+                                "{t.selectors_add_tag}"
+                            }
+                        }
+                        if !repo_error.read().is_empty() {
+                            p { style: "font-size: 12px; color: {Theme::DANGER}; margin-top: 3px;", "{repo_error}" }
+                        }
+                        p { style: "font-size: 11px; color: {Theme::MUTED}; margin-top: 3px;", "{t.selectors_repos_hint}" }
                     }
                     // Flocks — search-to-add from registry flocks
                     div {

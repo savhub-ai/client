@@ -578,7 +578,7 @@ fn resolve_global_opts(cli: &Cli) -> Result<GlobalOpts> {
         .or_else(|| std::env::var("SAVHUB_SITE").ok())
         .unwrap_or_else(|| DEFAULT_SITE.to_string());
     let cached = read_global_config()?;
-    // Priority: --registry flag > env > config.toml override > config.json > site default
+    // Priority: --registry flag > env > config.toml [rest_api] override > config.toml registry > site default
     let api_override = savhub_local::registry::read_api_base_url();
     let registry = cli
         .registry
@@ -2711,6 +2711,9 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
                 if !d.flocks.is_empty() {
                     println!("Flocks:     {}", d.flocks.join(", "));
                 }
+                if !d.repos.is_empty() {
+                    println!("Repos:      {}", d.repos.join(", "));
+                }
                 println!();
             }
         }
@@ -2733,6 +2736,9 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
             }
             if !result.flocks.is_empty() {
                 println!("Flocks:  {}", result.flocks.join(", "));
+            }
+            if !result.repos.is_empty() {
+                println!("Repos:   {}", result.repos.join(", "));
             }
         }
     }
@@ -3225,6 +3231,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
                     selector: m.selector.name.clone(),
                     flocks: selector_flocks,
                     skills: m.skills.clone(),
+                    repos: m.repos.clone(),
                 }
             })
             .collect();

@@ -7,6 +7,64 @@ use serde::{Deserialize, Serialize};
 use crate::config::get_config_dir;
 
 // ---------------------------------------------------------------------------
+// URL normalisation (same logic as savhub-server)
+// ---------------------------------------------------------------------------
+
+/// Convert any repo URL to the canonical registry sign format: `domain/owner/repo`.
+///
+/// - `https://github.com/org/repo` → `github.com/org/repo`
+/// - `https://github.com/org/repo.git` → `github.com/org/repo`
+/// - `git@github.com:org/repo` → `github.com/org/repo`
+/// - `github.com/org/repo` → `github.com/org/repo`
+pub fn normalize_repo_url_to_sign(raw: &str) -> String {
+    let normalized = normalize_git_url(raw);
+    // Strip https:// prefix and .git suffix
+    normalized
+        .strip_prefix("https://")
+        .or_else(|| normalized.strip_prefix("http://"))
+        .unwrap_or(&normalized)
+        .trim_end_matches(".git")
+        .trim_end_matches('/')
+        .to_string()
+}
+
+/// Normalize a git URL to a canonical HTTPS form.
+///
+/// - `git@github.com:org/repo` → `https://github.com/org/repo.git`
+/// - `https://github.com/org/repo` → `https://github.com/org/repo.git`
+/// - `http://github.com/org/repo.git/` → `https://github.com/org/repo.git`
+pub fn normalize_git_url(raw: &str) -> String {
+    let url = raw.trim().trim_end_matches('/');
+
+    // git@host:path → https://host/path
+    let url = if let Some(rest) = url.strip_prefix("git@") {
+        if let Some((host, path)) = rest.split_once(':') {
+            format!("https://{}/{}", host, path.trim_start_matches('/'))
+        } else {
+            url.to_string()
+        }
+    } else if url.starts_with("http://") {
+        // Upgrade http → https
+        format!("https://{}", &url["http://".len()..])
+    } else if !url.starts_with("https://") {
+        // Bare host/path — assume https
+        format!("https://{url}")
+    } else {
+        url.to_string()
+    };
+
+    // Strip trailing slash again after transform
+    let url = url.trim_end_matches('/').to_string();
+
+    // Ensure .git suffix
+    if url.ends_with(".git") {
+        url
+    } else {
+        format!("{url}.git")
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -73,6 +131,10 @@ pub struct SelectorDefinition {
     pub skills: Vec<String>,
     #[serde(default)]
     pub flocks: Vec<String>,
+    /// Repository URLs. When this selector matches, all flocks and skills
+    /// from these repos will be installed. URLs are normalized to canonical form.
+    #[serde(default)]
+    pub repos: Vec<String>,
     /// Priority (higher value = higher priority). When multiple selectors
     /// contribute conflicting skills, the selector with the higher priority wins.
     #[serde(default)]
@@ -627,12 +689,14 @@ pub fn generate_selector_id() -> String {
     format!("det-{ts:x}")
 }
 
-/// Deduplicate skills and flocks in a selector before saving.
+/// Deduplicate skills, flocks, and repos in a selector before saving.
 fn dedup_selector(mut d: SelectorDefinition) -> SelectorDefinition {
     let mut seen = std::collections::BTreeSet::new();
     d.skills.retain(|s| seen.insert(s.clone()));
     let mut seen = std::collections::BTreeSet::new();
     d.flocks.retain(|s| seen.insert(s.clone()));
+    let mut seen = std::collections::BTreeSet::new();
+    d.repos.retain(|s| seen.insert(s.clone()));
     d
 }
 
@@ -690,6 +754,7 @@ pub struct SelectorMatch {
     pub selector: SelectorDefinition,
     pub skills: Vec<String>,
     pub flocks: Vec<String>,
+    pub repos: Vec<String>,
 }
 
 /// Result of running all selectors against a project.
@@ -702,6 +767,8 @@ pub struct SelectorRunResult {
     pub skills: Vec<String>,
     /// Merged flocks from all matched selectors.
     pub flocks: Vec<String>,
+    /// Merged repos from all matched selectors.
+    pub repos: Vec<String>,
 }
 
 /// Run all selectors against a project directory.
@@ -722,6 +789,7 @@ pub fn run_selectors(project_root: &Path) -> Result<SelectorRunResult> {
                 selector: selector.clone(),
                 skills: selector.skills.clone(),
                 flocks: selector.flocks.clone(),
+                repos: selector.repos.clone(),
             });
         }
     }
@@ -752,10 +820,22 @@ pub fn run_selectors(project_root: &Path) -> Result<SelectorRunResult> {
         }
     }
 
+    // Merge repos (order by priority, deduplicate)
+    let mut seen_repos = std::collections::BTreeSet::new();
+    let mut repos = Vec::new();
+    for m in &matched {
+        for repo in &m.repos {
+            if seen_repos.insert(repo.clone()) {
+                repos.push(repo.clone());
+            }
+        }
+    }
+
     Ok(SelectorRunResult {
         matched,
         skills,
         flocks,
+        repos,
     })
 }
 
@@ -775,6 +855,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            repos: vec![],
             enabled: true,
             priority: 10,
         },
@@ -800,6 +881,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            repos: vec![],
             enabled: true,
             priority: 10,
         },
@@ -816,6 +898,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            repos: vec![],
             enabled: true,
             priority: 10,
         },
@@ -840,6 +923,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            repos: vec![],
             enabled: true,
             priority: 10,
         },
@@ -863,6 +947,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec!["github.com/salvo-rs/salvo-skills/salvo-skills".to_string()],
+            repos: vec![],
             enabled: true,
             priority: 20,
         },
@@ -885,6 +970,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            repos: vec![],
             enabled: true,
             priority: 20,
         },
@@ -907,6 +993,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            repos: vec![],
             enabled: true,
             priority: 20,
         },
@@ -929,6 +1016,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            repos: vec![],
             enabled: true,
             priority: 20,
         },
@@ -951,6 +1039,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            repos: vec![],
             enabled: true,
             priority: 10,
         },
@@ -974,6 +1063,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            repos: vec![],
             enabled: true,
             priority: 20,
         },
@@ -997,6 +1087,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            repos: vec![],
             enabled: true,
             priority: 20,
         },
@@ -1020,6 +1111,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            repos: vec![],
             enabled: true,
             priority: 20,
         },
@@ -1043,6 +1135,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            repos: vec![],
             enabled: true,
             priority: 20,
         },
@@ -1066,6 +1159,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            repos: vec![],
             enabled: true,
             priority: 20,
         },
@@ -1089,6 +1183,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            repos: vec![],
             enabled: true,
             priority: 20,
         },
@@ -1114,6 +1209,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            repos: vec![],
             enabled: true,
             priority: 20,
         },

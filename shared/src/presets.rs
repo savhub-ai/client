@@ -21,6 +21,8 @@ pub struct ProjectSelectorMatch {
     pub flocks: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skills: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub repos: Vec<String>,
 }
 
 /// Selectors section in savhub.toml.
@@ -289,6 +291,7 @@ fn normalize_selector_matches(matches: &[ProjectSelectorMatch]) -> Vec<ProjectSe
         }
         let flocks = normalize_unique_slugs(matched.flocks.clone());
         let skills = normalize_unique_slugs(matched.skills.clone());
+        let repos = normalize_unique_slugs(matched.repos.clone());
         let duplicate = normalized
             .iter()
             .any(|existing: &ProjectSelectorMatch| existing.selector == selector);
@@ -297,6 +300,7 @@ fn normalize_selector_matches(matches: &[ProjectSelectorMatch]) -> Vec<ProjectSe
                 selector,
                 flocks,
                 skills,
+                repos,
             });
         }
     }

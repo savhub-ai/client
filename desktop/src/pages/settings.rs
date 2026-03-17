@@ -730,18 +730,20 @@ pub fn save_config(
 ) {
     if let Ok(config_dir) = savhub_local::config::get_config_dir() {
         let _ = std::fs::create_dir_all(&config_dir);
-        let config = serde_json::json!({
-            "registry": base,
-            "token": if token.trim().is_empty() { serde_json::Value::Null } else { serde_json::Value::String(token.to_string()) },
-            "language": lang,
-            "workdir": workdir.display().to_string(),
-            "agents": agents,
-        });
-        let config_path = config_dir.join("config.json");
-        let _ = std::fs::write(
-            &config_path,
-            serde_json::to_string_pretty(&config).unwrap_or_default(),
-        );
+        let mut table = toml::map::Map::new();
+        table.insert("registry".to_string(), toml::Value::String(base.to_string()));
+        if !token.trim().is_empty() {
+            table.insert("token".to_string(), toml::Value::String(token.to_string()));
+        }
+        table.insert("language".to_string(), toml::Value::String(lang.to_string()));
+        table.insert("workdir".to_string(), toml::Value::String(workdir.display().to_string()));
+        let agents_arr: Vec<toml::Value> = agents.iter().map(|a| toml::Value::String(a.clone())).collect();
+        table.insert("agents".to_string(), toml::Value::Array(agents_arr));
+        let config = toml::Value::Table(table);
+        let config_path = config_dir.join("config.toml");
+        if let Ok(payload) = toml::to_string_pretty(&config) {
+            let _ = std::fs::write(&config_path, payload);
+        }
     }
 }
 

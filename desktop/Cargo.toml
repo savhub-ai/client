@@ -13,6 +13,7 @@ savhub-local.workspace = true
 savhub-shared.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 chrono.workspace = true
 directories.workspace = true
 tokio = { workspace = true }
