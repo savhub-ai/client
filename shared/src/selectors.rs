@@ -77,6 +77,13 @@ pub struct SelectorDefinition {
     /// contribute conflicting skills, the selector with the higher priority wins.
     #[serde(default)]
     pub priority: i32,
+    /// Whether this selector is enabled. Only enabled selectors are evaluated.
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 fn default_folder_scope() -> String {
@@ -648,6 +655,17 @@ pub fn update_selector(selector: SelectorDefinition) -> Result<()> {
     write_selectors_store(&store)
 }
 
+pub fn set_selector_enabled(id: &str, enabled: bool) -> Result<()> {
+    let mut store = read_selectors_store()?;
+    let selector = store
+        .selectors
+        .iter_mut()
+        .find(|d| d.sign == id)
+        .with_context(|| format!("selector '{id}' not found"))?;
+    selector.enabled = enabled;
+    write_selectors_store(&store)
+}
+
 pub fn delete_selector(id: &str) -> Result<()> {
     let mut store = read_selectors_store()?;
     let before = store.selectors.len();
@@ -696,6 +714,9 @@ pub fn run_selectors(project_root: &Path) -> Result<SelectorRunResult> {
     let mut matched: Vec<SelectorMatch> = Vec::new();
 
     for selector in &store.selectors {
+        if !selector.enabled {
+            continue;
+        }
         if selector.evaluate(project_root) {
             matched.push(SelectorMatch {
                 selector: selector.clone(),
@@ -754,6 +775,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            enabled: true,
             priority: 10,
         },
         SelectorDefinition {
@@ -778,6 +800,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            enabled: true,
             priority: 10,
         },
         SelectorDefinition {
@@ -793,6 +816,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            enabled: true,
             priority: 10,
         },
         SelectorDefinition {
@@ -816,6 +840,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            enabled: true,
             priority: 10,
         },
         // ── Rust framework selectors ─────────────────────────
@@ -837,7 +862,8 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             custom_expression: String::new(),
 
             skills: vec![],
-            flocks: vec![],
+            flocks: vec!["github.com/salvo-rs/salvo-skills/salvo-skills".to_string()],
+            enabled: true,
             priority: 20,
         },
         SelectorDefinition {
@@ -859,6 +885,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            enabled: true,
             priority: 20,
         },
         SelectorDefinition {
@@ -880,6 +907,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            enabled: true,
             priority: 20,
         },
         SelectorDefinition {
@@ -901,6 +929,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            enabled: true,
             priority: 20,
         },
         // ── JS/TS framework selectors ────────────────────────
@@ -922,6 +951,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            enabled: true,
             priority: 10,
         },
         SelectorDefinition {
@@ -944,6 +974,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            enabled: true,
             priority: 20,
         },
         SelectorDefinition {
@@ -966,6 +997,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            enabled: true,
             priority: 20,
         },
         SelectorDefinition {
@@ -988,6 +1020,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            enabled: true,
             priority: 20,
         },
         SelectorDefinition {
@@ -1010,6 +1043,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            enabled: true,
             priority: 20,
         },
         SelectorDefinition {
@@ -1032,6 +1066,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            enabled: true,
             priority: 20,
         },
         SelectorDefinition {
@@ -1054,6 +1089,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            enabled: true,
             priority: 20,
         },
         // ── Monorepo ─────────────────────────────────────────
@@ -1078,6 +1114,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
+            enabled: true,
             priority: 20,
         },
     ];

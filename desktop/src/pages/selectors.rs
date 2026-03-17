@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 
 use savhub_local::selectors::{
     MatchMode, SelectorDefinition, SelectorRule, create_selector, delete_selector,
-    generate_selector_id, read_selectors_store, update_selector,
+    generate_selector_id, read_selectors_store, set_selector_enabled, update_selector,
 };
 
 use crate::components::pagination::{self, PaginationControls};
@@ -35,6 +35,7 @@ struct SelectorForm {
     skills: BTreeSet<String>,
     flocks: BTreeSet<String>,
     priority: i32,
+    enabled: bool,
     error: String,
 }
 
@@ -51,6 +52,7 @@ impl SelectorForm {
             skills: BTreeSet::new(),
             flocks: BTreeSet::new(),
             priority: 0,
+            enabled: true,
             error: String::new(),
         }
     }
@@ -106,6 +108,7 @@ impl SelectorForm {
             skills: d.skills.iter().cloned().collect(),
             flocks: d.flocks.iter().cloned().collect(),
             priority: d.priority,
+            enabled: d.enabled,
             error: String::new(),
         }
     }
@@ -156,6 +159,7 @@ impl SelectorForm {
             skills: self.skills.iter().cloned().collect(),
             flocks: self.flocks.iter().cloned().collect(),
             priority: self.priority,
+            enabled: self.enabled,
         }
     }
 }
@@ -288,6 +292,11 @@ pub fn SelectorsPage() -> Element {
                                     let id = selector.sign.clone();
                                     move |_| { let _ = delete_selector(&id); version += 1; }
                                 },
+                                on_toggle: {
+                                    let id = selector.sign.clone();
+                                    let enabled = selector.enabled;
+                                    move |_| { let _ = set_selector_enabled(&id, !enabled); version += 1; }
+                                },
                             }
                         }
                         PaginationControls {
@@ -329,6 +338,7 @@ fn SelectorRow(
     on_template: EventHandler<()>,
     on_edit: EventHandler<()>,
     on_delete: EventHandler<()>,
+    on_toggle: EventHandler<()>,
 ) -> Element {
     let state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
@@ -336,12 +346,15 @@ fn SelectorRow(
     let rules_count = selector.rules.len();
     let skills_count = selector.skills.len();
     let flocks_count = selector.flocks.len();
+    let is_enabled = selector.enabled;
+    let opacity = if is_enabled { "1" } else { "0.5" };
+    let toggle_label = if is_enabled { t.selectors_disable } else { t.selectors_enable };
 
     if card_mode {
         // Card view — compact card for grid layout, multiple per row
         rsx! {
             div {
-                style: "background: {Theme::PANEL}; border: 1px solid {Theme::LINE}; border-radius: 10px; padding: 14px; cursor: pointer; display: flex; flex-direction: column; gap: 8px;",
+                style: "background: {Theme::PANEL}; border: 1px solid {Theme::LINE}; border-radius: 10px; padding: 14px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; opacity: {opacity};",
                 onmousedown: move |evt: Event<MouseData>| { let c = evt.client_coordinates(); down_pos.set((c.x, c.y)); },
                 onclick: move |evt: Event<MouseData>| { let c = evt.client_coordinates(); let (dx, dy) = *down_pos.read(); if (c.x - dx).abs() < 5.0 && (c.y - dy).abs() < 5.0 { on_click.call(()); } },
                 h3 { style: "font-size: 14px; font-weight: 700; color: {Theme::TEXT};", "{selector.name}" }
@@ -359,6 +372,7 @@ fn SelectorRow(
                 }
                 div { style: "display: flex; gap: 4px;",
                     onclick: move |e: Event<MouseData>| e.stop_propagation(),
+                    SmallButton { label: toggle_label, disabled: form_is_open, accent: if is_enabled { Theme::MUTED } else { Theme::ACCENT_STRONG }, onclick: move |_| on_toggle.call(()) }
                     SmallButton { label: t.selectors_edit, disabled: form_is_open, onclick: move |_| on_edit.call(()) }
                     SmallButton { label: t.selectors_delete, disabled: form_is_open, accent: Theme::DANGER, onclick: move |_| on_delete.call(()) }
                 }
@@ -368,7 +382,7 @@ fn SelectorRow(
         // List view — full-width row with description, one per line
         rsx! {
             div {
-                style: "background: {Theme::PANEL}; border: 1px solid {Theme::LINE}; border-radius: 12px; padding: 16px; cursor: pointer;",
+                style: "background: {Theme::PANEL}; border: 1px solid {Theme::LINE}; border-radius: 12px; padding: 16px; cursor: pointer; opacity: {opacity};",
                 onmousedown: move |evt: Event<MouseData>| { let c = evt.client_coordinates(); down_pos.set((c.x, c.y)); },
                 onclick: move |evt: Event<MouseData>| { let c = evt.client_coordinates(); let (dx, dy) = *down_pos.read(); if (c.x - dx).abs() < 5.0 && (c.y - dy).abs() < 5.0 { on_click.call(()); } },
                 div { style: "display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 8px;",
@@ -382,6 +396,7 @@ fn SelectorRow(
                     }
                     div { style: "display: flex; gap: 4px; flex-shrink: 0;",
                         onclick: move |e: Event<MouseData>| e.stop_propagation(),
+                        SmallButton { label: toggle_label, disabled: form_is_open, accent: if is_enabled { Theme::MUTED } else { Theme::ACCENT_STRONG }, onclick: move |_| on_toggle.call(()) }
                         SmallButton { label: t.selectors_use_template, disabled: form_is_open, onclick: move |_| on_template.call(()) }
                         SmallButton { label: t.selectors_edit, disabled: form_is_open, onclick: move |_| on_edit.call(()) }
                         SmallButton { label: t.selectors_delete, disabled: form_is_open, accent: Theme::DANGER, onclick: move |_| on_delete.call(()) }

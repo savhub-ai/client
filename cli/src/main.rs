@@ -2655,15 +2655,16 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
                 } else {
                     String::new()
                 };
+                let status = if d.enabled { "+" } else { "-" };
                 let rules = d.rules.len();
                 let skills = d.skills.len();
                 println!(
-                    "  {:<24} scope={:<10} {}r {}s{}",
+                    "  [{status}] {:<24} scope={:<10} {}r {}s{}",
                     d.name, d.folder_scope, rules, skills, pri
                 );
                 if !d.description.is_empty() {
                     let desc: String = d.description.chars().take(80).collect();
-                    println!("    {desc}");
+                    println!("      {desc}");
                 }
             }
             println!("\n{} selector(s)", store.selectors.len());
@@ -2688,6 +2689,7 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
             for d in &found {
                 println!("Name:       {}", d.name);
                 println!("ID:         {}", d.sign);
+                println!("Enabled:    {}", if d.enabled { "yes" } else { "no" });
                 if !d.description.is_empty() {
                     println!("Desc:       {}", d.description);
                 }
@@ -2878,10 +2880,12 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     clean(&mut args.skip_flocks);
 
     // Ensure registry is synced before applying
+    eprint!("Syncing registry...");
     match registry::ensure_registry_synced() {
-        Ok(true) => eprintln!("Registry synced."),
-        Ok(false) => {}
+        Ok(true) => eprintln!(" done."),
+        Ok(false) => eprintln!(" up to date."),
         Err(e) => {
+            eprintln!();
             if registry::cached_commit_sha()?.is_none() {
                 bail!("Registry not available: {e}\nRun `savhub registry sync` first.");
             }
@@ -2890,6 +2894,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     }
 
     let workdir = &opts.workdir;
+    eprintln!("Scanning project...");
     let result = run_selectors(workdir)?;
 
     if result.matched.is_empty() {
@@ -3336,6 +3341,9 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         })
         .collect();
 
+    if !to_add.is_empty() {
+        eprintln!("Installing {} skill(s)...", to_add.len());
+    }
     let batch_results = registry::install_skills_batch(&to_add)?;
 
     // Build lock entries: start from current, remove deleted, add new

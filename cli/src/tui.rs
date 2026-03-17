@@ -29,6 +29,43 @@ pub struct ApplySelection {
     pub skipped_flocks: Vec<String>,
 }
 
+/// Extract the repository part from a flock sign.
+///
+/// `github.com/owner/repo/flock-slug` → `github.com/owner/repo`
+/// `github.com/owner/repo`            → `github.com/owner/repo`
+fn repo_group(flock_sign: &str) -> &str {
+    let mut end = 0;
+    let mut slashes = 0;
+    for (i, c) in flock_sign.char_indices() {
+        if c == '/' {
+            slashes += 1;
+            if slashes == 3 {
+                end = i;
+            }
+        }
+    }
+    if slashes >= 3 && end > 0 {
+        &flock_sign[..end]
+    } else {
+        flock_sign
+    }
+}
+
+/// Group flocks by repository, preserving original order.
+/// Returns `[(repo_label, [(flock_sign)])]`.
+fn group_flocks_by_repo(flocks: &[String]) -> Vec<(String, Vec<String>)> {
+    let mut groups: Vec<(String, Vec<String>)> = Vec::new();
+    for flock in flocks {
+        let repo = repo_group(flock).to_string();
+        if let Some(group) = groups.iter_mut().find(|(r, _)| *r == repo) {
+            group.1.push(flock.clone());
+        } else {
+            groups.push((repo, vec![flock.clone()]));
+        }
+    }
+    groups
+}
+
 /// Show an interactive TUI for `savhub apply`.
 ///
 /// Selectors are directly togglable. Flocks are derived from checked
@@ -82,6 +119,7 @@ pub fn apply_select(
     #[derive(Clone)]
     enum Row {
         Header(&'static str),
+        RepoGroup(String),
         Selector(usize),
         Flock(String),
     }
@@ -97,6 +135,7 @@ pub fn apply_select(
 
     loop {
         let derived_flocks = compute_derived(selectors);
+        let grouped = group_flocks_by_repo(&derived_flocks);
 
         // Build row list dynamically
         let mut rows: Vec<Row> = Vec::new();
@@ -106,8 +145,11 @@ pub fn apply_select(
         }
         if !derived_flocks.is_empty() {
             rows.push(Row::Header("Flocks"));
-            for f in &derived_flocks {
-                rows.push(Row::Flock(f.clone()));
+            for (repo, flocks) in &grouped {
+                rows.push(Row::RepoGroup(repo.clone()));
+                for f in flocks {
+                    rows.push(Row::Flock(f.clone()));
+                }
             }
         }
 
@@ -170,6 +212,14 @@ pub fn apply_select(
                             Style::default().fg(Color::DarkGray),
                         ),
                     ])),
+                    Row::RepoGroup(repo) => ListItem::new(Line::from(vec![
+                        Span::styled(
+                            format!("   {repo}"),
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                    ])),
                     Row::Selector(i) => {
                         let sel = &selectors[*i];
                         let (marker, mc, lc) = if sel.checked {
@@ -193,15 +243,22 @@ pub fn apply_select(
                         } else {
                             ("[-]", Color::Red, Color::DarkGray)
                         };
+                        // Show short name: strip repo prefix if flock has more segments
+                        let display = slug
+                            .strip_prefix(repo_group(slug))
+                            .and_then(|s| s.strip_prefix('/'))
+                            .unwrap_or(slug);
+                        let label = if display == slug {
+                            format!("{slug} ({count} skills)")
+                        } else {
+                            format!("{display} ({count} skills)")
+                        };
                         ListItem::new(Line::from(vec![
                             Span::styled(
-                                format!("   {marker} "),
+                                format!("     {marker} "),
                                 Style::default().fg(mc).add_modifier(Modifier::BOLD),
                             ),
-                            Span::styled(
-                                format!("{slug} ({count} skills)"),
-                                Style::default().fg(lc),
-                            ),
+                            Span::styled(label, Style::default().fg(lc)),
                         ]))
                     }
                 })
@@ -269,7 +326,10 @@ pub fn apply_select(
                 KeyCode::Up | KeyCode::Char('k') => {
                     if cursor > 0 {
                         cursor -= 1;
-                        if matches!(rows[cursor], Row::Header(_)) && cursor > 0 {
+                        // Skip non-selectable rows (headers and repo groups)
+                        while cursor > 0
+                            && matches!(rows[cursor], Row::Header(_) | Row::RepoGroup(_))
+                        {
                             cursor -= 1;
                         }
                     }
@@ -277,7 +337,10 @@ pub fn apply_select(
                 KeyCode::Down | KeyCode::Char('j') => {
                     if cursor + 1 < rows.len() {
                         cursor += 1;
-                        if matches!(rows[cursor], Row::Header(_)) && cursor + 1 < rows.len() {
+                        // Skip non-selectable rows (headers and repo groups)
+                        while cursor + 1 < rows.len()
+                            && matches!(rows[cursor], Row::Header(_) | Row::RepoGroup(_))
+                        {
                             cursor += 1;
                         }
                     }
