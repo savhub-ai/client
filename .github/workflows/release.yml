@@ -116,8 +116,13 @@ jobs:
         shell: pwsh
         run: |
           $zip = Get-ChildItem dist -Filter "savhub-windows-*.zip" | Select-Object -First 1
-          $extractDir = Join-Path $pwd "msi-staging"
-          Expand-Archive -Path $zip.FullName -DestinationPath $extractDir -Force
+          $tmpDir = Join-Path $pwd "msi-tmp"
+          Expand-Archive -Path $zip.FullName -DestinationPath $tmpDir -Force
+          # Flatten into msi-staging so WiX can find the files directly
+          $msiDir = Join-Path $pwd "msi-staging"
+          New-Item -ItemType Directory -Force -Path $msiDir | Out-Null
+          Get-ChildItem -Path $tmpDir -Recurse -Filter "*.exe" | Copy-Item -Destination $msiDir -Force
+          Remove-Item $tmpDir -Recurse -Force
 
       - name: Create WiX source
         shell: pwsh
