@@ -2,7 +2,6 @@ use std::collections::BTreeSet;
 
 use dioxus::prelude::*;
 
-use savhub_local::presets::read_presets_store;
 use savhub_local::selectors::{
     MatchMode, SelectorDefinition, SelectorRule, create_selector, delete_selector,
     generate_selector_id, read_selectors_store, update_selector,
@@ -33,7 +32,6 @@ struct SelectorForm {
     rules: Vec<FormRule>,
     match_mode: u8, // 0=AllMatch, 1=AnyMatch, 2=Custom
     custom_expr: String,
-    presets: BTreeSet<String>,
     skills: BTreeSet<String>,
     flocks: BTreeSet<String>,
     priority: i32,
@@ -50,7 +48,6 @@ impl SelectorForm {
             rules: vec![("file_exists".to_string(), String::new(), String::new())],
             match_mode: 0,
             custom_expr: String::new(),
-            presets: BTreeSet::new(),
             skills: BTreeSet::new(),
             flocks: BTreeSet::new(),
             priority: 0,
@@ -106,7 +103,6 @@ impl SelectorForm {
                 MatchMode::Custom => 2,
             },
             custom_expr: d.custom_expression.clone(),
-            presets: d.presets.iter().cloned().collect(),
             skills: d.skills.iter().cloned().collect(),
             flocks: d.flocks.iter().cloned().collect(),
             priority: d.priority,
@@ -157,7 +153,6 @@ impl SelectorForm {
                 _ => MatchMode::AllMatch,
             },
             custom_expression: self.custom_expr.clone(),
-            presets: self.presets.iter().cloned().collect(),
             skills: self.skills.iter().cloned().collect(),
             flocks: self.flocks.iter().cloned().collect(),
             priority: self.priority,
@@ -340,7 +335,6 @@ fn SelectorRow(
     let mut down_pos = use_signal(|| (0.0f64, 0.0f64));
     let rules_count = selector.rules.len();
     let skills_count = selector.skills.len();
-    let presets_count = selector.presets.len();
     let flocks_count = selector.flocks.len();
 
     if card_mode {
@@ -358,7 +352,7 @@ fn SelectorRow(
                 }
                 div { style: "display: flex; flex-wrap: wrap; gap: 5px; margin-top: auto;",
                     span { style: "font-size: 10px; padding: 2px 7px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border-radius: 999px;", "{selector.folder_scope}" }
-                    span { style: "font-size: 10px; color: {Theme::MUTED};", "{rules_count}r \u{00B7} {presets_count}p \u{00B7} {skills_count}s \u{00B7} {flocks_count}f" }
+                    span { style: "font-size: 10px; color: {Theme::MUTED};", "{rules_count}r \u{00B7} {skills_count}s \u{00B7} {flocks_count}f" }
                     if selector.priority != 0 {
                         span { style: "font-size: 10px; color: {Theme::MUTED};", "P{selector.priority}" }
                     }
@@ -395,7 +389,7 @@ fn SelectorRow(
                 }
                 div { style: "display: flex; flex-wrap: wrap; gap: 6px;",
                     span { style: "font-size: 11px; padding: 2px 8px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border-radius: 999px;", "{selector.folder_scope}" }
-                    span { style: "font-size: 11px; color: {Theme::MUTED};", "{rules_count} rules \u{00B7} {presets_count} presets \u{00B7} {skills_count} skills \u{00B7} {flocks_count} flocks" }
+                    span { style: "font-size: 11px; color: {Theme::MUTED};", "{rules_count} rules \u{00B7} {skills_count} skills \u{00B7} {flocks_count} flocks" }
                     if selector.priority != 0 {
                         span { style: "font-size: 11px; color: {Theme::MUTED};", "P{selector.priority}" }
                     }
@@ -426,7 +420,6 @@ fn SelectorDetailPopup(selector: Signal<Option<SelectorDefinition>>) -> Element 
         MatchMode::Custom => t.selectors_match_custom,
     };
     let rules = d.rules.clone();
-    let presets = d.presets.clone();
     let skills = d.skills.clone();
     let flocks = d.flocks.clone();
     let priority = d.priority;
@@ -472,11 +465,8 @@ fn SelectorDetailPopup(selector: Signal<Option<SelectorDefinition>>) -> Element 
                         }
                     }
                 }
-                // Presets + Skills
+                // Skills + Flocks
                 div { style: "display: flex; flex-direction: column; gap: 10px;",
-                    if !presets.is_empty() {
-                        TagGroup { label: t.selectors_presets_label, items: presets, bg: "rgba(90, 158, 63, 0.12)", color: Theme::ACCENT_STRONG, border: "rgba(90, 158, 63, 0.16)" }
-                    }
                     if !flocks.is_empty() {
                         TagGroup { label: t.selectors_add_flocks_label, items: flocks, bg: "rgba(90, 120, 200, 0.10)", color: "rgba(50, 80, 160, 0.9)", border: "rgba(90, 120, 200, 0.16)" }
                     }
@@ -554,15 +544,7 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
         });
     };
 
-    // Collect available presets and skills
-    let all_presets: Vec<(String, Option<String>)> = read_presets_store()
-        .map(|s| {
-            s.presets
-                .into_iter()
-                .map(|(k, v)| (k, v.description))
-                .collect()
-        })
-        .unwrap_or_default();
+    // Collect available skills
     let installed_skills = savhub_local::registry::list_installed_slugs().unwrap_or_default();
 
     let save = move |_: MouseEvent| {
@@ -615,7 +597,6 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
     let rules_count = rules_snapshot.len();
     let match_mode = f.match_mode;
     let custom_expr_val = f.custom_expr.clone();
-    let selected_presets = f.presets.clone();
     let selected_skills = f.skills.clone();
     let selected_flocks = f.flocks.clone();
     let priority_val = f.priority;
@@ -785,31 +766,6 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
                                 style: "align-self: flex-start; padding: 5px 12px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border: 1px solid rgba(90, 158, 63, 0.18); border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer;",
                                 onclick: move |_| set_field(Box::new(|f| f.rules.push(("file_exists".to_string(), String::new(), String::new())))),
                                 "+ {t.selectors_add_rule}"
-                            }
-                        }
-                    }
-                    // Presets (full width)
-                    if !all_presets.is_empty() {
-                        div {
-                            p { style: "{label_style}", "{t.selectors_presets_label}" }
-                            div { style: "display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; padding: 8px; background: rgba(255,255,255,0.6); border: 1px solid {Theme::LINE}; border-radius: 10px;",
-                                for (preset_name, preset_desc) in all_presets.iter() {
-                                    { let name = preset_name.clone();
-                                      let checked = selected_presets.contains(&name);
-                                      let desc_text = preset_desc.as_deref().unwrap_or("").to_string();
-                                      rsx! {
-                                        label { style: "display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; cursor: pointer; font-size: 13px; color: {Theme::TEXT};",
-                                            input {
-                                                r#type: "checkbox", checked: checked,
-                                                onchange: { let name = name.clone(); move |_| { let n = name.clone(); set_field(Box::new(move |f| { if f.presets.contains(&n) { f.presets.remove(&n); } else { f.presets.insert(n); } })); } },
-                                            }
-                                            span { style: "font-weight: 600;", "{name}" }
-                                            if !desc_text.is_empty() {
-                                                span { style: "color: {Theme::MUTED}; font-size: 11px;", "— {desc_text}" }
-                                            }
-                                        }
-                                    }}
-                                }
                             }
                         }
                     }

@@ -3,7 +3,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::clients::{global_skills_dir, home_dir};
-use crate::config::get_config_dir;
 use crate::skills::{
     LockEntry, Lockfile, RepoSkillFolder, RepoSkillOrigin, SkillFolder, copy_skill_folder,
     find_repo_skill_folders, find_skill_folders, read_skill_version_info, repo_git_commit,
@@ -13,42 +12,11 @@ use crate::utils::sanitize_slug;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-/// A named combination of skills.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PresetConfig {
-    pub sign: String,
-    pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    /// Skill signs included in this preset.
-    pub skills: Vec<String>,
-    /// Flock signs included in this preset.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub flocks: Vec<String>,
-}
-
-/// Persistent store for all preset definitions.
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct PresetsStore {
-    pub version: u8,
-    #[serde(alias = "profiles")]
-    pub presets: BTreeMap<String, PresetConfig>,
-}
-
-/// Per-project preset binding.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ProjectPreset {
-    #[serde(alias = "profile")]
-    pub preset: String,
-}
-
-/// A selector that matched for a project and the presets/flocks it contributed.
+/// A selector that matched for a project and the flocks/skills it contributed.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectSelectorMatch {
     #[serde(alias = "selector")]
     pub selector: String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub presets: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub flocks: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -136,28 +104,8 @@ pub struct ProjectFlocksConfig {
     pub manual_skipped: Vec<String>,
 }
 
-/// Presets section in savhub.toml.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ProjectPresetsConfig {
-    /// Presets contributed by matched selectors (auto-managed).
-    #[serde(default)]
-    pub matched: Vec<String>,
-    /// User-manually-added presets.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub manual_added: Vec<String>,
-    /// User-manually-skipped presets (never enable).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub manual_skipped: Vec<String>,
-}
-
 fn is_default_layout(layout: &SkillLayout) -> bool {
     *layout == SkillLayout::Flat
-}
-
-#[derive(Debug, Clone, Default)]
-struct ProjectBindings {
-    presets: ProjectPresetsConfig,
-    selectors: ProjectSelectorsConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -166,8 +114,6 @@ pub struct ProjectConfigFile {
     pub version: u8,
     #[serde(default)]
     pub selectors: ProjectSelectorsConfig,
-    #[serde(default)]
-    pub presets: ProjectPresetsConfig,
     #[serde(default)]
     pub flocks: ProjectFlocksConfig,
     #[serde(default)]
@@ -179,7 +125,6 @@ impl Default for ProjectConfigFile {
         Self {
             version: 1,
             selectors: ProjectSelectorsConfig::default(),
-            presets: ProjectPresetsConfig::default(),
             flocks: ProjectFlocksConfig::default(),
             skills: ProjectSkillsConfig::default(),
         }
@@ -252,36 +197,7 @@ pub enum EnableProjectRepoSkillResult {
 }
 
 // ---------------------------------------------------------------------------
-// PresetsStore I/O
-// ---------------------------------------------------------------------------
-
-fn presets_path() -> Result<PathBuf> {
-    Ok(get_config_dir()?.join("profiles.json"))
-}
-
-pub fn read_presets_store() -> Result<PresetsStore> {
-    let path = presets_path()?;
-    let Ok(raw) = fs::read_to_string(&path) else {
-        return Ok(PresetsStore {
-            version: 1,
-            ..Default::default()
-        });
-    };
-    serde_json::from_str(&raw).with_context(|| format!("invalid profiles at {}", path.display()))
-}
-
-pub fn write_presets_store(store: &PresetsStore) -> Result<()> {
-    let path = presets_path()?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let payload = serde_json::to_string_pretty(store)?;
-    fs::write(&path, format!("{payload}\n"))?;
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// ProjectPreset I/O
+// ProjectConfig I/O
 // ---------------------------------------------------------------------------
 
 fn project_config_path(workdir: &Path) -> PathBuf {
@@ -371,16 +287,14 @@ fn normalize_selector_matches(matches: &[ProjectSelectorMatch]) -> Vec<ProjectSe
         if selector.is_empty() {
             continue;
         }
-        let presets = normalize_unique_slugs(matched.presets.clone());
         let flocks = normalize_unique_slugs(matched.flocks.clone());
         let skills = normalize_unique_slugs(matched.skills.clone());
-        let duplicate = normalized.iter().any(|existing: &ProjectSelectorMatch| {
-            existing.selector == selector && existing.presets == presets
-        });
+        let duplicate = normalized
+            .iter()
+            .any(|existing: &ProjectSelectorMatch| existing.selector == selector);
         if !duplicate {
             normalized.push(ProjectSelectorMatch {
                 selector,
-                presets,
                 flocks,
                 skills,
             });
@@ -503,8 +417,6 @@ pub fn read_project_config(workdir: &Path) -> Result<ProjectConfigFile> {
     if let Ok(raw) = fs::read_to_string(&path) {
         let mut config: ProjectConfigFile =
             toml::from_str(&raw).with_context(|| format!("invalid {}", path.display()))?;
-        config.presets.matched = normalize_unique_slugs(config.presets.matched);
-        config.presets.manual_added = normalize_unique_slugs(config.presets.manual_added);
         config.selectors.matched = normalize_selector_matches(&config.selectors.matched);
         config.skills.manual_added = normalize_added_skills(&config.skills.manual_added);
         return Ok(config);
@@ -529,15 +441,10 @@ fn write_project_config_inner(
     let path = project_config_path(workdir);
     let mut normalized = config.clone();
     normalized.version = 1;
-    normalized.presets.matched = normalize_unique_slugs(normalized.presets.matched);
-    normalized.presets.manual_added = normalize_unique_slugs(normalized.presets.manual_added);
     normalized.selectors.matched = normalize_selector_matches(&normalized.selectors.matched);
     normalized.skills.manual_added = normalize_added_skills(&normalized.skills.manual_added);
 
     if !force
-        && normalized.presets.matched.is_empty()
-        && normalized.presets.manual_added.is_empty()
-        && normalized.presets.manual_skipped.is_empty()
         && normalized.selectors.matched.is_empty()
         && normalized.selectors.manual_added.is_empty()
         && normalized.selectors.manual_skipped.is_empty()
@@ -605,44 +512,8 @@ fn write_project_lockfile_inner(
     Ok(())
 }
 
-fn read_project_bindings(workdir: &Path) -> Result<ProjectBindings> {
-    let config = read_project_config(workdir)?;
-    Ok(ProjectBindings {
-        presets: config.presets,
-        selectors: config.selectors,
-    })
-}
-
-fn write_project_bindings(workdir: &Path, bindings: &ProjectBindings) -> Result<()> {
-    let mut config = read_project_config(workdir)?;
-    config.presets = bindings.presets.clone();
-    config.selectors.matched = bindings.selectors.matched.clone();
-    write_project_config(workdir, &config)
-}
-
-pub fn read_project_preset(workdir: &Path) -> Result<Option<ProjectPreset>> {
-    let presets = read_project_presets(workdir)?;
-    if let Some(preset) = presets.into_iter().next() {
-        return Ok(Some(ProjectPreset { preset }));
-    }
-
-    Ok(None)
-}
-
-pub fn read_project_presets(workdir: &Path) -> Result<Vec<String>> {
-    let presets_config = read_project_bindings(workdir)?.presets;
-    let mut result = presets_config.matched;
-    for slug in presets_config.manual_added {
-        if !result.contains(&slug) {
-            result.push(slug);
-        }
-    }
-    result.retain(|s| !presets_config.manual_skipped.contains(s));
-    Ok(result)
-}
-
 pub fn read_project_selector_matches(workdir: &Path) -> Result<Vec<ProjectSelectorMatch>> {
-    Ok(read_project_bindings(workdir)?.selectors.matched)
+    Ok(read_project_config(workdir)?.selectors.matched)
 }
 
 pub fn read_project_added_skills(workdir: &Path) -> Result<Lockfile> {
@@ -681,46 +552,6 @@ fn remove_project_added_skill(workdir: &Path, slug: &str) -> Result<()> {
 pub fn write_project_added_skills(workdir: &Path, lockfile: &Lockfile) -> Result<()> {
     let mut config = read_project_config(workdir)?;
     config.skills.manual_added = lockfile_to_project_added_skills(lockfile);
-    write_project_config(workdir, &config)?;
-    sync_project_lock(workdir)
-}
-
-pub fn write_project_preset(workdir: &Path, name: &str) -> Result<()> {
-    write_project_presets(workdir, &[name.to_string()])
-}
-
-pub fn write_project_presets(workdir: &Path, names: &[String]) -> Result<()> {
-    let mut bindings = read_project_bindings(workdir)?;
-    bindings.presets.manual_added = normalize_unique_slugs(names.to_vec());
-    write_project_bindings(workdir, &bindings)?;
-    sync_project_lock(workdir)
-}
-
-pub fn enable_project_preset(workdir: &Path, name: &str) -> Result<()> {
-    let slug = sanitize_slug(name);
-    if slug.is_empty() {
-        bail!("invalid preset name: {name}");
-    }
-
-    let mut presets = read_project_presets(workdir)?;
-    if !presets.contains(&slug) {
-        presets.push(slug);
-    }
-    write_project_presets(workdir, &presets)
-}
-
-pub fn disable_project_preset(workdir: &Path, name: &str) -> Result<()> {
-    let mut presets = read_project_presets(workdir)?;
-    presets.retain(|preset| preset != name);
-    write_project_presets(workdir, &presets)
-}
-
-pub fn remove_project_preset(workdir: &Path) -> Result<()> {
-    let mut config = read_project_config(workdir)?;
-    config.presets.matched.clear();
-    config.presets.manual_added.clear();
-    config.presets.manual_skipped.clear();
-    config.selectors.matched.clear();
     write_project_config(workdir, &config)?;
     sync_project_lock(workdir)
 }
@@ -850,88 +681,6 @@ pub fn disable_project_skill(workdir: &Path, slug: &str) -> Result<bool> {
 }
 
 // ---------------------------------------------------------------------------
-// Preset CRUD helpers
-// ---------------------------------------------------------------------------
-
-pub fn create_preset(name: &str, description: Option<&str>) -> Result<()> {
-    let sign = sanitize_slug(name);
-    if sign.is_empty() {
-        bail!("invalid preset name: {name}");
-    }
-    let mut store = read_presets_store()?;
-    if store.presets.contains_key(&sign) {
-        bail!("preset '{sign}' already exists");
-    }
-    store.presets.insert(
-        sign.clone(),
-        PresetConfig {
-            sign: sign.clone(),
-            name: name.to_string(),
-            description: description.map(String::from),
-            skills: Vec::new(),
-            flocks: Vec::new(),
-        },
-    );
-    write_presets_store(&store)
-}
-
-pub fn delete_preset(name: &str) -> Result<()> {
-    let mut store = read_presets_store()?;
-    if store.presets.remove(name).is_none() {
-        bail!("preset '{name}' not found");
-    }
-    write_presets_store(&store)
-}
-
-pub fn add_skills_to_preset(preset_name: &str, slugs: &[String]) -> Result<()> {
-    let mut store = read_presets_store()?;
-    let preset = store
-        .presets
-        .get_mut(preset_name)
-        .with_context(|| format!("preset '{preset_name}' not found"))?;
-    for slug in slugs {
-        if !preset.skills.contains(slug) {
-            preset.skills.push(slug.clone());
-        }
-    }
-    write_presets_store(&store)
-}
-
-pub fn remove_skills_from_preset(preset_name: &str, slugs: &[String]) -> Result<()> {
-    let mut store = read_presets_store()?;
-    let preset = store
-        .presets
-        .get_mut(preset_name)
-        .with_context(|| format!("preset '{preset_name}' not found"))?;
-    preset.skills.retain(|s| !slugs.contains(s));
-    write_presets_store(&store)
-}
-
-pub fn add_flocks_to_preset(preset_name: &str, flock_slugs: &[String]) -> Result<()> {
-    let mut store = read_presets_store()?;
-    let preset = store
-        .presets
-        .get_mut(preset_name)
-        .with_context(|| format!("preset '{preset_name}' not found"))?;
-    for slug in flock_slugs {
-        if !preset.flocks.contains(slug) {
-            preset.flocks.push(slug.clone());
-        }
-    }
-    write_presets_store(&store)
-}
-
-pub fn remove_flocks_from_preset(preset_name: &str, flock_slugs: &[String]) -> Result<()> {
-    let mut store = read_presets_store()?;
-    let preset = store
-        .presets
-        .get_mut(preset_name)
-        .with_context(|| format!("preset '{preset_name}' not found"))?;
-    preset.flocks.retain(|f| !flock_slugs.contains(f));
-    write_presets_store(&store)
-}
-
-// ---------------------------------------------------------------------------
 // Skill resolution
 // ---------------------------------------------------------------------------
 
@@ -947,7 +696,6 @@ pub struct ResolvedSkill {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ResolvedSkillSources {
-    pub presets: Vec<String>,
     pub selectors: Vec<String>,
     pub flocks: Vec<String>,
     pub manual: bool,
@@ -965,39 +713,6 @@ pub struct ResolvedProjectSkill {
 fn add_unique(items: &mut Vec<String>, value: &str) {
     if !value.is_empty() && !items.iter().any(|item| item == value) {
         items.push(value.to_string());
-    }
-}
-
-fn add_preset_skills(
-    sources: &mut BTreeMap<String, ResolvedSkillSources>,
-    store: &PresetsStore,
-    preset_name: &str,
-    selector_name: Option<&str>,
-) {
-    let Some(preset) = store.presets.get(preset_name) else {
-        return;
-    };
-
-    for skill in &preset.skills {
-        let entry = sources.entry(skill.clone()).or_default();
-        add_unique(&mut entry.presets, preset_name);
-        if let Some(selector_name) = selector_name {
-            add_unique(&mut entry.selectors, selector_name);
-        }
-    }
-
-    // Expand flocks referenced by this preset
-    for flock_slug in &preset.flocks {
-        if let Ok(skill_slugs) = crate::registry::list_flock_skill_slugs(flock_slug) {
-            for skill_slug in skill_slugs {
-                let entry = sources.entry(skill_slug).or_default();
-                add_unique(&mut entry.presets, preset_name);
-                add_unique(&mut entry.flocks, flock_slug);
-                if let Some(selector_name) = selector_name {
-                    add_unique(&mut entry.selectors, selector_name);
-                }
-            }
-        }
     }
 }
 
@@ -1066,50 +781,23 @@ fn build_project_lockfile(resolved: &[ResolvedProjectSkill]) -> ProjectLockFile 
     ProjectLockFile { version: 1, skills }
 }
 
-fn resolve_project_skills_internal(
-    workdir: &Path,
-    override_preset: Option<&str>,
-) -> Result<Vec<ResolvedProjectSkill>> {
-    let bindings = read_project_bindings(workdir)?;
+fn resolve_project_skills_internal(workdir: &Path) -> Result<Vec<ResolvedProjectSkill>> {
     let config = read_project_config(workdir)?;
-    let store = read_presets_store()?;
     let mut sources = BTreeMap::<String, ResolvedSkillSources>::new();
 
-    let explicit_presets = if let Some(name) = override_preset {
-        normalize_unique_slugs([name.to_string()])
-    } else {
-        // Combine matched + manual_added, filter out manual_skipped
-        let mut all_presets = bindings.presets.matched.clone();
-        for slug in &bindings.presets.manual_added {
-            if !all_presets.contains(slug) {
-                all_presets.push(slug.clone());
-            }
+    // Expand skills from matched selectors
+    for matched in &config.selectors.matched {
+        for skill_slug in &matched.skills {
+            let entry = sources.entry(skill_slug.clone()).or_default();
+            add_unique(&mut entry.selectors, &matched.selector);
         }
-        all_presets.retain(|s| !bindings.presets.manual_skipped.contains(s));
-        all_presets
-    };
-
-    for preset_name in &explicit_presets {
-        add_preset_skills(&mut sources, &store, preset_name, None);
-    }
-
-    if override_preset.is_none() {
-        for matched in &bindings.selectors.matched {
-            for preset_name in &matched.presets {
-                add_preset_skills(
-                    &mut sources,
-                    &store,
-                    preset_name,
-                    Some(matched.selector.as_str()),
-                );
-            }
-            // Expand flocks from each matched selector
-            for flock_slug in &matched.flocks {
-                if let Ok(skill_slugs) = crate::registry::list_flock_skill_slugs(flock_slug) {
-                    for skill_slug in skill_slugs {
-                        let entry = sources.entry(skill_slug).or_default();
-                        add_unique(&mut entry.flocks, flock_slug);
-                    }
+        // Expand flocks from each matched selector
+        for flock_slug in &matched.flocks {
+            if let Ok(skill_slugs) = crate::registry::list_flock_skill_slugs(flock_slug) {
+                for skill_slug in skill_slugs {
+                    let entry = sources.entry(skill_slug).or_default();
+                    add_unique(&mut entry.flocks, flock_slug);
+                    add_unique(&mut entry.selectors, &matched.selector);
                 }
             }
         }
@@ -1155,41 +843,32 @@ fn resolve_project_skills_internal(
 }
 
 pub fn sync_project_lock(workdir: &Path) -> Result<()> {
-    let resolved = resolve_project_skills_internal(workdir, None)?;
+    let resolved = resolve_project_skills_internal(workdir)?;
     write_project_lockfile(workdir, &build_project_lockfile(&resolved))
 }
 
 pub fn resolve_project_skills_with_sources(
     workdir: &Path,
-    override_preset: Option<&str>,
 ) -> Result<Vec<ResolvedProjectSkill>> {
-    let resolved = resolve_project_skills_internal(workdir, override_preset)?;
-    if override_preset.is_none() {
-        let _ = write_project_lockfile(workdir, &build_project_lockfile(&resolved));
-    }
+    let resolved = resolve_project_skills_internal(workdir)?;
+    let _ = write_project_lockfile(workdir, &build_project_lockfile(&resolved));
     Ok(resolved)
 }
 
 /// Resolve the list of skills for a project directory.
 ///
 /// Priority:
-/// 1. Explicit preset bindings
-/// 2. Selector-matched presets
-/// 3. Project-local manual skills from `savhub.toml`
+/// 1. Selector-matched skills and flocks
+/// 2. Project-local manual skills from `savhub.toml`
 ///
 /// Skill folders are looked up in the global skills directory.
-pub fn resolve_skills_for_project(
-    workdir: &Path,
-    override_preset: Option<&str>,
-) -> Result<Vec<ResolvedSkill>> {
-    Ok(
-        resolve_project_skills_with_sources(workdir, override_preset)?
-            .into_iter()
-            .map(|skill| ResolvedSkill {
-                slug: skill.slug,
-                display_name: skill.display_name,
-                folder: skill.folder,
-            })
-            .collect(),
-    )
+pub fn resolve_skills_for_project(workdir: &Path) -> Result<Vec<ResolvedSkill>> {
+    Ok(resolve_project_skills_with_sources(workdir)?
+        .into_iter()
+        .map(|skill| ResolvedSkill {
+            slug: skill.slug,
+            display_name: skill.display_name,
+            folder: skill.folder,
+        })
+        .collect())
 }

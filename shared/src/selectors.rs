@@ -70,8 +70,6 @@ pub struct SelectorDefinition {
     #[serde(default)]
     pub custom_expression: String,
     #[serde(default)]
-    pub presets: Vec<String>,
-    #[serde(default)]
     pub skills: Vec<String>,
     #[serde(default)]
     pub flocks: Vec<String>,
@@ -622,12 +620,12 @@ pub fn generate_selector_id() -> String {
     format!("det-{ts:x}")
 }
 
-/// Deduplicate skills and presets in a selector before saving.
+/// Deduplicate skills and flocks in a selector before saving.
 fn dedup_selector(mut d: SelectorDefinition) -> SelectorDefinition {
     let mut seen = std::collections::BTreeSet::new();
     d.skills.retain(|s| seen.insert(s.clone()));
     let mut seen = std::collections::BTreeSet::new();
-    d.presets.retain(|s| seen.insert(s.clone()));
+    d.flocks.retain(|s| seen.insert(s.clone()));
     d
 }
 
@@ -672,7 +670,6 @@ pub fn delete_selector(id: &str) -> Result<()> {
 #[derive(Debug, Clone)]
 pub struct SelectorMatch {
     pub selector: SelectorDefinition,
-    pub presets: Vec<String>,
     pub skills: Vec<String>,
     pub flocks: Vec<String>,
 }
@@ -682,8 +679,6 @@ pub struct SelectorMatch {
 pub struct SelectorRunResult {
     /// Selectors that matched, sorted by priority (highest first).
     pub matched: Vec<SelectorMatch>,
-    /// Merged presets from all matched selectors.
-    pub presets: Vec<String>,
     /// Merged skills with priority-based conflict resolution.
     /// Higher-priority selectors' skills take precedence.
     pub skills: Vec<String>,
@@ -704,7 +699,6 @@ pub fn run_selectors(project_root: &Path) -> Result<SelectorRunResult> {
         if selector.evaluate(project_root) {
             matched.push(SelectorMatch {
                 selector: selector.clone(),
-                presets: selector.presets.clone(),
                 skills: selector.skills.clone(),
                 flocks: selector.flocks.clone(),
             });
@@ -713,17 +707,6 @@ pub fn run_selectors(project_root: &Path) -> Result<SelectorRunResult> {
 
     // Sort by priority descending (higher priority first)
     matched.sort_by(|a, b| b.selector.priority.cmp(&a.selector.priority));
-
-    // Merge presets (order by priority, deduplicate)
-    let mut seen_presets = std::collections::BTreeSet::new();
-    let mut presets = Vec::new();
-    for m in &matched {
-        for preset in &m.presets {
-            if seen_presets.insert(preset.clone()) {
-                presets.push(preset.clone());
-            }
-        }
-    }
 
     // Merge skills with priority-based conflict resolution
     // Higher-priority selector's skills come first and take precedence
@@ -750,7 +733,6 @@ pub fn run_selectors(project_root: &Path) -> Result<SelectorRunResult> {
 
     Ok(SelectorRunResult {
         matched,
-        presets,
         skills,
         flocks,
     })
@@ -769,7 +751,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             }],
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
-            presets: vec![],
+
             skills: vec![],
             flocks: vec![],
             priority: 10,
@@ -793,7 +775,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             ],
             match_mode: MatchMode::AnyMatch,
             custom_expression: String::new(),
-            presets: vec![],
+
             skills: vec![],
             flocks: vec![],
             priority: 10,
@@ -808,7 +790,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             }],
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
-            presets: vec![],
+
             skills: vec![],
             flocks: vec![],
             priority: 10,
@@ -831,7 +813,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             ],
             match_mode: MatchMode::AnyMatch,
             custom_expression: String::new(),
-            presets: vec![],
+
             skills: vec![],
             flocks: vec![],
             priority: 10,
@@ -853,7 +835,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             ],
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
-            presets: vec![],
+
             skills: vec![],
             flocks: vec![],
             priority: 20,
@@ -874,7 +856,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             ],
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
-            presets: vec![],
+
             skills: vec![],
             flocks: vec![],
             priority: 20,
@@ -895,7 +877,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             ],
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
-            presets: vec![],
+
             skills: vec![],
             flocks: vec![],
             priority: 20,
@@ -916,7 +898,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             ],
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
-            presets: vec![],
+
             skills: vec![],
             flocks: vec![],
             priority: 20,
@@ -937,7 +919,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             ],
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
-            presets: vec![],
+
             skills: vec![],
             flocks: vec![],
             priority: 10,
@@ -959,7 +941,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             ],
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
-            presets: vec![],
+
             skills: vec![],
             flocks: vec![],
             priority: 20,
@@ -981,7 +963,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             ],
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
-            presets: vec![],
+
             skills: vec![],
             flocks: vec![],
             priority: 20,
@@ -1003,7 +985,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             ],
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
-            presets: vec![],
+
             skills: vec![],
             flocks: vec![],
             priority: 20,
@@ -1025,7 +1007,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             ],
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
-            presets: vec![],
+
             skills: vec![],
             flocks: vec![],
             priority: 20,
@@ -1047,7 +1029,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             ],
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
-            presets: vec![],
+
             skills: vec![],
             flocks: vec![],
             priority: 20,
@@ -1069,7 +1051,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             ],
             match_mode: MatchMode::AllMatch,
             custom_expression: String::new(),
-            presets: vec![],
+
             skills: vec![],
             flocks: vec![],
             priority: 20,
@@ -1093,7 +1075,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             ],
             match_mode: MatchMode::Custom,
             custom_expression: "(1 && 2) || 3".to_string(),
-            presets: vec![],
+
             skills: vec![],
             flocks: vec![],
             priority: 20,

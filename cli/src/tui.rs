@@ -13,12 +13,11 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 
-/// A matched selector with its contributed presets and flocks.
+/// A matched selector with its contributed flocks.
 pub struct MatchedSelector {
     pub name: String,
     pub label: String,
     pub checked: bool,
-    pub presets: Vec<String>,
     pub flocks: Vec<String>,
 }
 
@@ -26,21 +25,18 @@ pub struct MatchedSelector {
 pub struct ApplySelection {
     pub selected_selectors: Vec<String>,
     pub skipped_selectors: Vec<String>,
-    pub selected_presets: Vec<String>,
-    pub skipped_presets: Vec<String>,
     pub selected_flocks: Vec<String>,
     pub skipped_flocks: Vec<String>,
 }
 
 /// Show an interactive TUI for `savhub apply`.
 ///
-/// Selectors are directly togglable. Presets and flocks are derived from checked
+/// Selectors are directly togglable. Flocks are derived from checked
 /// selectors and can also be individually toggled.
 ///
 /// Returns `None` if cancelled.
 pub fn apply_select(
     selectors: &mut [MatchedSelector],
-    preset_skip_set: &BTreeSet<String>,
     flock_skip_set: &BTreeSet<String>,
     flock_skill_counts: &dyn Fn(&str) -> usize,
 ) -> anyhow::Result<Option<ApplySelection>> {
@@ -48,39 +44,26 @@ pub fn apply_select(
         return Ok(Some(ApplySelection {
             selected_selectors: Vec::new(),
             skipped_selectors: Vec::new(),
-            selected_presets: Vec::new(),
-            skipped_presets: Vec::new(),
             selected_flocks: Vec::new(),
             skipped_flocks: Vec::new(),
         }));
     }
 
-    // Derived presets/flocks with user overrides
-    let mut preset_overrides: std::collections::HashMap<String, bool> =
-        std::collections::HashMap::new();
+    // Derived flocks with user overrides
     let mut flock_overrides: std::collections::HashMap<String, bool> =
         std::collections::HashMap::new();
 
     // Initialize overrides from existing skip sets
-    for p in preset_skip_set {
-        preset_overrides.insert(p.clone(), false);
-    }
     for f in flock_skip_set {
         flock_overrides.insert(f.clone(), false);
     }
 
-    // Recompute derived presets/flocks from checked selectors
-    fn compute_derived(selectors: &[MatchedSelector]) -> (Vec<String>, Vec<String>) {
-        let mut presets = Vec::new();
+    // Recompute derived flocks from checked selectors
+    fn compute_derived(selectors: &[MatchedSelector]) -> Vec<String> {
         let mut flocks = Vec::new();
         for sel in selectors {
             if !sel.checked {
                 continue;
-            }
-            for p in &sel.presets {
-                if !presets.contains(p) {
-                    presets.push(p.clone());
-                }
             }
             for f in &sel.flocks {
                 if !flocks.contains(f) {
@@ -88,14 +71,7 @@ pub fn apply_select(
                 }
             }
         }
-        (presets, flocks)
-    }
-
-    fn is_preset_checked(
-        preset: &str,
-        overrides: &std::collections::HashMap<String, bool>,
-    ) -> bool {
-        overrides.get(preset).copied().unwrap_or(true)
+        flocks
     }
 
     fn is_flock_checked(flock: &str, overrides: &std::collections::HashMap<String, bool>) -> bool {
@@ -107,7 +83,6 @@ pub fn apply_select(
     enum Row {
         Header(&'static str),
         Selector(usize),
-        Preset(String),
         Flock(String),
     }
 
@@ -121,19 +96,13 @@ pub fn apply_select(
     let mut cancelled = false;
 
     loop {
-        let (derived_presets, derived_flocks) = compute_derived(selectors);
+        let derived_flocks = compute_derived(selectors);
 
         // Build row list dynamically
         let mut rows: Vec<Row> = Vec::new();
         rows.push(Row::Header("Selectors"));
         for i in 0..selectors.len() {
             rows.push(Row::Selector(i));
-        }
-        if !derived_presets.is_empty() {
-            rows.push(Row::Header("Presets"));
-            for p in &derived_presets {
-                rows.push(Row::Preset(p.clone()));
-            }
         }
         if !derived_flocks.is_empty() {
             rows.push(Row::Header("Flocks"));
@@ -149,10 +118,6 @@ pub fn apply_select(
 
         // Count totals for title
         let sel_count = selectors.iter().filter(|s| s.checked).count();
-        let preset_count = derived_presets
-            .iter()
-            .filter(|p| is_preset_checked(p, &preset_overrides))
-            .count();
         let flock_count = derived_flocks
             .iter()
             .filter(|f| is_flock_checked(f, &flock_overrides))
@@ -178,9 +143,7 @@ pub fn apply_select(
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    format!(
-                        "  {sel_count} selectors, {preset_count} presets, {flock_count} flocks"
-                    ),
+                    format!("  {sel_count} selectors, {flock_count} flocks"),
                     Style::default().fg(Color::DarkGray),
                 ),
             ]))
@@ -220,21 +183,6 @@ pub fn apply_select(
                                 Style::default().fg(mc).add_modifier(Modifier::BOLD),
                             ),
                             Span::styled(&sel.label, Style::default().fg(lc)),
-                        ]))
-                    }
-                    Row::Preset(name) => {
-                        let on = is_preset_checked(name, &preset_overrides);
-                        let (marker, mc, lc) = if on {
-                            ("[+]", Color::Green, Color::White)
-                        } else {
-                            ("[-]", Color::Red, Color::DarkGray)
-                        };
-                        ListItem::new(Line::from(vec![
-                            Span::styled(
-                                format!("   {marker} "),
-                                Style::default().fg(mc).add_modifier(Modifier::BOLD),
-                            ),
-                            Span::styled(name.as_str(), Style::default().fg(lc)),
                         ]))
                     }
                     Row::Flock(slug) => {
@@ -338,10 +286,6 @@ pub fn apply_select(
                     Row::Selector(i) => {
                         selectors[*i].checked = !selectors[*i].checked;
                     }
-                    Row::Preset(name) => {
-                        let current = is_preset_checked(name, &preset_overrides);
-                        preset_overrides.insert(name.clone(), !current);
-                    }
                     Row::Flock(slug) => {
                         let current = is_flock_checked(slug, &flock_overrides);
                         flock_overrides.insert(slug.clone(), !current);
@@ -352,14 +296,12 @@ pub fn apply_select(
                     for sel in selectors.iter_mut() {
                         sel.checked = true;
                     }
-                    preset_overrides.values_mut().for_each(|v| *v = true);
                     flock_overrides.values_mut().for_each(|v| *v = true);
                 }
                 KeyCode::Char('n') => {
                     for sel in selectors.iter_mut() {
                         sel.checked = false;
                     }
-                    preset_overrides.values_mut().for_each(|v| *v = false);
                     flock_overrides.values_mut().for_each(|v| *v = false);
                 }
                 _ => {}
@@ -375,13 +317,11 @@ pub fn apply_select(
     }
 
     // Build final result
-    let (final_presets, final_flocks) = compute_derived(selectors);
+    let final_flocks = compute_derived(selectors);
 
     let mut result = ApplySelection {
         selected_selectors: Vec::new(),
         skipped_selectors: Vec::new(),
-        selected_presets: Vec::new(),
-        skipped_presets: Vec::new(),
         selected_flocks: Vec::new(),
         skipped_flocks: Vec::new(),
     };
@@ -391,13 +331,6 @@ pub fn apply_select(
             result.selected_selectors.push(sel.name.clone());
         } else {
             result.skipped_selectors.push(sel.name.clone());
-        }
-    }
-    for p in &final_presets {
-        if is_preset_checked(p, &preset_overrides) {
-            result.selected_presets.push(p.clone());
-        } else {
-            result.skipped_presets.push(p.clone());
         }
     }
     for f in &final_flocks {

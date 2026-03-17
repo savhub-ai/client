@@ -16,7 +16,7 @@ use pages::detail::DetailPage;
 use pages::explore::ExplorePage;
 use pages::installed::InstalledPage;
 use pages::mcp::McpPage;
-use pages::profiles::{PresetsPage, ProjectsPage};
+use pages::profiles::ProjectsPage;
 use pages::selectors::SelectorsPage;
 use pages::settings::SettingsPage;
 use state::AppState;
@@ -63,8 +63,6 @@ pub enum Route {
     Selectors {},
     #[route("/projects")]
     Projects {},
-    #[route("/presets")]
-    Presets {},
     #[route("/mcp")]
     Mcp {},
     #[route("/settings")]
@@ -79,7 +77,6 @@ enum SidebarIconKind {
     Installed,
     Selectors,
     Projects,
-    Presets,
     Docs,
     Settings,
 }
@@ -160,11 +157,6 @@ fn Selectors() -> Element {
 #[component]
 fn Projects() -> Element {
     rsx! { ProjectsPage {} }
-}
-
-#[component]
-fn Presets() -> Element {
-    rsx! { PresetsPage {} }
 }
 
 #[component]
@@ -442,7 +434,6 @@ fn Sidebar() -> Element {
             NavItem { to: Route::Projects {}, label: t.nav_profiles, icon: SidebarIconKind::Projects, current_route: route.clone(), collapsed: is_collapsed }
             NavItem { to: Route::Explore {}, label: t.nav_explore, icon: SidebarIconKind::Explore, current_route: route.clone(), collapsed: is_collapsed }
             NavItem { to: Route::Selectors {}, label: t.nav_selectors, icon: SidebarIconKind::Selectors, current_route: route.clone(), collapsed: is_collapsed }
-            NavItem { to: Route::Presets {}, label: t.nav_presets, icon: SidebarIconKind::Presets, current_route: route.clone(), collapsed: is_collapsed }
 
             // Docs (external link — styled like NavItem)
             {
@@ -611,14 +602,6 @@ fn SidebarIcon(kind: SidebarIconKind, size: u32) -> Element {
         SidebarIconKind::Projects => rsx! {
             svg { width: "{size_attr}", height: "{size_attr}", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
                 path { d: "m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" }
-            }
-        },
-        // lucide: layers
-        SidebarIconKind::Presets => rsx! {
-            svg { width: "{size_attr}", height: "{size_attr}", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
-                path { d: "m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z" }
-                path { d: "m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65" }
-                path { d: "m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65" }
             }
         },
         // lucide: book-open

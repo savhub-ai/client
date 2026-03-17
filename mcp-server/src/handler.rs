@@ -2,25 +2,18 @@ use std::path::PathBuf;
 
 use serde_json::{Value, json};
 
-use savhub_local::presets::{
-    ResolvedSkill, add_skills_to_preset, create_preset, read_presets_store,
-    remove_skills_from_preset, resolve_skills_for_project, write_project_preset,
-};
+use savhub_local::presets::{ResolvedSkill, resolve_skills_for_project};
 use savhub_local::skills::{extract_skill_description, read_skill_md};
 
 use crate::protocol::*;
 
 pub struct McpHandler {
     workdir: PathBuf,
-    preset_override: Option<String>,
 }
 
 impl McpHandler {
-    pub fn new(workdir: PathBuf, preset_override: Option<String>) -> Self {
-        Self {
-            workdir,
-            preset_override,
-        }
+    pub fn new(workdir: PathBuf, _preset_override: Option<String>) -> Self {
+        Self { workdir }
     }
 
     pub async fn handle_request(&self, request: &JsonRpcRequest) -> Option<JsonRpcResponse> {
@@ -206,90 +199,6 @@ impl McpHandler {
             json!({
                 "tools": [
                     {
-                        "name": "list_presets",
-                        "description": "List all available skill presets",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {},
-                            "required": []
-                        }
-                    },
-                    {
-                        "name": "switch_preset",
-                        "description": "Switch the current project to a different skill preset",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "preset": {
-                                    "type": "string",
-                                    "description": "Preset name to switch to"
-                                }
-                            },
-                            "required": ["preset"]
-                        }
-                    },
-                    {
-                        "name": "create_preset",
-                        "description": "Create a new skill preset with optional initial skills",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "name": {
-                                    "type": "string",
-                                    "description": "Preset name (lowercase, hyphens allowed)"
-                                },
-                                "description": {
-                                    "type": "string",
-                                    "description": "Optional description"
-                                },
-                                "skills": {
-                                    "type": "array",
-                                    "items": { "type": "string" },
-                                    "description": "Optional initial skill slugs"
-                                }
-                            },
-                            "required": ["name"]
-                        }
-                    },
-                    {
-                        "name": "add_skills",
-                        "description": "Add skills to an existing preset",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "preset": {
-                                    "type": "string",
-                                    "description": "Preset name"
-                                },
-                                "skills": {
-                                    "type": "array",
-                                    "items": { "type": "string" },
-                                    "description": "Skill slugs to add"
-                                }
-                            },
-                            "required": ["preset", "skills"]
-                        }
-                    },
-                    {
-                        "name": "remove_skills",
-                        "description": "Remove skills from an existing preset",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "preset": {
-                                    "type": "string",
-                                    "description": "Preset name"
-                                },
-                                "skills": {
-                                    "type": "array",
-                                    "items": { "type": "string" },
-                                    "description": "Skill slugs to remove"
-                                }
-                            },
-                            "required": ["preset", "skills"]
-                        }
-                    },
-                    {
                         "name": "search_skills",
                         "description": "Search the savhub registry for available skills by keyword",
                         "inputSchema": {
@@ -329,198 +238,10 @@ impl McpHandler {
         let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
 
         match name {
-            "list_presets" => self.tool_list_presets(id),
-            "switch_preset" => self.tool_switch_preset(id, &arguments),
-            "create_preset" => self.tool_create_preset(id, &arguments),
-            "add_skills" => self.tool_add_skills(id, &arguments),
-            "remove_skills" => self.tool_remove_skills(id, &arguments),
             "search_skills" => self.tool_search_skills(id, &arguments),
             "install_skill" => self.tool_install_skill(id, &arguments),
             _ => JsonRpcResponse::error(id, -32602, format!("Unknown tool: {name}")),
         }
-    }
-
-    fn tool_list_presets(&self, id: Option<Value>) -> JsonRpcResponse {
-        let store = match read_presets_store() {
-            Ok(s) => s,
-            Err(e) => {
-                return JsonRpcResponse::success(
-                    id,
-                    tool_error(&format!("Failed to read presets: {e}")),
-                );
-            }
-        };
-
-        let presets: Vec<Value> = store
-            .presets
-            .values()
-            .map(|p| {
-                json!({
-                    "name": p.name,
-                    "description": p.description,
-                    "skills": p.skills,
-                    "skill_count": p.skills.len()
-                })
-            })
-            .collect();
-
-        JsonRpcResponse::success(
-            id,
-            json!({
-                "content": [{
-                    "type": "text",
-                    "text": serde_json::to_string_pretty(&presets).unwrap_or_default()
-                }]
-            }),
-        )
-    }
-
-    fn tool_switch_preset(&self, id: Option<Value>, arguments: &Value) -> JsonRpcResponse {
-        let Some(preset_name) = arguments.get("preset").and_then(Value::as_str) else {
-            return JsonRpcResponse::success(id, tool_error("Missing parameter: preset"));
-        };
-
-        // Verify preset exists
-        match read_presets_store() {
-            Ok(store) => {
-                if !store.presets.contains_key(preset_name) {
-                    return JsonRpcResponse::success(
-                        id,
-                        tool_error(&format!("Preset '{preset_name}' not found")),
-                    );
-                }
-            }
-            Err(e) => {
-                return JsonRpcResponse::success(
-                    id,
-                    tool_error(&format!("Failed to read presets: {e}")),
-                );
-            }
-        }
-
-        if let Err(e) = write_project_preset(&self.workdir, preset_name) {
-            return JsonRpcResponse::success(
-                id,
-                tool_error(&format!("Failed to bind preset: {e}")),
-            );
-        }
-
-        // Notify client that prompts list has changed
-        let _ =
-            crate::transport::send_notification("notifications/prompts/list_changed", json!({}));
-
-        JsonRpcResponse::success(
-            id,
-            json!({
-                "content": [{
-                    "type": "text",
-                    "text": format!("Switched project to preset '{preset_name}'. Skills list updated.")
-                }]
-            }),
-        )
-    }
-
-    fn tool_create_preset(&self, id: Option<Value>, arguments: &Value) -> JsonRpcResponse {
-        let Some(name) = arguments.get("name").and_then(Value::as_str) else {
-            return JsonRpcResponse::success(id, tool_error("Missing parameter: name"));
-        };
-        let description = arguments.get("description").and_then(Value::as_str);
-
-        if let Err(e) = create_preset(name, description) {
-            return JsonRpcResponse::success(
-                id,
-                tool_error(&format!("Failed to create preset: {e}")),
-            );
-        }
-
-        // If skills provided, add them
-        if let Some(skills) = arguments.get("skills").and_then(Value::as_array) {
-            let slugs: Vec<String> = skills
-                .iter()
-                .filter_map(Value::as_str)
-                .map(String::from)
-                .collect();
-            if !slugs.is_empty() {
-                let slug = savhub_local::utils::sanitize_slug(name);
-                if let Err(e) = add_skills_to_preset(&slug, &slugs) {
-                    return JsonRpcResponse::success(
-                        id,
-                        tool_error(&format!("Preset created but failed to add skills: {e}")),
-                    );
-                }
-            }
-        }
-
-        JsonRpcResponse::success(
-            id,
-            json!({
-                "content": [{
-                    "type": "text",
-                    "text": format!("Preset '{name}' created successfully.")
-                }]
-            }),
-        )
-    }
-
-    fn tool_add_skills(&self, id: Option<Value>, arguments: &Value) -> JsonRpcResponse {
-        let Some(preset) = arguments.get("preset").and_then(Value::as_str) else {
-            return JsonRpcResponse::success(id, tool_error("Missing parameter: preset"));
-        };
-        let Some(skills) = arguments.get("skills").and_then(Value::as_array) else {
-            return JsonRpcResponse::success(id, tool_error("Missing parameter: skills"));
-        };
-
-        let slugs: Vec<String> = skills
-            .iter()
-            .filter_map(Value::as_str)
-            .map(String::from)
-            .collect();
-
-        if let Err(e) = add_skills_to_preset(preset, &slugs) {
-            return JsonRpcResponse::success(id, tool_error(&format!("Failed to add skills: {e}")));
-        }
-
-        JsonRpcResponse::success(
-            id,
-            json!({
-                "content": [{
-                    "type": "text",
-                    "text": format!("Added {} skill(s) to preset '{preset}'.", slugs.len())
-                }]
-            }),
-        )
-    }
-
-    fn tool_remove_skills(&self, id: Option<Value>, arguments: &Value) -> JsonRpcResponse {
-        let Some(preset) = arguments.get("preset").and_then(Value::as_str) else {
-            return JsonRpcResponse::success(id, tool_error("Missing parameter: preset"));
-        };
-        let Some(skills) = arguments.get("skills").and_then(Value::as_array) else {
-            return JsonRpcResponse::success(id, tool_error("Missing parameter: skills"));
-        };
-
-        let slugs: Vec<String> = skills
-            .iter()
-            .filter_map(Value::as_str)
-            .map(String::from)
-            .collect();
-
-        if let Err(e) = remove_skills_from_preset(preset, &slugs) {
-            return JsonRpcResponse::success(
-                id,
-                tool_error(&format!("Failed to remove skills: {e}")),
-            );
-        }
-
-        JsonRpcResponse::success(
-            id,
-            json!({
-                "content": [{
-                    "type": "text",
-                    "text": format!("Removed {} skill(s) from preset '{preset}'.", slugs.len())
-                }]
-            }),
-        )
     }
 
     fn tool_search_skills(&self, id: Option<Value>, arguments: &Value) -> JsonRpcResponse {
@@ -595,8 +316,7 @@ impl McpHandler {
     // -----------------------------------------------------------------------
 
     fn resolve_skills(&self) -> Vec<ResolvedSkill> {
-        resolve_skills_for_project(&self.workdir, self.preset_override.as_deref())
-            .unwrap_or_default()
+        resolve_skills_for_project(&self.workdir).unwrap_or_default()
     }
 }
 

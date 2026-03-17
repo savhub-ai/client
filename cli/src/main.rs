@@ -141,12 +141,6 @@ enum Command {
     Star(DeleteArgs),
     /// Unstar a skill
     Unstar(DeleteArgs),
-    /// Manage presets (skill groups)
-    #[command(alias = "profile")]
-    Preset {
-        #[command(subcommand)]
-        command: PresetCommand,
-    },
     /// Manage MCP server integration with AI clients
     Mcp {
         #[command(subcommand)]
@@ -187,49 +181,6 @@ enum TransferCommand {
     Accept(DeleteArgs),
     Reject(DeleteArgs),
     Cancel(DeleteArgs),
-}
-
-#[derive(Debug, Subcommand)]
-enum PresetCommand {
-    Create(PresetCreateArgs),
-    List,
-    Show(PresetNameArgs),
-    Delete(PresetDeleteArgs),
-    Add(PresetSkillsArgs),
-    Remove(PresetSkillsArgs),
-    Bind(PresetBindArgs),
-    Unbind,
-    Status,
-}
-
-#[derive(Debug, Args)]
-struct PresetCreateArgs {
-    name: String,
-    #[arg(long)]
-    description: Option<String>,
-}
-
-#[derive(Debug, Args)]
-struct PresetNameArgs {
-    name: String,
-}
-
-#[derive(Debug, Args)]
-struct PresetDeleteArgs {
-    name: String,
-    #[arg(long, action = ArgAction::SetTrue)]
-    yes: bool,
-}
-
-#[derive(Debug, Args)]
-struct PresetSkillsArgs {
-    preset: String,
-    skills: Vec<String>,
-}
-
-#[derive(Debug, Args)]
-struct PresetBindArgs {
-    name: String,
 }
 
 #[derive(Debug, Subcommand)]
@@ -336,12 +287,6 @@ struct ApplyArgs {
     /// Skip syncing skills to these AI agents (e.g. --skip-agents cursor windsurf)
     #[arg(long = "skip-agents", num_args = 1.., value_delimiter = ',')]
     skip_agents: Vec<String>,
-    /// Manually add presets (saved to savhub.toml presets.manual_added)
-    #[arg(long = "presets", num_args = 1.., value_delimiter = ',')]
-    add_presets: Vec<String>,
-    /// Manually skip presets (saved to savhub.toml presets.manual_skipped)
-    #[arg(long = "skip-presets", num_args = 1.., value_delimiter = ',')]
-    skip_presets: Vec<String>,
     /// Manually add skills by slug or sign (saved to savhub.toml skills.manual_added)
     #[arg(long = "skills", num_args = 1.., value_delimiter = ',')]
     add_skills: Vec<String>,
@@ -378,8 +323,6 @@ struct EnableArgs {
     slug: String,
     #[arg(long)]
     repo: String,
-    #[arg(long = "preset")]
-    presets: Vec<String>,
     #[arg(long = "selector", alias = "detector")]
     selectors: Vec<String>,
     #[arg(long, action = ArgAction::SetTrue)]
@@ -592,7 +535,6 @@ async fn main() -> Result<()> {
         },
         Some(Command::Star(args)) => cmd_set_starred(&opts, args, true).await?,
         Some(Command::Unstar(args)) => cmd_set_starred(&opts, args, false).await?,
-        Some(Command::Preset { command }) => cmd_preset(&opts, command)?,
         Some(Command::Mcp { command }) => cmd_mcp(&opts, command)?,
         Some(Command::Registry { command }) => cmd_registry(&opts, command).await?,
         Some(Command::Selector { command }) => cmd_selector(&opts, command)?,
@@ -939,7 +881,6 @@ fn cmd_enable(opts: &GlobalOpts, args: EnableArgs) -> Result<()> {
     }
 
     let sources = ResolvedSkillSources {
-        presets: args.presets.clone(),
         selectors: args.selectors.clone(),
         flocks: Vec::new(),
         manual: true,
@@ -2468,117 +2409,6 @@ fn parse_role_arg(value: &str) -> Result<UserRole> {
 // Profile commands
 // ---------------------------------------------------------------------------
 
-fn cmd_preset(opts: &GlobalOpts, command: PresetCommand) -> Result<()> {
-    use savhub_local::presets;
-
-    match command {
-        PresetCommand::Create(args) => {
-            presets::create_preset(&args.name, args.description.as_deref())?;
-            println!("Preset '{}' created.", args.name);
-        }
-        PresetCommand::List => {
-            let store = presets::read_presets_store()?;
-            if store.presets.is_empty() {
-                println!("No presets defined. Create one with `savhub preset create <name>`.");
-            } else {
-                for (name, preset) in &store.presets {
-                    let desc = preset.description.as_deref().unwrap_or("");
-                    println!("  {name}  ({} skills)  {desc}", preset.skills.len());
-                }
-            }
-        }
-        PresetCommand::Show(args) => {
-            let store = presets::read_presets_store()?;
-            let preset = store
-                .presets
-                .get(&args.name)
-                .with_context(|| format!("preset '{}' not found", args.name))?;
-            println!("Preset: {}", preset.name);
-            if let Some(desc) = &preset.description {
-                println!("Description: {desc}");
-            }
-            if preset.skills.is_empty() {
-                println!("Skills: (none)");
-            } else {
-                println!("Skills:");
-                for slug in &preset.skills {
-                    println!("  - {slug}");
-                }
-            }
-        }
-        PresetCommand::Delete(args) => {
-            if opts.input_allowed && !args.yes {
-                let confirm = Confirm::new()
-                    .with_prompt(format!("Delete preset '{}'?", args.name))
-                    .default(false)
-                    .interact()?;
-                if !confirm {
-                    println!("Cancelled.");
-                    return Ok(());
-                }
-            }
-            presets::delete_preset(&args.name)?;
-            println!("Preset '{}' deleted.", args.name);
-        }
-        PresetCommand::Add(args) => {
-            if args.skills.is_empty() {
-                bail!("specify at least one skill slug to add");
-            }
-            presets::add_skills_to_preset(&args.preset, &args.skills)?;
-            println!(
-                "Added {} skill(s) to preset '{}'.",
-                args.skills.len(),
-                args.preset
-            );
-        }
-        PresetCommand::Remove(args) => {
-            if args.skills.is_empty() {
-                bail!("specify at least one skill slug to remove");
-            }
-            presets::remove_skills_from_preset(&args.preset, &args.skills)?;
-            println!(
-                "Removed {} skill(s) from preset '{}'.",
-                args.skills.len(),
-                args.preset
-            );
-        }
-        PresetCommand::Bind(args) => {
-            // Verify preset exists
-            let store = presets::read_presets_store()?;
-            if !store.presets.contains_key(&args.name) {
-                bail!("preset '{}' not found", args.name);
-            }
-            presets::write_project_preset(&opts.workdir, &args.name)?;
-            println!("Bound preset '{}' to {}", args.name, opts.workdir.display());
-        }
-        PresetCommand::Unbind => {
-            presets::remove_project_preset(&opts.workdir)?;
-            println!("Unbound preset from {}", opts.workdir.display());
-        }
-        PresetCommand::Status => {
-            let project_preset = presets::read_project_preset(&opts.workdir)?;
-            match project_preset {
-                Some(pp) => {
-                    println!("Project: {}", opts.workdir.display());
-                    println!("Preset: {}", pp.preset);
-                    let resolved = presets::resolve_skills_for_project(&opts.workdir, None)?;
-                    println!("Skills ({}):", resolved.len());
-                    for skill in &resolved {
-                        println!("  - {} ({})", skill.slug, skill.folder.display());
-                    }
-                }
-                None => {
-                    println!(
-                        "No preset bound to {}. Use `savhub preset bind <name>`.",
-                        opts.workdir.display()
-                    );
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
 // ---------------------------------------------------------------------------
 // MCP commands
 // ---------------------------------------------------------------------------
@@ -2827,10 +2657,9 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
                 };
                 let rules = d.rules.len();
                 let skills = d.skills.len();
-                let presets = d.presets.len();
                 println!(
-                    "  {:<24} scope={:<10} {}r {}p {}s{}",
-                    d.name, d.folder_scope, rules, presets, skills, pri
+                    "  {:<24} scope={:<10} {}r {}s{}",
+                    d.name, d.folder_scope, rules, skills, pri
                 );
                 if !d.description.is_empty() {
                     let desc: String = d.description.chars().take(80).collect();
@@ -2874,9 +2703,6 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
                 for (i, rule) in d.rules.iter().enumerate() {
                     println!("  {}. {}", i + 1, rule.display());
                 }
-                if !d.presets.is_empty() {
-                    println!("Presets:    {}", d.presets.join(", "));
-                }
                 if !d.skills.is_empty() {
                     println!("Skills:     {}", d.skills.join(", "));
                 }
@@ -2899,9 +2725,6 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
                     "  [+] {} (P{pri}) — {}",
                     m.selector.name, m.selector.description
                 );
-            }
-            if !result.presets.is_empty() {
-                println!("\nPresets: {}", result.presets.join(", "));
             }
             if !result.skills.is_empty() {
                 println!("Skills:  {}", result.skills.join(", "));
@@ -3035,7 +2858,6 @@ fn cmd_flock(_opts: &GlobalOpts, command: FlockCommand) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
-    use savhub_local::presets::read_presets_store;
     use savhub_local::registry;
     use savhub_local::selectors::run_selectors;
 
@@ -3050,8 +2872,6 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     }
     clean(&mut args.agents);
     clean(&mut args.skip_agents);
-    clean(&mut args.add_presets);
-    clean(&mut args.skip_presets);
     clean(&mut args.add_skills);
     clean(&mut args.skip_skills);
     clean(&mut args.add_flocks);
@@ -3116,10 +2936,9 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             }
         }
 
-        // Clear selectors.matched, presets.matched, flocks.matched (leave manual_* untouched)
+        // Clear selectors.matched, flocks.matched (leave manual_* untouched)
         let mut config = savhub_local::presets::read_project_config(workdir)?;
         config.selectors.matched.clear();
-        config.presets.matched.clear();
         config.flocks.matched.clear();
         savhub_local::presets::write_project_config_force(workdir, &config)?;
 
@@ -3141,7 +2960,6 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         return Ok(());
     }
 
-    let preset_store = read_presets_store()?;
     let existing_config = savhub_local::presets::read_project_config(workdir)?;
 
     // ── Collect all matched items ──
@@ -3150,28 +2968,15 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         .iter()
         .map(|m| m.selector.name.clone())
         .collect();
-    let matched_presets: Vec<String> = result.presets.clone();
-    let mut matched_flocks: Vec<String> = result.flocks.clone();
-    for preset_name in &matched_presets {
-        if let Some(preset) = preset_store.presets.get(preset_name) {
-            for flock_slug in &preset.flocks {
-                if !matched_flocks.contains(flock_slug) {
-                    matched_flocks.push(flock_slug.clone());
-                }
-            }
-        }
-    }
+    let matched_flocks: Vec<String> = result.flocks.clone();
 
-    // ── Interactive selection of selectors, presets, flocks (unless -y) ──
+    // ── Interactive selection of selectors and flocks (unless -y) ──
     let (selected_selectors, skipped_selectors): (Vec<String>, Vec<String>);
-    let (selected_presets, skipped_presets): (Vec<String>, Vec<String>);
     let (selected_flocks, skipped_flocks): (Vec<String>, Vec<String>);
 
     if args.yes || !opts.input_allowed {
         selected_selectors = matched_selector_names.clone();
         skipped_selectors = Vec::new();
-        selected_presets = matched_presets.clone();
-        skipped_presets = Vec::new();
         selected_flocks = matched_flocks.clone();
         skipped_flocks = Vec::new();
 
@@ -3182,12 +2987,6 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
                 println!("  \x1b[32m[+]\x1b[0m {s}");
             }
         }
-        if !selected_presets.is_empty() {
-            println!("\nPresets:");
-            for p in &selected_presets {
-                println!("  \x1b[32m[+]\x1b[0m {p}");
-            }
-        }
         if !selected_flocks.is_empty() {
             println!("\nFlocks:");
             for f in &selected_flocks {
@@ -3195,23 +2994,13 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             }
         }
     } else {
-        // Build TUI selectors with their contributed presets/flocks
+        // Build TUI selectors with their contributed flocks
         let mut tui_selectors: Vec<tui::MatchedSelector> = result
             .matched
             .iter()
             .map(|m| {
                 let pri = m.selector.priority;
-                // Collect flocks: direct from selector + from presets it contributes
-                let mut sel_flocks = m.flocks.clone();
-                for preset_name in &m.presets {
-                    if let Some(preset) = preset_store.presets.get(preset_name) {
-                        for f in &preset.flocks {
-                            if !sel_flocks.contains(f) {
-                                sel_flocks.push(f.clone());
-                            }
-                        }
-                    }
-                }
+                let sel_flocks = m.flocks.clone();
                 tui::MatchedSelector {
                     name: m.selector.name.clone(),
                     label: format!("{} (P{pri}) — {}", m.selector.name, m.selector.description),
@@ -3219,18 +3008,11 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
                         .selectors
                         .manual_skipped
                         .contains(&m.selector.name),
-                    presets: m.presets.clone(),
                     flocks: sel_flocks,
                 }
             })
             .collect();
 
-        let preset_skip: BTreeSet<String> = existing_config
-            .presets
-            .manual_skipped
-            .iter()
-            .cloned()
-            .collect();
         let flock_skip: BTreeSet<String> = existing_config
             .flocks
             .manual_skipped
@@ -3239,7 +3021,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             .collect();
 
         let sel_result =
-            tui::apply_select(&mut tui_selectors, &preset_skip, &flock_skip, &|slug| {
+            tui::apply_select(&mut tui_selectors, &flock_skip, &|slug| {
                 registry::list_flock_skill_slugs(slug)
                     .map(|v| v.len())
                     .unwrap_or(0)
@@ -3252,8 +3034,6 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
 
         selected_selectors = sel.selected_selectors;
         skipped_selectors = sel.skipped_selectors;
-        selected_presets = sel.selected_presets;
-        skipped_presets = sel.skipped_presets;
         selected_flocks = sel.selected_flocks;
         skipped_flocks = sel.skipped_flocks;
 
@@ -3265,15 +3045,6 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             }
             for s in &skipped_selectors {
                 println!("  \x1b[31m[-]\x1b[0m {s}");
-            }
-        }
-        if !selected_presets.is_empty() || !skipped_presets.is_empty() {
-            println!("Presets:");
-            for p in &selected_presets {
-                println!("  \x1b[32m[+]\x1b[0m {p}");
-            }
-            for p in &skipped_presets {
-                println!("  \x1b[31m[-]\x1b[0m {p}");
             }
         }
         if !selected_flocks.is_empty() || !skipped_flocks.is_empty() {
@@ -3288,12 +3059,6 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     }
 
     // Merge CLI --skip-* args into skipped lists
-    let mut skipped_presets = skipped_presets;
-    for p in &args.skip_presets {
-        if !skipped_presets.contains(p) {
-            skipped_presets.push(p.clone());
-        }
-    }
     let mut skipped_flocks = skipped_flocks;
     for f in &args.skip_flocks {
         if !skipped_flocks.contains(f) {
@@ -3301,7 +3066,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         }
     }
 
-    // ── Expand selected presets + flocks into skill slugs ──
+    // ── Expand selected flocks into skill slugs ──
     // Only use selectors that were selected (not skipped)
     let mut all_skills: Vec<String> = Vec::new();
     for m in &result.matched {
@@ -3311,15 +3076,6 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         for skill in &m.skills {
             if !all_skills.contains(skill) {
                 all_skills.push(skill.clone());
-            }
-        }
-    }
-    for preset_name in &selected_presets {
-        if let Some(preset) = preset_store.presets.get(preset_name) {
-            for skill in &preset.skills {
-                if !all_skills.contains(skill) {
-                    all_skills.push(skill.clone());
-                }
             }
         }
     }
@@ -3333,26 +3089,6 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             for skill in flock_skills {
                 if !all_skills.contains(&skill) {
                     all_skills.push(skill);
-                }
-            }
-        }
-    }
-
-    // ── Include CLI --presets skills ──
-    for preset_name in &args.add_presets {
-        if let Some(preset) = preset_store.presets.get(preset_name) {
-            for skill in &preset.skills {
-                if !all_skills.contains(skill) {
-                    all_skills.push(skill.clone());
-                }
-            }
-            for flock_slug in &preset.flocks {
-                if let Ok(flock_skills) = registry::list_flock_skill_slugs(flock_slug) {
-                    for skill in flock_skills {
-                        if !all_skills.contains(&skill) {
-                            all_skills.push(skill);
-                        }
-                    }
                 }
             }
         }
@@ -3412,7 +3148,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     let toml_exists = workdir.join("savhub.toml").exists();
     let lock_exists = workdir.join("savhub.lock").exists();
     if to_add.is_empty() && to_remove.is_empty() && toml_exists && lock_exists {
-        // Also check if selectors/presets/flocks config changed
+        // Also check if selectors/flocks config changed
         let old_matched_names: BTreeSet<String> = config
             .selectors
             .matched
@@ -3424,12 +3160,9 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             .iter()
             .map(|m| m.selector.name.clone())
             .collect();
-        let old_presets: BTreeSet<String> = config.presets.matched.iter().cloned().collect();
-        let new_presets: BTreeSet<String> = result.presets.iter().cloned().collect();
         let old_flocks: BTreeSet<String> = config.flocks.matched.iter().cloned().collect();
         let new_flocks: BTreeSet<String> = selected_flocks.iter().cloned().collect();
         if old_matched_names == new_matched_names
-            && old_presets == new_presets
             && old_flocks == new_flocks
         {
             println!("\nProject is already up to date. Nothing to do.");
@@ -3451,7 +3184,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         }
     }
     if to_add.is_empty() && to_remove.is_empty() {
-        println!("\nNo skill changes, updating selector/preset configuration only.");
+        println!("\nNo skill changes, updating selector configuration only.");
     }
 
     if args.dry_run {
@@ -3470,10 +3203,9 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         }
     }
 
-    // ── Apply: update savhub.toml selectors + presets (replace, not accumulate) ──
+    // ── Apply: update savhub.toml selectors (replace, not accumulate) ──
     {
         let mut cfg = savhub_local::presets::read_project_config(workdir)?;
-        cfg.presets.matched = result.presets.clone();
         cfg.selectors.matched = result
             .matched
             .iter()
@@ -3486,7 +3218,6 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
                     .collect();
                 savhub_local::presets::ProjectSelectorMatch {
                     selector: m.selector.name.clone(),
-                    presets: m.presets.clone(),
                     flocks: selector_flocks,
                     skills: m.skills.clone(),
                 }
@@ -3514,15 +3245,6 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             .manual_skipped
             .retain(|s| !selected_selectors.contains(s) || !matched_selector_names.contains(s));
 
-        for p in &skipped_presets {
-            if !cfg.presets.manual_skipped.contains(p) {
-                cfg.presets.manual_skipped.push(p.clone());
-            }
-        }
-        cfg.presets
-            .manual_skipped
-            .retain(|p| !selected_presets.contains(p) || !matched_presets.contains(p));
-
         for f in &skipped_flocks {
             if !cfg.flocks.manual_skipped.contains(f) {
                 cfg.flocks.manual_skipped.push(f.clone());
@@ -3532,17 +3254,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             .manual_skipped
             .retain(|f| !selected_flocks.contains(f) || !matched_flocks.contains(f));
 
-        // Merge CLI --presets/--skip-presets/--skills/--skip-skills/--flocks/--skip-flocks
-        for p in &args.add_presets {
-            if !p.is_empty() && !cfg.presets.manual_added.contains(p) {
-                cfg.presets.manual_added.push(p.clone());
-            }
-        }
-        for p in &args.skip_presets {
-            if !p.is_empty() && !cfg.presets.manual_skipped.contains(p) {
-                cfg.presets.manual_skipped.push(p.clone());
-            }
-        }
+        // Merge CLI --skills/--skip-skills/--flocks/--skip-flocks
         for s in &args.add_skills {
             if !s.is_empty()
                 && !cfg

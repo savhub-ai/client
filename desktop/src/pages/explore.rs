@@ -55,8 +55,6 @@ impl From<&SearchResult> for DisplaySkill {
 enum SkillFilter {
     All,
     Installed,
-    Latest,
-    Outdated,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,8 +84,6 @@ fn matches_filter(state: SkillInstallState, filter: SkillFilter) -> bool {
     match filter {
         SkillFilter::All => true,
         SkillFilter::Installed => !matches!(state, SkillInstallState::NotInstalled),
-        SkillFilter::Latest => matches!(state, SkillInstallState::Latest),
-        SkillFilter::Outdated => matches!(state, SkillInstallState::Outdated),
     }
 }
 
@@ -263,8 +259,6 @@ pub fn ExplorePage() -> Element {
     let search_label = t.search;
     let all_label = t.filter_all;
     let installed_label = t.installed;
-    let latest_label = t.filter_latest;
-    let outdated_label = t.filter_outdated;
     let loading_text = t.loading;
     let no_found = t.no_skills_found;
     let flock_skills_label = t.flock_skills_count;
@@ -325,32 +319,6 @@ pub fn ExplorePage() -> Element {
                     matches_filter(
                         skill_install_state(skill, &installed_map),
                         SkillFilter::Installed,
-                    )
-                })
-                .count(),
-        ),
-        (
-            SkillFilter::Latest,
-            latest_label,
-            all_skills
-                .iter()
-                .filter(|skill| {
-                    matches_filter(
-                        skill_install_state(skill, &installed_map),
-                        SkillFilter::Latest,
-                    )
-                })
-                .count(),
-        ),
-        (
-            SkillFilter::Outdated,
-            outdated_label,
-            all_skills
-                .iter()
-                .filter(|skill| {
-                    matches_filter(
-                        skill_install_state(skill, &installed_map),
-                        SkillFilter::Outdated,
                     )
                 })
                 .count(),
