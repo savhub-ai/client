@@ -870,7 +870,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
-            repos: vec!["github.com/ZhangHanDong/makepad-skills".to_string()],
+            repos: vec![],
             enabled: true,
             priority: 10,
         },
@@ -1032,6 +1032,30 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             skills: vec![],
             flocks: vec![],
             repos: vec![],
+            enabled: true,
+            priority: 20,
+        },
+        SelectorDefinition {
+            sign: "builtin-makepad-project".to_string(),
+            name: "Makepad Project".to_string(),
+            description: "Detects Makepad projects by checking Cargo.toml for makepad dependency."
+                .to_string(),
+            folder_scope: ".".to_string(),
+            rules: vec![
+                SelectorRule::FileExists {
+                    path: "Cargo.toml".to_string(),
+                },
+                SelectorRule::FileContains {
+                    path: "Cargo.toml".to_string(),
+                    contains: "makepad".to_string(),
+                },
+            ],
+            match_mode: MatchMode::AllMatch,
+            custom_expression: String::new(),
+
+            skills: vec![],
+            flocks: vec![],
+            repos: vec!["github.com/ZhangHanDong/makepad-skills".to_string()],
             enabled: true,
             priority: 20,
         },

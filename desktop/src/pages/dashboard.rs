@@ -213,6 +213,30 @@ pub fn DashboardPage() -> Element {
                                         .and_then(|r| r.map_err(|e| e.to_string()));
                                         registry_sync_result.set(Some(result));
                                         registry_syncing.set(false);
+
+                                        // Re-check API health after sync so status updates if back online
+                                        let client = state.api_client();
+                                        let t = i18n::texts(*state.lang.read());
+                                        match client.get_json::<serde_json::Value>("/health").await {
+                                            Ok(value) => {
+                                                let status = value
+                                                    .get("status")
+                                                    .and_then(|field| field.as_str())
+                                                    .unwrap_or("unknown");
+                                                let api_ver = value
+                                                    .get("apiVersion")
+                                                    .and_then(|v| v.as_u64())
+                                                    .map(|v| format!(" (API v{v})"))
+                                                    .unwrap_or_default();
+                                                health.set(format!("{status}{api_ver}"));
+                                                health_error.set(None);
+                                                show_health_error.set(false);
+                                            }
+                                            Err(error) => {
+                                                health.set(t.offline.to_string());
+                                                health_error.set(Some(error));
+                                            }
+                                        }
                                     });
                                 },
                                 "{t.registry_sync}"

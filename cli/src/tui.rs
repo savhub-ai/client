@@ -25,7 +25,6 @@ pub struct MatchedSelector {
 pub struct UnmatchedSelector {
     pub name: String,
     pub flocks: Vec<String>,
-    pub skills: Vec<String>,
 }
 
 /// Result of the apply TUI selection.
@@ -58,6 +57,13 @@ fn repo_group(flock_sign: &str) -> &str {
     }
 }
 
+/// Short display name for a flock: strip repo prefix if present.
+fn flock_display(slug: &str) -> &str {
+    slug.strip_prefix(repo_group(slug))
+        .and_then(|s| s.strip_prefix('/'))
+        .unwrap_or(slug)
+}
+
 /// Group flocks by repository, preserving original order.
 /// Returns `[(repo_label, [(flock_sign)])]`.
 fn group_flocks_by_repo(flocks: &[String]) -> Vec<(String, Vec<String>)> {
@@ -85,7 +91,7 @@ pub fn apply_select(
     flock_skill_counts: &dyn Fn(&str) -> usize,
     unmatched: &[UnmatchedSelector],
 ) -> anyhow::Result<Option<ApplySelection>> {
-    if selectors.is_empty() {
+    if selectors.is_empty() && unmatched.is_empty() {
         return Ok(Some(ApplySelection {
             selected_selectors: Vec::new(),
             skipped_selectors: Vec::new(),
@@ -123,15 +129,20 @@ pub fn apply_select(
         overrides.get(flock).copied().unwrap_or(true)
     }
 
-    // Entry types for the flat list
+    // Row types
     #[derive(Clone)]
     enum Row {
-        Header(&'static str),
+        SectionHeader(&'static str, Color), // label, color
+        Separator,
         RepoGroup(String),
         Selector(usize),
         Flock(String),
-        UnmatchedSelector(usize), // index into unmatched
-        UnmatchedDetail(String),  // flock or skill line
+        RemovedSelector(usize),
+        RemovedFlock(String),
+    }
+
+    fn is_interactive(row: &Row) -> bool {
+        matches!(row, Row::Selector(_) | Row::Flock(_))
     }
 
     terminal::enable_raw_mode()?;
@@ -140,56 +151,73 @@ pub fn apply_select(
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut cursor = 1usize; // skip first header
+    let mut cursor = 0usize;
     let mut cancelled = false;
 
     loop {
         let derived_flocks = compute_derived(selectors);
         let grouped = group_flocks_by_repo(&derived_flocks);
 
-        // Build row list dynamically
+        // Build row list
         let mut rows: Vec<Row> = Vec::new();
-        rows.push(Row::Header("Selectors"));
-        for i in 0..selectors.len() {
-            rows.push(Row::Selector(i));
-        }
-        if !derived_flocks.is_empty() {
-            rows.push(Row::Header("Flocks"));
-            for (repo, flocks) in &grouped {
-                rows.push(Row::RepoGroup(repo.clone()));
-                for f in flocks {
-                    rows.push(Row::Flock(f.clone()));
-                }
+
+        // ── Install section ──
+        if !selectors.is_empty() {
+            rows.push(Row::SectionHeader("  Install", Color::Green));
+            for i in 0..selectors.len() {
+                rows.push(Row::Selector(i));
             }
-        }
-        if !unmatched.is_empty() {
-            rows.push(Row::Header("Will be removed"));
-            for (ui, u) in unmatched.iter().enumerate() {
-                rows.push(Row::UnmatchedSelector(ui));
-                for f in &u.flocks {
-                    let display = f
-                        .strip_prefix(repo_group(f))
-                        .and_then(|s| s.strip_prefix('/'))
-                        .unwrap_or(f);
-                    rows.push(Row::UnmatchedDetail(format!("flock: {display}")));
-                }
-                for s in &u.skills {
-                    rows.push(Row::UnmatchedDetail(format!("skill: {s}")));
+            if !derived_flocks.is_empty() {
+                rows.push(Row::Separator);
+                for (repo, flocks) in &grouped {
+                    rows.push(Row::RepoGroup(repo.clone()));
+                    for f in flocks {
+                        rows.push(Row::Flock(f.clone()));
+                    }
                 }
             }
         }
 
-        // Clamp cursor
+        // ── Remove section ──
+        if !unmatched.is_empty() {
+            if !rows.is_empty() {
+                rows.push(Row::Separator);
+            }
+            rows.push(Row::SectionHeader("  Remove", Color::Red));
+            for (ui, u) in unmatched.iter().enumerate() {
+                rows.push(Row::RemovedSelector(ui));
+                for f in &u.flocks {
+                    rows.push(Row::RemovedFlock(f.clone()));
+                }
+            }
+        }
+
+        // Clamp cursor and find first interactive row
         if cursor >= rows.len() {
             cursor = rows.len().saturating_sub(1);
         }
+        if !rows.is_empty() && !is_interactive(&rows[cursor]) {
+            // find next interactive
+            let mut found = false;
+            for i in 0..rows.len() {
+                if is_interactive(&rows[i]) {
+                    cursor = i;
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                cursor = 0;
+            }
+        }
 
-        // Count totals for title
-        let sel_count = selectors.iter().filter(|s| s.checked).count();
-        let flock_count = derived_flocks
+        // Counts for title
+        let add_sel = selectors.iter().filter(|s| s.checked).count();
+        let add_flock = derived_flocks
             .iter()
             .filter(|f| is_flock_checked(f, &flock_overrides))
             .count();
+        let rm_sel = unmatched.len();
 
         let rows_snapshot = rows.clone();
 
@@ -202,50 +230,62 @@ pub fn apply_select(
             ])
             .split(area);
 
-            // Title
-            let title = Paragraph::new(Line::from(vec![
+            // ── Title bar ──
+            let mut title_spans = vec![
                 Span::styled(
-                    " savhub apply",
+                    " savhub apply ",
                     Style::default()
                         .fg(Color::Green)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(
-                    format!("  {sel_count} selectors, {flock_count} flocks"),
-                    Style::default().fg(Color::DarkGray),
-                ),
-            ]))
-            .block(
-                Block::default()
-                    .borders(Borders::BOTTOM)
-                    .border_style(Style::default().fg(Color::DarkGray)),
-            );
+            ];
+            if add_sel > 0 || add_flock > 0 {
+                title_spans.push(Span::styled(
+                    format!(" +{add_sel} selectors  +{add_flock} flocks"),
+                    Style::default().fg(Color::Green),
+                ));
+            }
+            if rm_sel > 0 {
+                title_spans.push(Span::styled(
+                    format!("  -{rm_sel} selectors"),
+                    Style::default().fg(Color::Red),
+                ));
+            }
+            let title = Paragraph::new(Line::from(title_spans))
+                .block(
+                    Block::default()
+                        .borders(Borders::BOTTOM)
+                        .border_style(Style::default().fg(Color::DarkGray)),
+                );
             frame.render_widget(title, chunks[0]);
 
-            // List
+            // ── Main list ──
             let list_items: Vec<ListItem> = rows_snapshot
                 .iter()
                 .map(|row| match row {
-                    Row::Header(name) => ListItem::new(Line::from(vec![
-                        Span::styled(
-                            format!(" ── {name} "),
-                            Style::default()
-                                .fg(Color::Cyan)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(
-                            "──────────────────────────────",
-                            Style::default().fg(Color::DarkGray),
-                        ),
-                    ])),
-                    Row::RepoGroup(repo) => ListItem::new(Line::from(vec![
-                        Span::styled(
-                            format!("   {repo}"),
-                            Style::default()
-                                .fg(Color::Yellow)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                    ])),
+                    Row::SectionHeader(label, color) => {
+                        ListItem::new(Line::from(vec![
+                            Span::styled(
+                                format!(" ── {label} "),
+                                Style::default()
+                                    .fg(*color)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(
+                                "─".repeat(40),
+                                Style::default().fg(Color::DarkGray),
+                            ),
+                        ]))
+                    }
+                    Row::Separator => {
+                        ListItem::new(Line::from(Span::styled("", Style::default())))
+                    }
+                    Row::RepoGroup(repo) => ListItem::new(Line::from(Span::styled(
+                        format!("    {repo}"),
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ))),
                     Row::Selector(i) => {
                         let sel = &selectors[*i];
                         let (marker, mc, lc) = if sel.checked {
@@ -269,39 +309,45 @@ pub fn apply_select(
                         } else {
                             ("[-]", Color::Red, Color::DarkGray)
                         };
-                        // Show short name: strip repo prefix if flock has more segments
-                        let display = slug
-                            .strip_prefix(repo_group(slug))
-                            .and_then(|s| s.strip_prefix('/'))
-                            .unwrap_or(slug);
-                        let label = if display == slug {
-                            format!("{slug} ({count} skills)")
-                        } else {
-                            format!("{display} ({count} skills)")
-                        };
+                        let display = flock_display(slug);
+                        let label = format!("{display} ({count} skills)");
                         ListItem::new(Line::from(vec![
                             Span::styled(
-                                format!("     {marker} "),
+                                format!("      {marker} "),
                                 Style::default().fg(mc).add_modifier(Modifier::BOLD),
                             ),
                             Span::styled(label, Style::default().fg(lc)),
                         ]))
                     }
-                    Row::UnmatchedSelector(i) => {
+                    Row::RemovedSelector(i) => {
                         let u = &unmatched[*i];
                         ListItem::new(Line::from(vec![
                             Span::styled(
-                                "   ✕ ",
+                                "   [✕] ",
                                 Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                             ),
-                            Span::styled(&u.name, Style::default().fg(Color::DarkGray)),
+                            Span::styled(
+                                &u.name,
+                                Style::default()
+                                    .fg(Color::DarkGray)
+                                    .add_modifier(Modifier::CROSSED_OUT),
+                            ),
                         ]))
                     }
-                    Row::UnmatchedDetail(detail) => {
-                        ListItem::new(Line::from(Span::styled(
-                            format!("       {detail}"),
-                            Style::default().fg(Color::Rgb(120, 70, 70)),
-                        )))
+                    Row::RemovedFlock(slug) => {
+                        let display = flock_display(slug);
+                        ListItem::new(Line::from(vec![
+                            Span::styled(
+                                "      [✕] ",
+                                Style::default().fg(Color::Rgb(120, 50, 50)),
+                            ),
+                            Span::styled(
+                                display,
+                                Style::default()
+                                    .fg(Color::Rgb(120, 80, 80))
+                                    .add_modifier(Modifier::CROSSED_OUT),
+                            ),
+                        ]))
                     }
                 })
                 .collect();
@@ -314,42 +360,17 @@ pub fn apply_select(
                 .highlight_symbol("▸");
             frame.render_stateful_widget(list, chunks[1], &mut list_state);
 
-            // Help bar
+            // ── Help bar ──
             let help = Paragraph::new(Line::from(vec![
-                Span::styled(
-                    " Space",
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Span::styled(" Space", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
                 Span::styled(" toggle  ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    "a",
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Span::styled("a", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
                 Span::styled(" all  ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    "n",
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Span::styled("n", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
                 Span::styled(" none  ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    "Enter",
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Span::styled("Enter", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
                 Span::styled(" confirm  ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    "Esc",
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Span::styled("Esc", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
                 Span::styled(" cancel", Style::default().fg(Color::DarkGray)),
             ]));
             frame.render_widget(help, chunks[2]);
@@ -368,10 +389,7 @@ pub fn apply_select(
                 KeyCode::Up | KeyCode::Char('k') => {
                     if cursor > 0 {
                         cursor -= 1;
-                        // Skip non-selectable rows (headers and repo groups)
-                        while cursor > 0
-                            && matches!(rows[cursor], Row::Header(_) | Row::RepoGroup(_) | Row::UnmatchedSelector(_) | Row::UnmatchedDetail(_))
-                        {
+                        while cursor > 0 && !is_interactive(&rows[cursor]) {
                             cursor -= 1;
                         }
                     }
@@ -379,10 +397,7 @@ pub fn apply_select(
                 KeyCode::Down | KeyCode::Char('j') => {
                     if cursor + 1 < rows.len() {
                         cursor += 1;
-                        // Skip non-selectable rows (headers and repo groups)
-                        while cursor + 1 < rows.len()
-                            && matches!(rows[cursor], Row::Header(_) | Row::RepoGroup(_) | Row::UnmatchedSelector(_) | Row::UnmatchedDetail(_))
-                        {
+                        while cursor + 1 < rows.len() && !is_interactive(&rows[cursor]) {
                             cursor += 1;
                         }
                     }

@@ -261,7 +261,7 @@ struct FlockInstallArgs {
     yes: bool,
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Default, Args)]
 struct ApplyArgs {
     /// Show what would be done without making changes
     #[arg(long = "dry-run", action = ArgAction::SetTrue)]
@@ -541,7 +541,7 @@ async fn main() -> Result<()> {
                 let _ = std::process::Command::new("xdg-open").arg(url).spawn();
             }
         }
-        None => println!("Run `savhub --help` for available commands."),
+        None => cmd_apply(&opts, ApplyArgs::default())?,
     }
 
     Ok(())
@@ -2974,7 +2974,6 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         .map(|prev| tui::UnmatchedSelector {
             name: prev.selector.clone(),
             flocks: prev.flocks.clone(),
-            skills: prev.skills.clone(),
         })
         .collect();
 
