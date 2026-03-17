@@ -1417,10 +1417,11 @@ pub fn sync_from_zip(zip_bytes: &[u8], commit_sha: &str) -> Result<SyncStats> {
                     .unwrap_or(rel)
                     .strip_suffix("/flock.json")
                     .unwrap_or("");
-                let (repo_id, flock_slug) = match stripped.rsplitn(2, '/').collect::<Vec<_>>().as_slice() {
-                    [flock, repo] => (repo.to_string(), flock.to_string()),
-                    _ => (parsed.flock.repo.clone(), String::new()),
-                };
+                let (repo_id, flock_slug) =
+                    match stripped.rsplitn(2, '/').collect::<Vec<_>>().as_slice() {
+                        [flock, repo] => (repo.to_string(), flock.to_string()),
+                        _ => (parsed.flock.repo.clone(), String::new()),
+                    };
                 let flock_id = format!("{}/{}", repo_id, flock_slug);
                 let mut flock = parsed.flock;
                 if flock.repo.is_empty() {
@@ -1440,10 +1441,11 @@ pub fn sync_from_zip(zip_bytes: &[u8], commit_sha: &str) -> Result<SyncStats> {
                     .strip_suffix("/skills.json")
                     .unwrap_or("");
                 // Last segment is flock_slug, everything before is repo_id
-                let (repo_id, flock_slug) = match stripped.rsplitn(2, '/').collect::<Vec<_>>().as_slice() {
-                    [flock, repo] => (repo.to_string(), flock.to_string()),
-                    _ => (String::new(), String::new()),
-                };
+                let (repo_id, flock_slug) =
+                    match stripped.rsplitn(2, '/').collect::<Vec<_>>().as_slice() {
+                        [flock, repo] => (repo.to_string(), flock.to_string()),
+                        _ => (String::new(), String::new()),
+                    };
                 skills_files.push(SkillsFile {
                     repo_id,
                     flock_slug,
@@ -1485,7 +1487,11 @@ fn write_parsed_to_db(
 
     // Insert repos
     for (id, repo, raw) in repos {
-        let sign = if repo.sign.is_empty() { id.clone() } else { repo.sign.clone() };
+        let sign = if repo.sign.is_empty() {
+            id.clone()
+        } else {
+            repo.sign.clone()
+        };
         let git_url = repo.git_url.as_deref().or_else(|| {
             repo.source.as_ref().and_then(|s| match s {
                 RegistrySource::Git { url, .. } => Some(url.as_str()),
@@ -1512,7 +1518,11 @@ fn write_parsed_to_db(
 
     // Insert flocks
     for (id, slug, flock, raw) in flocks {
-        let flock_sign = if flock.sign.is_empty() { id.clone() } else { flock.sign.clone() };
+        let flock_sign = if flock.sign.is_empty() {
+            id.clone()
+        } else {
+            flock.sign.clone()
+        };
         tx.execute(
             "INSERT OR REPLACE INTO flocks (id, sign, repo_id, slug, name, description, version, status, license, source_json, data_json)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
@@ -1539,7 +1549,7 @@ fn write_parsed_to_db(
         // Look up repo source for this skill's repo
         let repo_source = repos
             .iter()
-            .find(|(id, _, _)| *id == sf.repo_id)
+            .find(|(id, ..)| *id == sf.repo_id)
             .and_then(|(_, repo, _)| repo.source.as_ref())
             .map(|s| serde_json::to_string(s).unwrap_or_default())
             .unwrap_or_default();
@@ -1879,12 +1889,8 @@ pub fn list_flock_slugs() -> Result<Vec<String>> {
 /// Returns full flock signs like `github.com/owner/repo/flock-slug`.
 pub fn list_repo_flock_signs(repo_sign: &str) -> Result<Vec<String>> {
     let conn = open_cache()?;
-    let mut stmt = conn.prepare(
-        "SELECT sign FROM flocks WHERE repo_id = ?1 ORDER BY slug ASC",
-    )?;
-    let rows = stmt.query_map(rusqlite::params![repo_sign], |row| {
-        row.get::<_, String>(0)
-    })?;
+    let mut stmt = conn.prepare("SELECT sign FROM flocks WHERE repo_id = ?1 ORDER BY slug ASC")?;
+    let rows = stmt.query_map(rusqlite::params![repo_sign], |row| row.get::<_, String>(0))?;
     let mut signs = Vec::new();
     for row in rows {
         signs.push(row?);

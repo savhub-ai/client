@@ -1,5 +1,4 @@
 use dioxus::prelude::*;
-
 use savhub_local::clients::ClientKind;
 use savhub_local::mcp_config;
 

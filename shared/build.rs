@@ -6,9 +6,10 @@ fn main() {
         .args(["rev-parse", "--short=9", "HEAD"])
         .output();
     let git_hash = match output {
-        Ok(out) if out.status.success() => {
-            String::from_utf8(out.stdout).unwrap_or_default().trim().to_string()
-        }
+        Ok(out) if out.status.success() => String::from_utf8(out.stdout)
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
         _ => "unknown".to_string(),
     };
     println!("cargo:rustc-env=SAVHUB_GIT_HASH={git_hash}");

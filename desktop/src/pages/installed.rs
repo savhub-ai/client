@@ -5,10 +5,9 @@ use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::components::pagination::{self, PaginationControls};
-use crate::i18n;
-use crate::skills;
 use crate::state::AppState;
 use crate::theme::Theme;
+use crate::{i18n, skills};
 
 const INSTALLED_SKILLS_PAGE_SIZE: usize = 10;
 

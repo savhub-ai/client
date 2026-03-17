@@ -159,8 +159,8 @@ pub fn write_global_config(config: &GlobalConfig) -> Result<()> {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create config directory {}", parent.display()))?;
     }
-    let payload = toml::to_string_pretty(config)
-        .with_context(|| "failed to serialize config as TOML")?;
+    let payload =
+        toml::to_string_pretty(config).with_context(|| "failed to serialize config as TOML")?;
     fs::write(&path, format!("{payload}\n"))
         .with_context(|| format!("failed to write {}", path.display()))?;
 

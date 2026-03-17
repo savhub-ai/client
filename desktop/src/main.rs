@@ -9,8 +9,6 @@ mod updater;
 
 use api::{ApiCompatibility, CLIENT_API_VERSION};
 use dioxus::prelude::*;
-use savhub_shared::{UserSummary, WhoAmIResponse};
-
 use pages::dashboard::DashboardPage;
 use pages::detail::DetailPage;
 use pages::explore::ExplorePage;
@@ -19,6 +17,7 @@ use pages::mcp::McpPage;
 use pages::profiles::ProjectsPage;
 use pages::selectors::SelectorsPage;
 use pages::settings::SettingsPage;
+use savhub_shared::{UserSummary, WhoAmIResponse};
 use state::AppState;
 use theme::Theme;
 

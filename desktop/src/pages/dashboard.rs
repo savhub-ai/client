@@ -451,9 +451,7 @@ fn avatar_initial(value: &str) -> String {
 }
 
 #[component]
-fn UserCard(
-    label: &'static str,
-) -> Element {
+fn UserCard(label: &'static str) -> Element {
     let mut state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
     // Read current_user directly from state so the component re-renders on change
@@ -480,7 +478,8 @@ fn UserCard(
                         Ok(resp) => {
                             if let Some(u) = resp.user {
                                 state.current_user.set(Some(u));
-                                // No need to set login_status — the card will re-render as logged in
+                                // No need to set login_status — the card will re-render as logged
+                                // in
                             } else {
                                 login_status.set(Some(t.login_succeeded_no_user.to_string()));
                             }

@@ -561,7 +561,8 @@ fn resolve_global_opts(cli: &Cli) -> Result<GlobalOpts> {
         .or_else(|| std::env::var("SAVHUB_SITE").ok())
         .unwrap_or_else(|| DEFAULT_SITE.to_string());
     let cached = read_global_config()?;
-    // Priority: --registry flag > env > config.toml [rest_api] override > config.toml registry > site default
+    // Priority: --registry flag > env > config.toml [rest_api] override > config.toml registry >
+    // site default
     let api_override = savhub_local::registry::read_api_base_url();
     let registry = cli
         .registry
@@ -3033,12 +3034,16 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             .cloned()
             .collect();
 
-        let sel_result =
-            tui::apply_select(&mut tui_selectors, &flock_skip, &|slug| {
+        let sel_result = tui::apply_select(
+            &mut tui_selectors,
+            &flock_skip,
+            &|slug| {
                 registry::list_flock_skill_slugs(slug)
                     .map(|v| v.len())
                     .unwrap_or(0)
-            }, &unmatched)?;
+            },
+            &unmatched,
+        )?;
 
         let Some(sel) = sel_result else {
             println!("Cancelled.");
@@ -3175,9 +3180,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             .collect();
         let old_flocks: BTreeSet<String> = config.flocks.matched.iter().cloned().collect();
         let new_flocks: BTreeSet<String> = selected_flocks.iter().cloned().collect();
-        if old_matched_names == new_matched_names
-            && old_flocks == new_flocks
-        {
+        if old_matched_names == new_matched_names && old_flocks == new_flocks {
             println!("\nProject is already up to date. Nothing to do.");
             return Ok(());
         }
@@ -3318,8 +3321,12 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         // Group by repo from current lock
         for slug in &to_remove {
             for client in &all_clients {
-                if !client.installed { continue; }
-                let Some(rel_dir) = client.kind.project_skills_dir() else { continue; };
+                if !client.installed {
+                    continue;
+                }
+                let Some(rel_dir) = client.kind.project_skills_dir() else {
+                    continue;
+                };
                 let _ = std::fs::remove_dir_all(workdir.join(rel_dir).join(slug));
             }
             println!("  \x1b[31m\u{2717}\x1b[0m {slug} (removed)");
@@ -3363,20 +3370,31 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     // Group by repo for display
     {
         for info in &batch_results {
-            let skill_sign = savhub_local::registry::make_skill_sign(&info.repo_sign, &info.skill_path);
+            let skill_sign =
+                savhub_local::registry::make_skill_sign(&info.repo_sign, &info.skill_path);
             let mut copied_to_any_client = false;
             for client in &filtered_clients {
-                if !client.installed { continue; }
-                let Some(rel_dir) = client.kind.project_skills_dir() else { continue; };
+                if !client.installed {
+                    continue;
+                }
+                let Some(rel_dir) = client.kind.project_skills_dir() else {
+                    continue;
+                };
                 let target_dir = workdir.join(rel_dir);
                 let _ = std::fs::create_dir_all(&target_dir);
                 let target = target_dir.join(&info.slug);
                 if let Err(e) = copy_skill_folder(&info.local_path, &target) {
-                    eprintln!("  \x1b[33m!\x1b[0m {}: failed to copy to {}: {e}", info.slug, rel_dir);
+                    eprintln!(
+                        "  \x1b[33m!\x1b[0m {}: failed to copy to {}: {e}",
+                        info.slug, rel_dir
+                    );
                     continue;
                 }
                 copied_to_any_client = true;
-                println!("  \x1b[32m\u{2713}\x1b[0m {} -> {rel_dir}/{}", info.slug, info.slug);
+                println!(
+                    "  \x1b[32m\u{2713}\x1b[0m {} -> {rel_dir}/{}",
+                    info.slug, info.slug
+                );
             }
             if !copied_to_any_client {
                 println!("  \x1b[32m\u{2713}\x1b[0m {} (cached)", info.slug);
@@ -3384,7 +3402,8 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
 
             // Record in savhub.lock
             if !lock.skills.iter().any(|s| s.slug() == info.slug) {
-                let vi = savhub_local::skills::read_skill_version_info(&info.local_path).unwrap_or_default();
+                let vi = savhub_local::skills::read_skill_version_info(&info.local_path)
+                    .unwrap_or_default();
                 lock.skills.push(savhub_local::presets::ProjectLockedSkill {
                     sign: skill_sign,
                     version: vi.version,

@@ -6,10 +6,9 @@ use savhub_shared::{PagedResponse, SearchResponse, SearchResult, SkillListItem};
 
 use crate::components::pagination::{self, PaginationControls};
 use crate::components::view_toggle::{ViewMode, ViewToggleButton};
-use crate::i18n;
-use crate::skills;
 use crate::state::AppState;
 use crate::theme::Theme;
+use crate::{i18n, skills};
 
 const EXPLORE_PAGE_SIZE: usize = 24;
 const EXPLORE_SEARCH_FETCH_LIMIT: usize = 120;

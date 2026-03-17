@@ -734,11 +734,23 @@ pub fn save_config(
 
     let config = savhub_local::config::GlobalConfig {
         registry: Some(base.to_string()),
-        token: if token.trim().is_empty() { None } else { Some(token.to_string()) },
-        language: if lang == "en" { None } else { Some(lang.to_string()) },
+        token: if token.trim().is_empty() {
+            None
+        } else {
+            Some(token.to_string())
+        },
+        language: if lang == "en" {
+            None
+        } else {
+            Some(lang.to_string())
+        },
         workdir: {
             let w = workdir.display().to_string();
-            if workdir == default_workdir { None } else { Some(w) }
+            if workdir == default_workdir {
+                None
+            } else {
+                Some(w)
+            }
         },
         agents: agents.to_vec(),
     };

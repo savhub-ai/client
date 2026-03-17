@@ -2,6 +2,9 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use anyhow::{Context, Result, bail};
+use serde::{Deserialize, Serialize};
+
 use crate::clients::{global_skills_dir, home_dir};
 use crate::skills::{
     LockEntry, Lockfile, RepoSkillFolder, RepoSkillOrigin, SkillFolder, copy_skill_folder,
@@ -9,8 +12,6 @@ use crate::skills::{
     skill_folder_from_path, write_repo_skill_origin,
 };
 use crate::utils::sanitize_slug;
-use anyhow::{Context, Result, bail};
-use serde::{Deserialize, Serialize};
 
 /// A selector that matched for a project and the flocks/skills it contributed.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -136,7 +137,8 @@ impl Default for ProjectConfigFile {
 /// A locked skill entry, identified by its registry path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectLockedSkill {
-    /// Skill sign: `{repo_sign}/{skill_path}` (e.g. `github.com/salvo-rs/salvo-skills/skills/salvo-auth`).
+    /// Skill sign: `{repo_sign}/{skill_path}` (e.g.
+    /// `github.com/salvo-rs/salvo-skills/skills/salvo-auth`).
     pub sign: String,
     /// Skill version if available.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -373,14 +375,24 @@ fn normalize_project_lock_skills(skills: &[ProjectLockedSkill]) -> Vec<ProjectLo
     for skill in skills {
         let sign = skill.sign.trim().to_string();
         if sign.is_empty()
-            || normalized.iter().any(|existing: &ProjectLockedSkill| existing.sign == sign)
+            || normalized
+                .iter()
+                .any(|existing: &ProjectLockedSkill| existing.sign == sign)
         {
             continue;
         }
         normalized.push(ProjectLockedSkill {
             sign,
-            version: skill.version.as_ref().map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
-            commit_hash: skill.commit_hash.as_ref().map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
+            version: skill
+                .version
+                .as_ref()
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty()),
+            commit_hash: skill
+                .commit_hash
+                .as_ref()
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty()),
         });
     }
     normalized.sort_by(|left, right| left.sign.cmp(&right.sign));
@@ -865,9 +877,7 @@ pub fn sync_project_lock(workdir: &Path) -> Result<()> {
     write_project_lockfile(workdir, &build_project_lockfile(&resolved))
 }
 
-pub fn resolve_project_skills_with_sources(
-    workdir: &Path,
-) -> Result<Vec<ResolvedProjectSkill>> {
+pub fn resolve_project_skills_with_sources(workdir: &Path) -> Result<Vec<ResolvedProjectSkill>> {
     let resolved = resolve_project_skills_internal(workdir)?;
     let _ = write_project_lockfile(workdir, &build_project_lockfile(&resolved));
     Ok(resolved)

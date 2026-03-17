@@ -1,11 +1,10 @@
 use std::collections::BTreeSet;
 
 use dioxus::prelude::*;
-
 use savhub_local::selectors::{
     MatchMode, SelectorDefinition, SelectorRule, create_selector, delete_selector,
-    generate_selector_id, normalize_repo_url_to_sign, read_selectors_store,
-    set_selector_enabled, update_selector,
+    generate_selector_id, normalize_repo_url_to_sign, read_selectors_store, set_selector_enabled,
+    update_selector,
 };
 
 use crate::components::pagination::{self, PaginationControls};
@@ -354,7 +353,11 @@ fn SelectorRow(
     let repos_count = selector.repos.len();
     let is_enabled = selector.enabled;
     let opacity = if is_enabled { "1" } else { "0.5" };
-    let toggle_label = if is_enabled { t.selectors_disable } else { t.selectors_enable };
+    let toggle_label = if is_enabled {
+        t.selectors_disable
+    } else {
+        t.selectors_enable
+    };
 
     if card_mode {
         // Card view — compact card for grid layout, multiple per row

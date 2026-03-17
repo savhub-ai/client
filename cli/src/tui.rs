@@ -81,7 +81,7 @@ fn group_flocks_by_repo(flocks: &[String]) -> Vec<(String, Vec<String>)> {
 
 /// Show an interactive TUI for `savhub apply`.
 ///
-/// Selectors are directly togglable. Flocks are derived from checked
+/// Selectors are directly toggleable. Flocks are derived from checked
 /// selectors and can also be individually toggled.
 ///
 /// Returns `None` if cancelled.
@@ -231,14 +231,12 @@ pub fn apply_select(
             .split(area);
 
             // ── Title bar ──
-            let mut title_spans = vec![
-                Span::styled(
-                    " savhub apply ",
-                    Style::default()
-                        .fg(Color::Green)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ];
+            let mut title_spans = vec![Span::styled(
+                " savhub apply ",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            )];
             if add_sel > 0 || add_flock > 0 {
                 title_spans.push(Span::styled(
                     format!(" +{add_sel} selectors  +{add_flock} flocks"),
@@ -251,35 +249,25 @@ pub fn apply_select(
                     Style::default().fg(Color::Red),
                 ));
             }
-            let title = Paragraph::new(Line::from(title_spans))
-                .block(
-                    Block::default()
-                        .borders(Borders::BOTTOM)
-                        .border_style(Style::default().fg(Color::DarkGray)),
-                );
+            let title = Paragraph::new(Line::from(title_spans)).block(
+                Block::default()
+                    .borders(Borders::BOTTOM)
+                    .border_style(Style::default().fg(Color::DarkGray)),
+            );
             frame.render_widget(title, chunks[0]);
 
             // ── Main list ──
             let list_items: Vec<ListItem> = rows_snapshot
                 .iter()
                 .map(|row| match row {
-                    Row::SectionHeader(label, color) => {
-                        ListItem::new(Line::from(vec![
-                            Span::styled(
-                                format!(" ── {label} "),
-                                Style::default()
-                                    .fg(*color)
-                                    .add_modifier(Modifier::BOLD),
-                            ),
-                            Span::styled(
-                                "─".repeat(40),
-                                Style::default().fg(Color::DarkGray),
-                            ),
-                        ]))
-                    }
-                    Row::Separator => {
-                        ListItem::new(Line::from(Span::styled("", Style::default())))
-                    }
+                    Row::SectionHeader(label, color) => ListItem::new(Line::from(vec![
+                        Span::styled(
+                            format!(" ── {label} "),
+                            Style::default().fg(*color).add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled("─".repeat(40), Style::default().fg(Color::DarkGray)),
+                    ])),
+                    Row::Separator => ListItem::new(Line::from(Span::styled("", Style::default()))),
                     Row::RepoGroup(repo) => ListItem::new(Line::from(Span::styled(
                         format!("    {repo}"),
                         Style::default()
@@ -362,15 +350,40 @@ pub fn apply_select(
 
             // ── Help bar ──
             let help = Paragraph::new(Line::from(vec![
-                Span::styled(" Space", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    " Space",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" toggle  ", Style::default().fg(Color::DarkGray)),
-                Span::styled("a", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "a",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" all  ", Style::default().fg(Color::DarkGray)),
-                Span::styled("n", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "n",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" none  ", Style::default().fg(Color::DarkGray)),
-                Span::styled("Enter", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Enter",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" confirm  ", Style::default().fg(Color::DarkGray)),
-                Span::styled("Esc", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Esc",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" cancel", Style::default().fg(Color::DarkGray)),
             ]));
             frame.render_widget(help, chunks[2]);

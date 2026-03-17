@@ -2,10 +2,9 @@ use dioxus::prelude::*;
 use savhub_shared::{SkillDetailResponse, ToggleStarResponse};
 
 use crate::components::pagination::{self, PaginationControls};
-use crate::i18n;
-use crate::skills;
 use crate::state::AppState;
 use crate::theme::Theme;
+use crate::{i18n, skills};
 
 const DETAIL_VERSIONS_PAGE_SIZE: usize = 8;
 const DETAIL_FILES_PAGE_SIZE: usize = 14;

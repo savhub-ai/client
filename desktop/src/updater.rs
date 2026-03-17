@@ -188,8 +188,9 @@ fn extract_from_zip(data: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 fn extract_from_tar_gz(data: &[u8]) -> Result<Vec<u8>, String> {
-    use flate2::read::GzDecoder;
     use std::io::Read;
+
+    use flate2::read::GzDecoder;
 
     let decoder = GzDecoder::new(data);
     let mut archive = self_update_tar::Archive::new(decoder);

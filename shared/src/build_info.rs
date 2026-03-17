@@ -8,7 +8,12 @@ pub const GIT_HASH: &str = env!("SAVHUB_GIT_HASH");
 ///
 /// Note: `concat!` cannot use `env!` with a custom var, so we provide
 /// a runtime helper and a const for the pieces.
-pub const VERSION_LONG: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("SAVHUB_GIT_HASH"), ")");
+pub const VERSION_LONG: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    " (",
+    env!("SAVHUB_GIT_HASH"),
+    ")"
+);
 
 /// Full version string: "0.1.0 (a1b2c3d4e)".
 pub fn version_string() -> String {

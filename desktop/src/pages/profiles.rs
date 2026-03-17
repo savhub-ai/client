@@ -2,7 +2,6 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use dioxus::prelude::*;
-
 use savhub_local::config::{add_project, read_projects_list, remove_project};
 use savhub_local::presets::{
     EnableProjectRepoSkillResult, ProjectSkillConflict, ProjectSkillConflictChoice,
@@ -410,9 +409,7 @@ fn build_skill_reason_text(t: &i18n::Texts, sources: &ResolvedSkillSources) -> S
 }
 
 #[component]
-fn SelectorMatchRow(
-    selector: String,
-) -> Element {
+fn SelectorMatchRow(selector: String) -> Element {
     rsx! {
         div { style: "padding: 12px 14px; background: {Theme::BG_ELEVATED}; border: 1px solid {Theme::LINE}; border-radius: 8px;",
             p { style: "font-size: 14px; font-weight: 600; color: {Theme::TEXT};",
@@ -660,9 +657,7 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
     let scan_result = savhub_local::selectors::run_selectors(&workdir).ok();
 
     // Collect skills from matched selectors + flocks
-    let (matched_signs, flock_signs, skill_signs) = if let Some(ref result) =
-        scan_result
-    {
+    let (matched_signs, flock_signs, skill_signs) = if let Some(ref result) = scan_result {
         let matched: Vec<String> = result
             .matched
             .iter()
@@ -764,7 +759,10 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                         let vi = savhub_local::skills::read_skill_version_info(&info.local_path)
                             .unwrap_or_default();
                         lock.skills.push(savhub_local::presets::ProjectLockedSkill {
-                            sign: savhub_local::registry::make_skill_sign(&info.repo_sign, &info.skill_path),
+                            sign: savhub_local::registry::make_skill_sign(
+                                &info.repo_sign,
+                                &info.skill_path,
+                            ),
                             version: vi.version,
                             commit_hash: vi.git_commit,
                         });
