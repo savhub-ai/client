@@ -108,8 +108,6 @@ cargo run -p savhub -- apply
 # Run the desktop app
 cargo run -p savhub-desktop
 
-# Run the MCP server
-cargo run -p savhub-mcp
 ```
 
 A [justfile](https://just.systems) is included for common tasks:
@@ -119,7 +117,6 @@ just build           # Build the full workspace
 just cli apply       # Run a CLI command
 just desktop         # Run the desktop app (debug)
 just desktop-release # Run the desktop app (release)
-just mcp             # Run the MCP server
 just check           # Check compilation
 just lint            # Run clippy
 just fmt             # Format code
