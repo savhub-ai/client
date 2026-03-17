@@ -792,7 +792,7 @@ pub fn run_selectors(project_root: &Path) -> Result<SelectorRunResult> {
             // Expand repos into flocks: look up all flock slugs for each repo
             let mut expanded_flocks = selector.flocks.clone();
             for repo_sign in &selector.repos {
-                if let Ok(repo_flocks) = crate::registry::list_repo_flock_slugs(repo_sign) {
+                if let Ok(repo_flocks) = crate::registry::list_repo_flock_signs(repo_sign) {
                     for flock in repo_flocks {
                         if !expanded_flocks.contains(&flock) {
                             expanded_flocks.push(flock);

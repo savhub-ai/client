@@ -233,8 +233,22 @@ fn Shell() -> Element {
         user_loaded.set(true);
         let client = state.api_client();
         spawn(async move {
-            if let Ok(resp) = client.get_json::<WhoAmIResponse>("/whoami").await {
-                state.current_user.set(resp.user);
+            match client.get_json::<WhoAmIResponse>("/whoami").await {
+                Ok(resp) => {
+                    state.current_user.set(resp.user);
+                }
+                Err(e) => {
+                    let msg = format!("{e}");
+                    // Token expired or invalid — clear it so UI shows logged-out
+                    if msg.starts_with("401") {
+                        state.token.set(None);
+                        // Remove stale token from config
+                        if let Ok(Some(mut cfg)) = savhub_local::config::read_global_config() {
+                            cfg.token = None;
+                            let _ = savhub_local::config::write_global_config(&cfg);
+                        }
+                    }
+                }
             }
         });
     });
