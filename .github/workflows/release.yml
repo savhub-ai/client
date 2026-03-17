@@ -103,6 +103,9 @@ jobs:
     runs-on: windows-latest
     needs: build
     steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
       - name: Download Windows build artifacts
         uses: actions/download-artifact@v5
         with:
