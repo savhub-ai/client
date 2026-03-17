@@ -107,11 +107,6 @@ enum Command {
     Logout,
     /// Show current authenticated user
     Whoami,
-    /// Auth subcommands (login, logout, whoami)
-    Auth {
-        #[command(subcommand)]
-        command: AuthCommand,
-    },
     /// Search skills in the registry
     Search(SearchArgs),
     /// Enable a skill from a local repo into a project
@@ -165,13 +160,6 @@ enum Command {
     },
     /// Open documentation in the browser
     Docs,
-}
-
-#[derive(Debug, Subcommand)]
-enum AuthCommand {
-    Login(LoginArgs),
-    Logout,
-    Whoami,
 }
 
 #[derive(Debug, Subcommand)]
@@ -511,11 +499,6 @@ async fn main() -> Result<()> {
         Some(Command::Login(args)) => cmd_login(&opts, args).await?,
         Some(Command::Logout) => cmd_logout(&opts)?,
         Some(Command::Whoami) => cmd_whoami(&opts).await?,
-        Some(Command::Auth { command }) => match command {
-            AuthCommand::Login(args) => cmd_login(&opts, args).await?,
-            AuthCommand::Logout => cmd_logout(&opts)?,
-            AuthCommand::Whoami => cmd_whoami(&opts).await?,
-        },
         Some(Command::Search(args)) => cmd_search(&opts, args).await?,
         Some(Command::Enable(args)) => cmd_enable(&opts, args)?,
         Some(Command::Disable(args)) => cmd_disable(&opts, args)?,

@@ -130,6 +130,8 @@ pub fn apply_select(
         RepoGroup(String),
         Selector(usize),
         Flock(String),
+        UnmatchedSelector(usize), // index into unmatched
+        UnmatchedDetail(String),  // flock or skill line
     }
 
     terminal::enable_raw_mode()?;
@@ -157,6 +159,22 @@ pub fn apply_select(
                 rows.push(Row::RepoGroup(repo.clone()));
                 for f in flocks {
                     rows.push(Row::Flock(f.clone()));
+                }
+            }
+        }
+        if !unmatched.is_empty() {
+            rows.push(Row::Header("Will be removed"));
+            for (ui, u) in unmatched.iter().enumerate() {
+                rows.push(Row::UnmatchedSelector(ui));
+                for f in &u.flocks {
+                    let display = f
+                        .strip_prefix(repo_group(f))
+                        .and_then(|s| s.strip_prefix('/'))
+                        .unwrap_or(f);
+                    rows.push(Row::UnmatchedDetail(format!("flock: {display}")));
+                }
+                for s in &u.skills {
+                    rows.push(Row::UnmatchedDetail(format!("skill: {s}")));
                 }
             }
         }
@@ -269,6 +287,22 @@ pub fn apply_select(
                             Span::styled(label, Style::default().fg(lc)),
                         ]))
                     }
+                    Row::UnmatchedSelector(i) => {
+                        let u = &unmatched[*i];
+                        ListItem::new(Line::from(vec![
+                            Span::styled(
+                                "   ✕ ",
+                                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(&u.name, Style::default().fg(Color::DarkGray)),
+                        ]))
+                    }
+                    Row::UnmatchedDetail(detail) => {
+                        ListItem::new(Line::from(Span::styled(
+                            format!("       {detail}"),
+                            Style::default().fg(Color::Rgb(120, 70, 70)),
+                        )))
+                    }
                 })
                 .collect();
 
@@ -278,62 +312,7 @@ pub fn apply_select(
             let list = List::new(list_items)
                 .highlight_style(Style::default().bg(Color::Rgb(40, 60, 35)))
                 .highlight_symbol("▸");
-
-            if unmatched.is_empty() {
-                frame.render_stateful_widget(list, chunks[1], &mut list_state);
-            } else {
-                // Split: left = matched (interactive), right = unmatched (info)
-                let h_chunks = Layout::horizontal([
-                    Constraint::Percentage(60),
-                    Constraint::Percentage(40),
-                ])
-                .split(chunks[1]);
-
-                frame.render_stateful_widget(list, h_chunks[0], &mut list_state);
-
-                // Build unmatched items
-                let mut right_items: Vec<ListItem> = Vec::new();
-                right_items.push(ListItem::new(Line::from(vec![
-                    Span::styled(
-                        " ── Will be removed ",
-                        Style::default()
-                            .fg(Color::Red)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(
-                        "──────────────────",
-                        Style::default().fg(Color::DarkGray),
-                    ),
-                ])));
-                for u in unmatched {
-                    right_items.push(ListItem::new(Line::from(vec![
-                        Span::styled(
-                            "   ✕ ",
-                            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(&u.name, Style::default().fg(Color::DarkGray)),
-                    ])));
-                    for f in &u.flocks {
-                        let display = f
-                            .strip_prefix(repo_group(f))
-                            .and_then(|s| s.strip_prefix('/'))
-                            .unwrap_or(f);
-                        right_items.push(ListItem::new(Line::from(Span::styled(
-                            format!("       {display}"),
-                            Style::default().fg(Color::Rgb(100, 60, 60)),
-                        ))));
-                    }
-                    for s in &u.skills {
-                        right_items.push(ListItem::new(Line::from(Span::styled(
-                            format!("       {s}"),
-                            Style::default().fg(Color::Rgb(100, 60, 60)),
-                        ))));
-                    }
-                }
-
-                let right_list = List::new(right_items);
-                frame.render_widget(right_list, h_chunks[1]);
-            }
+            frame.render_stateful_widget(list, chunks[1], &mut list_state);
 
             // Help bar
             let help = Paragraph::new(Line::from(vec![
@@ -391,7 +370,7 @@ pub fn apply_select(
                         cursor -= 1;
                         // Skip non-selectable rows (headers and repo groups)
                         while cursor > 0
-                            && matches!(rows[cursor], Row::Header(_) | Row::RepoGroup(_))
+                            && matches!(rows[cursor], Row::Header(_) | Row::RepoGroup(_) | Row::UnmatchedSelector(_) | Row::UnmatchedDetail(_))
                         {
                             cursor -= 1;
                         }
@@ -402,7 +381,7 @@ pub fn apply_select(
                         cursor += 1;
                         // Skip non-selectable rows (headers and repo groups)
                         while cursor + 1 < rows.len()
-                            && matches!(rows[cursor], Row::Header(_) | Row::RepoGroup(_))
+                            && matches!(rows[cursor], Row::Header(_) | Row::RepoGroup(_) | Row::UnmatchedSelector(_) | Row::UnmatchedDetail(_))
                         {
                             cursor += 1;
                         }

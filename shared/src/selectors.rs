@@ -870,7 +870,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
-            repos: vec![],
+            repos: vec!["github.com/ZhangHanDong/makepad-skills".to_string()],
             enabled: true,
             priority: 10,
         },
