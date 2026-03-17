@@ -144,31 +144,19 @@ jobs:
             $msiVersion = "0.1.0"
           }
 
-          $wxs = @"
+          $wxsContent = @"
           <?xml version="1.0" encoding="UTF-8"?>
           <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-            <Package
-              Name="Savhub"
-              Manufacturer="Savhub AI"
-              Version="$msiVersion"
-              UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
-
-              <MajorUpgrade
-                DowngradeErrorMessage="A newer version of Savhub is already installed." />
-
+            <Package Name="Savhub" Manufacturer="Savhub AI" Version="$msiVersion"
+                     UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
+              <MajorUpgrade DowngradeErrorMessage="A newer version of Savhub is already installed." />
               <StandardDirectory Id="LocalAppDataFolder">
                 <Directory Id="SAVHUBDIR" Name="savhub">
                   <Directory Id="INSTALLDIR" Name="bin">
                     <Component Id="SavhubCLI" Guid="*">
                       <File Source="$cliAbs" />
-                      <Environment
-                        Id="PATH"
-                        Name="PATH"
-                        Value="[INSTALLDIR]"
-                        Permanent="no"
-                        Part="last"
-                        Action="set"
-                        System="no" />
+                      <Environment Id="PATH" Name="PATH" Value="[INSTALLDIR]"
+                                   Permanent="no" Part="last" Action="set" System="no" />
                     </Component>
                     <Component Id="SavhubDesktop" Guid="*">
                       <File Source="$desktopAbs" />
@@ -176,7 +164,6 @@ jobs:
                   </Directory>
                 </Directory>
               </StandardDirectory>
-
               <Feature Id="MainFeature" Title="Savhub" Level="1">
                 <ComponentRef Id="SavhubCLI" />
                 <ComponentRef Id="SavhubDesktop" />
@@ -184,8 +171,12 @@ jobs:
             </Package>
           </Wix>
           "@
+          # Strip leading whitespace so <?xml is at column 0
+          $trimmed = ($wxsContent -split "`n" | ForEach-Object { $_.TrimStart() }) -join "`n"
+          [System.IO.File]::WriteAllText("$pwd/savhub.wxs", $trimmed)
 
-          Set-Content -Path "savhub.wxs" -Value $wxs -Encoding UTF8
+          Write-Host "--- savhub.wxs first 3 lines ---"
+          Get-Content "savhub.wxs" | Select-Object -First 3
 
           wix build savhub.wxs -o dist/savhub-windows-x64.msi
 
