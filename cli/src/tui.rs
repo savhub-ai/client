@@ -21,6 +21,13 @@ pub struct MatchedSelector {
     pub flocks: Vec<String>,
 }
 
+/// A previously matched selector that no longer matches.
+pub struct UnmatchedSelector {
+    pub name: String,
+    pub flocks: Vec<String>,
+    pub skills: Vec<String>,
+}
+
 /// Result of the apply TUI selection.
 pub struct ApplySelection {
     pub selected_selectors: Vec<String>,
@@ -76,6 +83,7 @@ pub fn apply_select(
     selectors: &mut [MatchedSelector],
     flock_skip_set: &BTreeSet<String>,
     flock_skill_counts: &dyn Fn(&str) -> usize,
+    unmatched: &[UnmatchedSelector],
 ) -> anyhow::Result<Option<ApplySelection>> {
     if selectors.is_empty() {
         return Ok(Some(ApplySelection {
@@ -270,7 +278,62 @@ pub fn apply_select(
             let list = List::new(list_items)
                 .highlight_style(Style::default().bg(Color::Rgb(40, 60, 35)))
                 .highlight_symbol("▸");
-            frame.render_stateful_widget(list, chunks[1], &mut list_state);
+
+            if unmatched.is_empty() {
+                frame.render_stateful_widget(list, chunks[1], &mut list_state);
+            } else {
+                // Split: left = matched (interactive), right = unmatched (info)
+                let h_chunks = Layout::horizontal([
+                    Constraint::Percentage(60),
+                    Constraint::Percentage(40),
+                ])
+                .split(chunks[1]);
+
+                frame.render_stateful_widget(list, h_chunks[0], &mut list_state);
+
+                // Build unmatched items
+                let mut right_items: Vec<ListItem> = Vec::new();
+                right_items.push(ListItem::new(Line::from(vec![
+                    Span::styled(
+                        " ── Will be removed ",
+                        Style::default()
+                            .fg(Color::Red)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        "──────────────────",
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ])));
+                for u in unmatched {
+                    right_items.push(ListItem::new(Line::from(vec![
+                        Span::styled(
+                            "   ✕ ",
+                            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(&u.name, Style::default().fg(Color::DarkGray)),
+                    ])));
+                    for f in &u.flocks {
+                        let display = f
+                            .strip_prefix(repo_group(f))
+                            .and_then(|s| s.strip_prefix('/'))
+                            .unwrap_or(f);
+                        right_items.push(ListItem::new(Line::from(Span::styled(
+                            format!("       {display}"),
+                            Style::default().fg(Color::Rgb(100, 60, 60)),
+                        ))));
+                    }
+                    for s in &u.skills {
+                        right_items.push(ListItem::new(Line::from(Span::styled(
+                            format!("       {s}"),
+                            Style::default().fg(Color::Rgb(100, 60, 60)),
+                        ))));
+                    }
+                }
+
+                let right_list = List::new(right_items);
+                frame.render_widget(right_list, h_chunks[1]);
+            }
 
             // Help bar
             let help = Paragraph::new(Line::from(vec![

@@ -1,3 +1,4 @@
+pub mod build_info;
 pub mod clients;
 pub mod config;
 pub mod mcp_config;

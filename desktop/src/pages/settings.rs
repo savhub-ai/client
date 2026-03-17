@@ -563,7 +563,7 @@ fn AboutPane() -> Element {
     let t = i18n::texts(*state.lang.read());
     let mut update_status = use_signal(|| Option::<updater::UpdateStatus>::None);
 
-    let current_ver = updater::current_version().to_string();
+    let current_ver = savhub_local::build_info::version_string();
     let app_name = t.app_name;
     let ver_label = t.about_version;
     let check_label = t.about_check_update;

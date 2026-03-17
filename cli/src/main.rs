@@ -81,7 +81,7 @@ struct TransferDecisionResponse {
 #[derive(Debug, Parser)]
 #[command(
     name = "savhub",
-    version,
+    version = savhub_local::build_info::VERSION_LONG,
     about = "Savhub CLI\n\nDocumentation: https://savhub.ai/docs/en/client"
 )]
 struct Cli {
@@ -2982,6 +2982,19 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         .collect();
     let matched_flocks: Vec<String> = result.flocks.clone();
 
+    // ── Collect previously matched selectors that no longer match ──
+    let unmatched: Vec<tui::UnmatchedSelector> = existing_config
+        .selectors
+        .matched
+        .iter()
+        .filter(|prev| !matched_selector_names.contains(&prev.selector))
+        .map(|prev| tui::UnmatchedSelector {
+            name: prev.selector.clone(),
+            flocks: prev.flocks.clone(),
+            skills: prev.skills.clone(),
+        })
+        .collect();
+
     // ── Interactive selection of selectors and flocks (unless -y) ──
     let (selected_selectors, skipped_selectors): (Vec<String>, Vec<String>);
     let (selected_flocks, skipped_flocks): (Vec<String>, Vec<String>);
@@ -3003,6 +3016,12 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             println!("\nFlocks:");
             for f in &selected_flocks {
                 println!("  \x1b[32m[+]\x1b[0m {f}");
+            }
+        }
+        if !unmatched.is_empty() {
+            println!("\n\x1b[33mWill be removed (no longer matched):\x1b[0m");
+            for u in &unmatched {
+                println!("  \x1b[31m✕\x1b[0m {}", u.name);
             }
         }
     } else {
@@ -3037,7 +3056,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
                 registry::list_flock_skill_slugs(slug)
                     .map(|v| v.len())
                     .unwrap_or(0)
-            })?;
+            }, &unmatched)?;
 
         let Some(sel) = sel_result else {
             println!("Cancelled.");
