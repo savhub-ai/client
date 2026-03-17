@@ -117,8 +117,14 @@ function Install-Savhub {
         # Add to user PATH
         Add-ToPath
 
+        # Create Start Menu shortcuts
+        Add-StartMenuShortcuts
+
+        # Create Desktop shortcut
+        Add-DesktopShortcut
+
         Write-Host ""
-        Write-Host "savhub $Version installed successfully!" -ForegroundColor Green
+        Write-Host "Savhub $Version installed successfully!" -ForegroundColor Green
         Write-Host ""
 
         # Check if available immediately
@@ -150,6 +156,48 @@ function Add-ToPath {
 
     [System.Environment]::SetEnvironmentVariable("PATH", $newPath, "User")
     Write-Host "Added $InstallDir to user PATH (persistent)"
+}
+
+function Add-StartMenuShortcuts {
+    $desktopExe = Join-Path $InstallDir "savhub-desktop.exe"
+    if (-not (Test-Path $desktopExe)) { return }
+
+    $startMenuDir = Join-Path ([System.Environment]::GetFolderPath("Programs")) "Savhub"
+    New-Item -ItemType Directory -Force -Path $startMenuDir | Out-Null
+
+    $shell = New-Object -ComObject WScript.Shell
+
+    $lnk = $shell.CreateShortcut((Join-Path $startMenuDir "Savhub Desktop.lnk"))
+    $lnk.TargetPath = $desktopExe
+    $lnk.WorkingDirectory = $InstallDir
+    $lnk.Description = "Savhub Desktop"
+    $lnk.Save()
+
+    $cliExe = Join-Path $InstallDir "savhub.exe"
+    if (Test-Path $cliExe) {
+        $lnk = $shell.CreateShortcut((Join-Path $startMenuDir "Savhub CLI.lnk"))
+        $lnk.TargetPath = $cliExe
+        $lnk.WorkingDirectory = $InstallDir
+        $lnk.Description = "Savhub CLI"
+        $lnk.Save()
+    }
+
+    Write-Host "Created Start Menu shortcuts in $startMenuDir"
+}
+
+function Add-DesktopShortcut {
+    $desktopExe = Join-Path $InstallDir "savhub-desktop.exe"
+    if (-not (Test-Path $desktopExe)) { return }
+
+    $desktopDir = [System.Environment]::GetFolderPath("Desktop")
+    $shell = New-Object -ComObject WScript.Shell
+    $lnk = $shell.CreateShortcut((Join-Path $desktopDir "Savhub Desktop.lnk"))
+    $lnk.TargetPath = $desktopExe
+    $lnk.WorkingDirectory = $InstallDir
+    $lnk.Description = "Savhub Desktop"
+    $lnk.Save()
+
+    Write-Host "Created Desktop shortcut"
 }
 
 Install-Savhub
