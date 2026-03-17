@@ -149,6 +149,16 @@ jobs:
           $cliAbs = (Resolve-Path $cliBin).Path
           $desktopAbs = (Resolve-Path $desktopBin).Path
 
+          # Convert the repository Apache 2.0 license into a simple RTF that WixUI can display.
+          $licenseTxt = Join-Path $pwd "LICENSE"
+          $licenseRtf = Join-Path $pwd "LICENSE.rtf"
+          $licenseText = Get-Content $licenseTxt -Raw
+          $escapedLicense = $licenseText.Replace('\', '\\').Replace('{', '\{').Replace('}', '\}')
+          $licenseBody = ($escapedLicense -split "`r?`n") -join "\par`r`n"
+          $licenseRtfContent = "{\rtf1\ansi\deff0{\fonttbl{\f0\fswiss Arial;}}\viewkind4\uc1\pard\f0\fs18 $licenseBody\par`r`n}"
+          [System.IO.File]::WriteAllText($licenseRtf, $licenseRtfContent, [System.Text.Encoding]::ASCII)
+          $licenseRtfAbs = (Resolve-Path $licenseRtf).Path
+
           $version = "${{ github.ref_name }}".TrimStart("v")
           if ($version -match "^(\d+\.\d+\.\d+)") {
             $msiVersion = $Matches[1]
@@ -194,7 +204,7 @@ jobs:
           Write-Host "--- savhub.wxs first 3 lines ---"
           Get-Content "savhub.wxs" | Select-Object -First 3
 
-          wix build -arch x64 -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext savhub.wxs -o dist/savhub-windows-x64.msi
+          wix build -arch x64 -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext -bindvariable "WixUILicenseRtf=$licenseRtfAbs" savhub.wxs -o dist/savhub-windows-x64.msi
 
           $sidecarCabs = Get-ChildItem "dist" -Filter "*.cab" -ErrorAction SilentlyContinue
           if ($sidecarCabs) {

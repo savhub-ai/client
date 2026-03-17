@@ -45,6 +45,21 @@ fn savhub_logo_data_uri() -> String {
     .clone()
 }
 
+fn webview_data_dir() -> std::path::PathBuf {
+    let path = savhub_local::config::get_config_dir()
+        .map(|dir| dir.join("webview"))
+        .unwrap_or_else(|_| std::env::temp_dir().join("savhub").join("webview"));
+
+    if let Err(err) = std::fs::create_dir_all(&path) {
+        eprintln!(
+            "failed to create desktop webview data directory {}: {err}",
+            path.display()
+        );
+    }
+
+    path
+}
+
 #[derive(Debug, Clone, Routable, PartialEq)]
 pub enum Route {
     #[layout(Shell)]
@@ -91,6 +106,7 @@ fn main() {
     let lang = state::read_language();
     let t = i18n::texts(lang);
     let title = t.app_window_title;
+    let webview_data_dir = webview_data_dir();
 
     let icon_bytes = include_bytes!("../assets/savhub.png");
     let img = image::load_from_memory(icon_bytes)
@@ -101,12 +117,16 @@ fn main() {
 
     dioxus::LaunchBuilder::desktop()
         .with_cfg(
-            Config::new().with_window(
-                WindowBuilder::new()
-                    .with_title(title)
-                    .with_inner_size(dioxus::desktop::LogicalSize::new(1100.0, 720.0))
-                    .with_window_icon(Some(icon)),
-            ),
+            Config::new()
+                // WebView2 defaults to storing its profile next to the executable.
+                // That breaks bundled Windows installs under Program Files.
+                .with_data_directory(webview_data_dir)
+                .with_window(
+                    WindowBuilder::new()
+                        .with_title(title)
+                        .with_inner_size(dioxus::desktop::LogicalSize::new(1100.0, 720.0))
+                        .with_window_icon(Some(icon)),
+                ),
         )
         .launch(App);
 }
