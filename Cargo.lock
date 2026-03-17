@@ -4435,19 +4435,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "savhub-mcp"
-version = "0.1.4"
-dependencies = [
- "anyhow",
- "clap",
- "savhub-local",
- "savhub-shared",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
 name = "savhub-shared"
 version = "0.1.0"
 source = "git+https://github.com/savhub-ai/server.git#ee3f853b407f05ea6bd02bfc7109aebd08f31288"
