@@ -179,23 +179,28 @@ jobs:
                      UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
               <MajorUpgrade DowngradeErrorMessage="A newer version of Savhub is already installed." />
               <MediaTemplate EmbedCab="yes" />
-              <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLDIR" />
+              <ui:WixUI Id="WixUI_FeatureTree" />
               <util:BroadcastEnvironmentChange />
               <StandardDirectory Id="ProgramFiles6432Folder">
                 <Directory Id="INSTALLDIR" Name="Savhub">
                   <Component Id="SavhubCLI" Guid="*">
                     <File Source="$cliAbs" />
-                    <Environment Id="AddSavhubToSystemPath" Name="PATH" Value="[INSTALLDIR]"
-                                 Permanent="no" Part="last" Action="set" System="yes" />
                   </Component>
                   <Component Id="SavhubDesktop" Guid="*">
                     <File Source="$desktopAbs" />
+                  </Component>
+                  <Component Id="SavhubPathEnv" Guid="*">
+                    <Environment Id="AddSavhubToSystemPath" Name="PATH" Value="[INSTALLDIR]"
+                                 Permanent="no" Part="last" Action="set" System="yes" />
                   </Component>
                 </Directory>
               </StandardDirectory>
               <Feature Id="MainFeature" Title="Savhub" Level="1">
                 <ComponentRef Id="SavhubCLI" />
                 <ComponentRef Id="SavhubDesktop" />
+              </Feature>
+              <Feature Id="AddToPath" Title="Add to system PATH" Description="Add Savhub install directory to the system PATH environment variable." Level="1">
+                <ComponentRef Id="SavhubPathEnv" />
               </Feature>
             </Package>
           </Wix>
