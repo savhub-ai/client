@@ -113,7 +113,16 @@ jobs:
         shell: pwsh
         run: |
           dotnet tool install -g wix
-          wix --version
+          $wixVersionText = wix --version
+          Write-Host "WiX version: $wixVersionText"
+          if ($wixVersionText -match "(\d+\.\d+\.\d+)") {
+            $wixVersion = $Matches[1]
+          } else {
+            throw "Could not parse WiX version from '$wixVersionText'"
+          }
+          wix extension add -g "WixToolset.UI.wixext/$wixVersion"
+          wix extension add -g "WixToolset.Util.wixext/$wixVersion"
+          wix extension list -g
 
       - name: Extract and build MSI
         shell: pwsh
@@ -149,23 +158,26 @@ jobs:
 
           $wxsContent = @"
           <?xml version="1.0" encoding="UTF-8"?>
-          <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+          <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+               xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+               xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
             <Package Name="Savhub" Manufacturer="Savhub AI" Version="$msiVersion"
+                     Scope="perMachine"
                      UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
               <MajorUpgrade DowngradeErrorMessage="A newer version of Savhub is already installed." />
               <MediaTemplate EmbedCab="yes" />
-              <StandardDirectory Id="LocalAppDataFolder">
-                <Directory Id="SAVHUBDIR" Name="savhub">
-                  <Directory Id="INSTALLDIR" Name="bin">
-                    <Component Id="SavhubCLI" Guid="*">
-                      <File Source="$cliAbs" />
-                      <Environment Id="PATH" Name="PATH" Value="[INSTALLDIR]"
-                                   Permanent="no" Part="last" Action="set" System="no" />
-                    </Component>
-                    <Component Id="SavhubDesktop" Guid="*">
-                      <File Source="$desktopAbs" />
-                    </Component>
-                  </Directory>
+              <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLDIR" />
+              <util:BroadcastEnvironmentChange />
+              <StandardDirectory Id="ProgramFiles6432Folder">
+                <Directory Id="INSTALLDIR" Name="Savhub">
+                  <Component Id="SavhubCLI" Guid="*">
+                    <File Source="$cliAbs" />
+                    <Environment Id="AddSavhubToSystemPath" Name="PATH" Value="[INSTALLDIR]"
+                                 Permanent="no" Part="last" Action="set" System="yes" />
+                  </Component>
+                  <Component Id="SavhubDesktop" Guid="*">
+                    <File Source="$desktopAbs" />
+                  </Component>
                 </Directory>
               </StandardDirectory>
               <Feature Id="MainFeature" Title="Savhub" Level="1">
@@ -182,7 +194,7 @@ jobs:
           Write-Host "--- savhub.wxs first 3 lines ---"
           Get-Content "savhub.wxs" | Select-Object -First 3
 
-          wix build -arch x64 savhub.wxs -o dist/savhub-windows-x64.msi
+          wix build -arch x64 -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext savhub.wxs -o dist/savhub-windows-x64.msi
 
           $sidecarCabs = Get-ChildItem "dist" -Filter "*.cab" -ErrorAction SilentlyContinue
           if ($sidecarCabs) {
