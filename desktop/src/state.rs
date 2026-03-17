@@ -27,50 +27,23 @@ fn load_config() -> (String, Option<String>, Language, PathBuf, Vec<String>) {
     // Highest priority: config.toml / registry.json via read_api_base_url()
     let api_override = savhub_local::registry::read_api_base_url();
 
-    // Read config.toml from ~/.savhub/
-    let config_path = savhub_local::config::get_config_dir()
+    let cfg = savhub_local::config::read_global_config()
         .ok()
-        .map(|d| d.join("config.toml"));
+        .flatten()
+        .unwrap_or_default();
 
-    let mut token = None;
-    let mut lang = Language::English;
-    let mut workdir = default_workdir();
-    let mut agents: Vec<String> = Vec::new();
-    let mut config_registry = None;
-
-    if let Some(path) = config_path {
-        if let Ok(raw) = std::fs::read_to_string(&path) {
-            if let Ok(cfg) = toml::from_str::<toml::Value>(&raw) {
-                config_registry = cfg
-                    .get("registry")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                token = cfg.get("token").and_then(|v| v.as_str()).map(String::from);
-                lang = Language::from_code(
-                    cfg.get("language").and_then(|v| v.as_str()).unwrap_or("en"),
-                );
-                workdir = cfg
-                    .get("workdir")
-                    .and_then(|v| v.as_str())
-                    .filter(|v| !v.trim().is_empty())
-                    .map(PathBuf::from)
-                    .unwrap_or_else(default_workdir);
-                agents = cfg
-                    .get("agents")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-            }
-        }
-    }
+    let token = cfg.token;
+    let lang = Language::from_code(cfg.language.as_deref().unwrap_or("en"));
+    let workdir = cfg
+        .workdir
+        .filter(|v| !v.trim().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(default_workdir);
+    let agents = cfg.agents;
 
     // Priority: config.toml [rest_api] override > registry.json > config.toml registry > default
     let registry = api_override
-        .or(config_registry)
+        .or(cfg.registry)
         .unwrap_or_else(|| DEFAULT_API_BASE.to_string());
 
     (registry, token, lang, workdir, agents)
@@ -78,19 +51,11 @@ fn load_config() -> (String, Option<String>, Language, PathBuf, Vec<String>) {
 
 /// Read just the language setting from config (used before full state init).
 pub fn read_language() -> Language {
-    let config_path = savhub_local::config::get_config_dir()
+    let cfg = savhub_local::config::read_global_config()
         .ok()
-        .map(|d| d.join("config.toml"));
-    if let Some(path) = config_path {
-        if let Ok(raw) = std::fs::read_to_string(&path) {
-            if let Ok(cfg) = toml::from_str::<toml::Value>(&raw) {
-                return Language::from_code(
-                    cfg.get("language").and_then(|v| v.as_str()).unwrap_or("en"),
-                );
-            }
-        }
-    }
-    Language::English
+        .flatten()
+        .unwrap_or_default();
+    Language::from_code(cfg.language.as_deref().unwrap_or("en"))
 }
 
 /// Handle to MCP server child process, shared across components.

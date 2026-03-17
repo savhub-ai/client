@@ -16,7 +16,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use api::ApiClient;
 use chrono::{DateTime, Utc};
 use clap::{ArgAction, Args, Parser, Subcommand};
-use config::{GlobalConfig, read_global_config, write_global_config};
+use config::{read_global_config, write_global_config};
 use dialoguer::{Confirm, Select};
 use savhub_local::presets::{
     EnableProjectRepoSkillResult, ProjectSkillConflictChoice, ResolvedSkillSources,
@@ -653,20 +653,21 @@ async fn cmd_login(opts: &GlobalOpts, args: LoginArgs) -> Result<()> {
     let Some(user) = whoami.user else {
         bail!("login failed: token is not valid");
     };
-    write_global_config(&GlobalConfig {
-        registry: Some(opts.registry.clone()),
-        token: Some(token),
-    })?;
+    let mut existing = read_global_config()?.unwrap_or_default();
+    existing.registry = Some(opts.registry.clone());
+    existing.token = Some(token);
+    write_global_config(&existing)?;
     println!("Logged in as @{} via GitHub", user.handle);
     Ok(())
 }
 
 fn cmd_logout(opts: &GlobalOpts) -> Result<()> {
-    let existing = read_global_config()?.unwrap_or_default();
-    write_global_config(&GlobalConfig {
-        registry: existing.registry.or_else(|| Some(opts.registry.clone())),
-        token: None,
-    })?;
+    let mut existing = read_global_config()?.unwrap_or_default();
+    if existing.registry.is_none() {
+        existing.registry = Some(opts.registry.clone());
+    }
+    existing.token = None;
+    write_global_config(&existing)?;
     println!("Logged out locally.");
     Ok(())
 }

@@ -7,8 +7,16 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GlobalConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registry: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workdir: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub agents: Vec<String>,
 }
 
 /// Resolve the savhub config/data directory.
