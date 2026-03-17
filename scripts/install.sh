@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Savhub CLI installer for Linux and macOS.
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/savhub-ai/savhub-client/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/savhub-ai/client/main/scripts/install.sh | bash
 #   curl -fsSL ... | bash -s -- --version v0.2.0
 #   curl -fsSL ... | bash -s -- --install-dir /custom/path
 

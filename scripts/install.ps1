@@ -1,6 +1,6 @@
 # Savhub CLI installer for Windows.
 # Usage:
-#   irm https://raw.githubusercontent.com/savhub-ai/savhub-client/main/scripts/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/savhub-ai/client/main/scripts/install.ps1 | iex
 #   .\install.ps1 -Version v0.2.0
 #   .\install.ps1 -InstallDir C:\custom\path
 
@@ -18,13 +18,50 @@ if (-not $InstallDir) {
 }
 
 function Get-Platform {
-    $osArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
-    $arch = switch ($osArch) {
-        "X64"   { "x64" }
-        "Arm64" { "arm64" }
-        default { throw "Unsupported architecture: $osArch" }
+    $archCandidates = @()
+
+    try {
+        $archCandidates += [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
     }
-    return "windows-$arch"
+    catch {
+    }
+
+    try {
+        $archCandidates += [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
+    }
+    catch {
+    }
+
+    $archCandidates += $env:PROCESSOR_ARCHITEW6432
+    $archCandidates += $env:PROCESSOR_ARCHITECTURE
+
+    foreach ($candidate in $archCandidates) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) {
+            continue
+        }
+
+        switch ($candidate.Trim().ToUpperInvariant()) {
+            { $_ -in @("X64", "AMD64", "X86_64") } {
+                return "windows-x64"
+            }
+            { $_ -in @("ARM64", "AARCH64") } {
+                return "windows-arm64"
+            }
+            { $_ -in @("X86", "I386", "I686", "ARM") } {
+                throw "Unsupported architecture: $candidate. Savhub Windows releases are available for x64 and arm64."
+            }
+        }
+    }
+
+    $detected = $archCandidates |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Select-Object -Unique
+
+    if ($detected) {
+        throw "Unsupported architecture: $($detected -join ', '). Savhub Windows releases are available for x64 and arm64."
+    }
+
+    throw "Could not determine Windows architecture. Checked RuntimeInformation and PROCESSOR_ARCHITECTURE environment variables."
 }
 
 function Get-LatestVersion {
