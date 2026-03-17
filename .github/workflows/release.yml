@@ -189,7 +189,8 @@ jobs:
                   <Component Id="SavhubDesktop" Guid="*">
                     <File Source="$desktopAbs" />
                   </Component>
-                  <Component Id="SavhubPathEnv" Guid="*">
+                  <Component Id="SavhubPathEnv" Guid="B7E2F4A1-3C5D-4E6F-8A9B-1C2D3E4F5A6B">
+                    <RegistryValue Root="HKLM" Key="Software\Savhub" Name="PathEnvInstalled" Type="integer" Value="1" KeyPath="yes" />
                     <Environment Id="AddSavhubToSystemPath" Name="PATH" Value="[INSTALLDIR]"
                                  Permanent="no" Part="last" Action="set" System="yes" />
                   </Component>
@@ -197,21 +198,21 @@ jobs:
               </StandardDirectory>
               <StandardDirectory Id="ProgramMenuFolder">
                 <Directory Id="SavhubStartMenuFolder" Name="Savhub">
-                  <Component Id="StartMenuShortcut" Guid="*">
+                  <Component Id="StartMenuShortcut" Guid="D4A1B2C3-E5F6-4789-ABCD-EF1234567891">
+                    <RegistryValue Root="HKCU" Key="Software\Savhub" Name="StartMenuInstalled" Type="integer" Value="1" KeyPath="yes" />
                     <Shortcut Id="DesktopAppMenuShortcut" Name="Savhub Desktop" Target="[INSTALLDIR]savhub-desktop.exe"
                               WorkingDirectory="INSTALLDIR" Icon="SavhubIcon" IconIndex="0" />
                     <Shortcut Id="CliAppMenuShortcut" Name="Savhub CLI" Target="[INSTALLDIR]savhub.exe"
                               WorkingDirectory="INSTALLDIR" />
                     <RemoveFolder Id="RemoveStartMenuFolder" On="uninstall" />
-                    <RegistryValue Root="HKCU" Key="Software\Savhub" Name="StartMenuInstalled" Type="integer" Value="1" KeyPath="yes" />
                   </Component>
                 </Directory>
               </StandardDirectory>
               <StandardDirectory Id="DesktopFolder">
-                <Component Id="DesktopShortcut" Guid="*">
+                <Component Id="DesktopShortcut" Guid="F5A6B7C8-D9E0-4123-BCDE-F12345678902">
+                  <RegistryValue Root="HKCU" Key="Software\Savhub" Name="DesktopShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
                   <Shortcut Id="DesktopAppShortcut" Name="Savhub Desktop" Target="[INSTALLDIR]savhub-desktop.exe"
                             WorkingDirectory="INSTALLDIR" Icon="SavhubIcon" IconIndex="0" />
-                  <RegistryValue Root="HKCU" Key="Software\Savhub" Name="DesktopShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
                 </Component>
               </StandardDirectory>
               <Icon Id="SavhubIcon" SourceFile="$desktopAbs" />
