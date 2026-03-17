@@ -34,7 +34,11 @@ pub fn normalize_repo_url_to_sign(raw: &str) -> String {
 /// - `https://github.com/org/repo` → `https://github.com/org/repo.git`
 /// - `http://github.com/org/repo.git/` → `https://github.com/org/repo.git`
 pub fn normalize_git_url(raw: &str) -> String {
-    let url = raw.trim().trim_end_matches('/');
+    let url = raw.trim();
+    // Strip URL fragment (#...) and query string (?...)
+    let url = url.split('#').next().unwrap_or(url);
+    let url = url.split('?').next().unwrap_or(url);
+    let url = url.trim_end_matches('/');
 
     // git@host:path → https://host/path
     let url = if let Some(rest) = url.strip_prefix("git@") {
@@ -785,10 +789,21 @@ pub fn run_selectors(project_root: &Path) -> Result<SelectorRunResult> {
             continue;
         }
         if selector.evaluate(project_root) {
+            // Expand repos into flocks: look up all flock slugs for each repo
+            let mut expanded_flocks = selector.flocks.clone();
+            for repo_sign in &selector.repos {
+                if let Ok(repo_flocks) = crate::registry::list_repo_flock_slugs(repo_sign) {
+                    for flock in repo_flocks {
+                        if !expanded_flocks.contains(&flock) {
+                            expanded_flocks.push(flock);
+                        }
+                    }
+                }
+            }
             matched.push(SelectorMatch {
                 selector: selector.clone(),
                 skills: selector.skills.clone(),
-                flocks: selector.flocks.clone(),
+                flocks: expanded_flocks,
                 repos: selector.repos.clone(),
             });
         }

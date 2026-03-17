@@ -805,6 +805,20 @@ fn resolve_project_skills_internal(workdir: &Path) -> Result<Vec<ResolvedProject
                 }
             }
         }
+        // Expand repos: look up all flocks in each repo, then expand those flocks
+        for repo_sign in &matched.repos {
+            if let Ok(repo_flocks) = crate::registry::list_repo_flock_slugs(repo_sign) {
+                for flock_slug in &repo_flocks {
+                    if let Ok(skill_slugs) = crate::registry::list_flock_skill_slugs(flock_slug) {
+                        for skill_slug in skill_slugs {
+                            let entry = sources.entry(skill_slug).or_default();
+                            add_unique(&mut entry.flocks, flock_slug);
+                            add_unique(&mut entry.selectors, &matched.selector);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     for skill in &config.skills.manual_added {

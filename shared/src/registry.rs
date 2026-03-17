@@ -1872,6 +1872,22 @@ pub fn list_flock_slugs() -> Result<Vec<String>> {
     Ok(slugs)
 }
 
+/// List all flock slugs belonging to a repo (by repo sign/id, e.g. `github.com/owner/repo`).
+pub fn list_repo_flock_slugs(repo_sign: &str) -> Result<Vec<String>> {
+    let conn = open_cache()?;
+    let mut stmt = conn.prepare(
+        "SELECT slug FROM flocks WHERE repo_id = ?1 ORDER BY slug ASC",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![repo_sign], |row| {
+        row.get::<_, String>(0)
+    })?;
+    let mut slugs = Vec::new();
+    for row in rows {
+        slugs.push(row?);
+    }
+    Ok(slugs)
+}
+
 /// Check if a repo with the given sign (e.g. `github.com/owner/repo`) exists in the registry.
 pub fn repo_exists_in_registry(sign: &str) -> Result<bool> {
     let conn = open_cache()?;
