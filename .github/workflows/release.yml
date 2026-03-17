@@ -112,23 +112,32 @@ jobs:
       - name: Install WiX Toolset
         run: dotnet tool install -g wix
 
-      - name: Extract binaries
+      - name: Extract and build MSI
         shell: pwsh
         run: |
           $zip = Get-ChildItem dist -Filter "savhub-windows-*.zip" | Select-Object -First 1
           $tmpDir = Join-Path $pwd "msi-tmp"
           Expand-Archive -Path $zip.FullName -DestinationPath $tmpDir -Force
-          # Flatten into msi-staging so WiX can find the files directly
+
+          # Flatten into msi-staging
           $msiDir = Join-Path $pwd "msi-staging"
           New-Item -ItemType Directory -Force -Path $msiDir | Out-Null
           Get-ChildItem -Path $tmpDir -Recurse -Filter "*.exe" | Copy-Item -Destination $msiDir -Force
           Remove-Item $tmpDir -Recurse -Force
 
-      - name: Create WiX source
-        shell: pwsh
-        run: |
+          # Verify binaries exist
+          $cliBin = Join-Path $msiDir "savhub.exe"
+          $desktopBin = Join-Path $msiDir "savhub-desktop.exe"
+          if (-not (Test-Path $cliBin)) { throw "savhub.exe not found in msi-staging" }
+          if (-not (Test-Path $desktopBin)) { throw "savhub-desktop.exe not found in msi-staging" }
+          Write-Host "CLI binary: $cliBin ($(( Get-Item $cliBin ).Length / 1MB) MB)"
+          Write-Host "Desktop binary: $desktopBin ($(( Get-Item $desktopBin ).Length / 1MB) MB)"
+
+          # Use absolute paths for WiX source references
+          $cliAbs = (Resolve-Path $cliBin).Path
+          $desktopAbs = (Resolve-Path $desktopBin).Path
+
           $version = "${{ github.ref_name }}".TrimStart("v")
-          # Ensure version is valid for MSI (X.Y.Z, no prerelease)
           if ($version -match "^(\d+\.\d+\.\d+)") {
             $msiVersion = $Matches[1]
           } else {
@@ -151,7 +160,7 @@ jobs:
                 <Directory Id="SAVHUBDIR" Name="savhub">
                   <Directory Id="INSTALLDIR" Name="bin">
                     <Component Id="SavhubCLI" Guid="*">
-                      <File Source="msi-staging\savhub.exe" />
+                      <File Source="$cliAbs" />
                       <Environment
                         Id="PATH"
                         Name="PATH"
@@ -162,7 +171,7 @@ jobs:
                         System="no" />
                     </Component>
                     <Component Id="SavhubDesktop" Guid="*">
-                      <File Source="msi-staging\savhub-desktop.exe" />
+                      <File Source="$desktopAbs" />
                     </Component>
                   </Directory>
                 </Directory>
@@ -178,10 +187,12 @@ jobs:
 
           Set-Content -Path "savhub.wxs" -Value $wxs -Encoding UTF8
 
-      - name: Build MSI
-        shell: pwsh
-        run: |
           wix build savhub.wxs -o dist/savhub-windows-x64.msi
+
+          # Verify MSI size is reasonable (should be > 1MB)
+          $msiSize = (Get-Item "dist/savhub-windows-x64.msi").Length / 1MB
+          Write-Host "MSI size: $msiSize MB"
+          if ($msiSize -lt 1) { throw "MSI is suspiciously small ($msiSize MB), source files likely not included" }
 
       - name: Upload MSI artifact
         uses: actions/upload-artifact@v5
