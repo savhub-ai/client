@@ -217,10 +217,9 @@ fn Shell() -> Element {
 
         // Sync registry cache in background (clone/pull + sync to SQLite if needed)
         spawn(async move {
-            let _ = tokio::task::spawn_blocking(|| {
-                savhub_local::registry::ensure_registry_synced()
-            })
-            .await;
+            let _ =
+                tokio::task::spawn_blocking(|| savhub_local::registry::ensure_registry_synced())
+                    .await;
         });
     });
 

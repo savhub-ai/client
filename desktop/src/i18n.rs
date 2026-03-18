@@ -256,7 +256,6 @@ pub struct Texts {
     pub settings_agents_auto: &'static str,
     pub settings_agents_manual: &'static str,
     pub settings_agents_hint: &'static str,
-
 }
 
 /// Format helpers for dynamic strings.
@@ -537,7 +536,6 @@ static EN: Texts = Texts {
     settings_agents_auto: "Auto-detect",
     settings_agents_manual: "Manual",
     settings_agents_hint: "Choose which AI agents to sync skills to. Auto-detect checks installed agents on your machine.",
-
 };
 
 static ZH: Texts = Texts {
@@ -747,7 +745,6 @@ static ZH: Texts = Texts {
     settings_agents_auto: "自动检测",
     settings_agents_manual: "手动配置",
     settings_agents_hint: "选择要同步技能的 AI 客户端。自动检测会检查本机上已安装的客户端。",
-
 };
 
 pub fn texts(lang: Language) -> &'static Texts {
