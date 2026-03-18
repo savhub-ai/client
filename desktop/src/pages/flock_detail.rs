@@ -122,7 +122,7 @@ pub fn FlockDetailPage(slug: String) -> Element {
                     }
                 }
                 div { style: "display: flex; align-items: center; gap: 12px;",
-                    p { style: "font-size: 12px; color: {Theme::MUTED};", "{slug_display}" }
+                    crate::components::copy_sign::CopySign { value: slug_display.clone() }
                     span { style: "font-size: 12px; color: {Theme::MUTED};",
                         "{skills.len()} {t.flock_skills_count}"
                     }
@@ -255,7 +255,7 @@ fn FlockSkillRow(skill: RegistrySkill, mut installed: Signal<BTreeMap<String, bo
                         "v{version_display}"
                     }
                 }
-                p { style: "font-size: 12px; color: {Theme::MUTED};", "{skill.slug}" }
+                crate::components::copy_sign::CopySign { value: skill.slug.clone() }
                 if !desc.is_empty() {
                     p { style: "font-size: 12px; color: {Theme::MUTED}; margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;",
                         "{desc}"

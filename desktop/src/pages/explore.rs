@@ -614,8 +614,8 @@ fn SkillListRow(
                             "v{version_display}"
                         }
                     }
-                    p { style: "font-size: 12px; color: {Theme::MUTED}; margin-bottom: 6px;",
-                        "{skill.slug}"
+                    div { style: "margin-bottom: 6px;",
+                        crate::components::copy_sign::CopySign { value: skill.sign.clone() }
                     }
                     if let Some(desc) = &skill.summary {
                         p { style: "font-size: 13px; color: {Theme::MUTED}; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;",
@@ -727,9 +727,7 @@ fn SkillCard(
                         h3 { style: "font-size: 15px; font-weight: 600; color: {Theme::TEXT}; margin-bottom: 2px;",
                             "{skill.name}"
                         }
-                        p { style: "font-size: 12px; color: {Theme::MUTED};",
-                            "{skill.slug}"
-                        }
+                        crate::components::copy_sign::CopySign { value: skill.sign.clone() }
                     }
                     span { style: "font-size: 12px; padding: 2px 8px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border-radius: 10px; white-space: nowrap;",
                         "v{version_display}"
@@ -860,8 +858,8 @@ fn FlockListRow(
                         "v{version_display}"
                     }
                 }
-                p { style: "font-size: 12px; color: {Theme::MUTED}; margin-bottom: 6px;",
-                    "{slug_display}"
+                div { style: "margin-bottom: 6px;",
+                    crate::components::copy_sign::CopySign { value: slug_display.clone() }
                 }
                 if !flock.description.is_empty() {
                     p { style: "font-size: 13px; color: {Theme::MUTED}; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;",

@@ -9,10 +9,38 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use chrono::{DateTime, Utc};
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 
 use crate::config::get_config_dir;
+
+// ---------------------------------------------------------------------------
+// Security summary (matches server's SecuritySummary and registry JSON schema)
+// ---------------------------------------------------------------------------
+
+/// Compact security scan summary embedded in registry JSON files.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SecuritySummary {
+    /// Overall security status: unverified, scanning, verified, flagged, rejected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    /// Aggregated verdict: clean, suspicious, malicious.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verdict: Option<String>,
+    /// Machine-readable reason codes from static scanning.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reason_codes: Vec<String>,
+    /// Human-readable summary of scan findings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    /// Version of the scan engine that produced this result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_version: Option<String>,
+    /// Timestamp of the most recent scan (RFC 3339).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scanned_at: Option<DateTime<Utc>>,
+}
 
 // ---------------------------------------------------------------------------
 // REST API base URL
@@ -193,6 +221,13 @@ pub struct RegistryFlock {
     pub visibility: Option<String>,
     #[serde(default)]
     pub license: String,
+    /// Automated security scan results.
+    #[serde(default, skip_serializing_if = "is_default_security")]
+    pub security: SecuritySummary,
+}
+
+fn is_default_security(s: &SecuritySummary) -> bool {
+    *s == SecuritySummary::default()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -214,6 +249,9 @@ pub struct RegistrySkill {
     pub categories: Vec<String>,
     #[serde(default)]
     pub keywords: Vec<String>,
+    /// Automated security scan results.
+    #[serde(default, skip_serializing_if = "is_default_security")]
+    pub security: SecuritySummary,
 }
 
 /// Internal representation for parsed skills.json data.
@@ -273,6 +311,9 @@ pub struct SkillEntry {
     pub downloads: Option<u64>,
     /// Owner/author handle — from API or derived from source URL.
     pub owner: Option<String>,
+    /// Automated security scan results.
+    #[serde(default, skip_serializing_if = "is_default_security")]
+    pub security: SecuritySummary,
     /// Data source indicator.
     #[serde(skip)]
     pub data_source: Option<DataSource>,
@@ -294,6 +335,7 @@ impl From<RegistrySkill> for SkillEntry {
             starred_by_me: None,
             downloads: None,
             owner: None,
+            security: s.security,
             data_source: Some(DataSource::Local),
         }
     }
@@ -401,6 +443,23 @@ fn init_schema(conn: &Connection) -> Result<()> {
 
         ",
     )?;
+
+    // Migrate: add security columns to skills and flocks if missing
+    let has_security_status = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('skills') WHERE name = 'security_status'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap_or(0);
+    if has_security_status == 0 {
+        let _ = conn.execute_batch(
+            "ALTER TABLE skills ADD COLUMN security_status TEXT NOT NULL DEFAULT '';
+             ALTER TABLE skills ADD COLUMN security_verdict TEXT NOT NULL DEFAULT '';
+             ALTER TABLE flocks ADD COLUMN security_status TEXT NOT NULL DEFAULT '';
+             ALTER TABLE flocks ADD COLUMN security_verdict TEXT NOT NULL DEFAULT '';",
+        );
+    }
     // Migrate: add installed columns if missing (for existing databases)
     let has_installed = conn
         .query_row(
@@ -1524,8 +1583,8 @@ fn write_parsed_to_db(
             flock.sign.clone()
         };
         tx.execute(
-            "INSERT OR REPLACE INTO flocks (id, sign, repo_id, slug, name, description, version, status, license, source_json, data_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT OR REPLACE INTO flocks (id, sign, repo_id, slug, name, description, version, status, license, source_json, data_json, security_status, security_verdict)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 id,
                 flock_sign,
@@ -1538,6 +1597,8 @@ fn write_parsed_to_db(
                 flock.license,
                 "", // source is now on repo level
                 raw,
+                flock.security.status.as_deref().unwrap_or(""),
+                flock.security.verdict.as_deref().unwrap_or(""),
             ],
         )?;
     }
@@ -1561,8 +1622,8 @@ fn write_parsed_to_db(
             let data = serde_json::to_string(&skill).unwrap_or_default();
 
             tx.execute(
-                "INSERT OR REPLACE INTO skills (id, flock_id, repo_id, slug, name, path, summary, description, version, status, license, categories_json, keywords_json, source_json, entry_json, data_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                "INSERT OR REPLACE INTO skills (id, flock_id, repo_id, slug, name, path, summary, description, version, status, license, categories_json, keywords_json, source_json, entry_json, data_json, security_status, security_verdict)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
                 params![
                     skill_id,
                     flock_id,
@@ -1580,6 +1641,8 @@ fn write_parsed_to_db(
                     repo_source,
                     "",
                     data,
+                    skill.security.status.as_deref().unwrap_or(""),
+                    skill.security.verdict.as_deref().unwrap_or(""),
                 ],
             )?;
             total_skills += 1;

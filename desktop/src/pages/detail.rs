@@ -194,8 +194,9 @@ fn DetailContent(detail: SkillDetailResponse, slug: String) -> Element {
                     h1 { style: "font-size: 28px; font-weight: 700; color: {Theme::TEXT}; margin-bottom: 4px;",
                         "{detail.skill.display_name}"
                     }
-                    p { style: "font-size: 14px; color: {Theme::MUTED}; margin-bottom: 8px;",
-                        "{slug} \u{00B7} by {owner.handle}"
+                    p { style: "font-size: 14px; color: {Theme::MUTED}; margin-bottom: 8px; display: flex; align-items: center; gap: 4px;",
+                        crate::components::copy_sign::CopySign { value: slug.clone() }
+                        " \u{00B7} by {owner.handle}"
                     }
                     if !summary.is_empty() {
                         p { style: "font-size: 15px; color: {Theme::TEXT}; max-width: 600px;",

@@ -8,3 +8,4 @@ _*.md
 .tmp*
 *.log
 *.tmp
+tmp*

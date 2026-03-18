@@ -216,6 +216,7 @@ pub fn skill_list_item_to_entry(item: &SkillListItem) -> SkillEntry {
         starred_by_me: None,
         downloads: Some(item.stats.downloads as u64),
         owner: Some(item.owner.handle.clone()),
+        security: Default::default(),
         data_source: Some(DataSource::Remote),
     }
 }
