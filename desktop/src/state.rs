@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 use dioxus::prelude::*;
 use savhub_shared::UserSummary;
@@ -58,9 +57,6 @@ pub fn read_language() -> Language {
     Language::from_code(cfg.language.as_deref().unwrap_or("en"))
 }
 
-/// Handle to MCP server child process, shared across components.
-pub type McpProcessHandle = Arc<Mutex<Option<std::process::Child>>>;
-
 /// Shared application state accessible from all pages.
 #[derive(Clone, Copy)]
 pub struct AppState {
@@ -70,10 +66,6 @@ pub struct AppState {
     pub current_user: Signal<Option<UserSummary>>,
     pub status_message: Signal<String>,
     pub lang: Signal<Language>,
-    /// Whether the MCP server process is currently running.
-    pub mcp_running: Signal<bool>,
-    /// Shared handle to the MCP child process (for stop/cleanup).
-    pub mcp_process: Signal<McpProcessHandle>,
     /// Registry API version compatibility status.
     pub registry_compat: Signal<ApiCompatibility>,
     pub agents: Signal<Vec<String>>,
@@ -89,8 +81,6 @@ impl AppState {
             current_user: Signal::new(None),
             status_message: Signal::new(String::new()),
             lang: Signal::new(lang),
-            mcp_running: Signal::new(false),
-            mcp_process: Signal::new(Arc::new(Mutex::new(None))),
             registry_compat: Signal::new(ApiCompatibility::Unknown),
             agents: Signal::new(agents),
         }

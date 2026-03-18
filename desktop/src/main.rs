@@ -18,7 +18,6 @@ use pages::dashboard::DashboardPage;
 use pages::detail::DetailPage;
 use pages::explore::ExplorePage;
 use pages::installed::InstalledPage;
-use pages::mcp::McpPage;
 use pages::profiles::ProjectsPage;
 use pages::selectors::SelectorsPage;
 use pages::settings::SettingsPage;
@@ -82,8 +81,6 @@ pub enum Route {
     Selectors {},
     #[route("/projects")]
     Projects {},
-    #[route("/mcp")]
-    Mcp {},
     #[route("/settings")]
     Settings {},
 }
@@ -184,11 +181,6 @@ fn Projects() -> Element {
 }
 
 #[component]
-fn Mcp() -> Element {
-    rsx! { McpPage {} }
-}
-
-#[component]
 fn Settings() -> Element {
     rsx! { SettingsPage {} }
 }
@@ -200,23 +192,6 @@ fn Shell() -> Element {
     let mut state = use_context::<AppState>();
     let mut update_status = use_signal(|| updater::UpdateStatus::Checking);
     let mut user_loaded = use_signal(|| false);
-
-    // Cleanup MCP server on app close
-    use_drop(move || {
-        let handle = state.mcp_process.read().clone();
-        let mut guard = handle.lock().unwrap();
-        if let Some(ref mut child) = *guard {
-            // Unregister from all AI clients
-            let clients = savhub_local::clients::detect_clients();
-            for client in &clients {
-                if savhub_local::mcp_config::is_registered(client) {
-                    let _ = savhub_local::mcp_config::unregister_mcp(client);
-                }
-            }
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-    });
 
     // Check for updates and registry API compatibility on mount
     use_effect(move || {
@@ -242,7 +217,10 @@ fn Shell() -> Element {
 
         // Sync registry cache in background (clone/pull + sync to SQLite if needed)
         spawn(async move {
-            let _ = savhub_local::registry::ensure_registry_synced();
+            let _ = tokio::task::spawn_blocking(|| {
+                savhub_local::registry::ensure_registry_synced()
+            })
+            .await;
         });
     });
 

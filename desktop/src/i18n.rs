@@ -167,7 +167,6 @@ pub struct Texts {
 
     // Sidebar - new
     pub nav_profiles: &'static str,
-    pub nav_mcp: &'static str,
 
     // Selectors page
     pub selectors_title: &'static str,
@@ -258,25 +257,6 @@ pub struct Texts {
     pub settings_agents_manual: &'static str,
     pub settings_agents_hint: &'static str,
 
-    // MCP page
-    pub mcp_title: &'static str,
-    pub mcp_server_status: &'static str,
-    pub mcp_running: &'static str,
-    pub mcp_stopped: &'static str,
-    pub mcp_start: &'static str,
-    pub mcp_stop: &'static str,
-    pub mcp_starting: &'static str,
-    pub mcp_stopping: &'static str,
-    pub mcp_registration: &'static str,
-    pub mcp_register_all: &'static str,
-    pub mcp_unregister_all: &'static str,
-    pub mcp_registered: &'static str,
-    pub mcp_not_registered: &'static str,
-    pub mcp_not_supported: &'static str,
-    pub mcp_auto_start: &'static str,
-    pub mcp_auto_start_hint: &'static str,
-    pub mcp_auto_start_enabled: &'static str,
-    pub mcp_auto_start_disabled: &'static str,
 }
 
 /// Format helpers for dynamic strings.
@@ -472,7 +452,6 @@ static EN: Texts = Texts {
     files: "Files",
 
     nav_profiles: "Projects",
-    nav_mcp: "MCP Server",
 
     selectors_title: "Selectors",
     selectors_description: "Selectors inspect a folder, check for required files, and apply skill changes. Rules can be combined with AND, OR, NOT and parentheses for complex matching logic.",
@@ -559,24 +538,6 @@ static EN: Texts = Texts {
     settings_agents_manual: "Manual",
     settings_agents_hint: "Choose which AI agents to sync skills to. Auto-detect checks installed agents on your machine.",
 
-    mcp_title: "MCP Server",
-    mcp_server_status: "Server Status",
-    mcp_running: "Running",
-    mcp_stopped: "Stopped",
-    mcp_start: "Start Server",
-    mcp_stop: "Stop Server",
-    mcp_starting: "Starting...",
-    mcp_stopping: "Stopping...",
-    mcp_registration: "AI Client Registration",
-    mcp_register_all: "Register All",
-    mcp_unregister_all: "Unregister All",
-    mcp_registered: "Registered",
-    mcp_not_registered: "Not Registered",
-    mcp_not_supported: "Not Supported",
-    mcp_auto_start: "Auto-start on Boot",
-    mcp_auto_start_hint: "Start Savhub and MCP server automatically when you log in.",
-    mcp_auto_start_enabled: "Enabled",
-    mcp_auto_start_disabled: "Disabled",
 };
 
 static ZH: Texts = Texts {
@@ -701,7 +662,6 @@ static ZH: Texts = Texts {
     files: "文件",
 
     nav_profiles: "项目",
-    nav_mcp: "MCP 服务",
 
     selectors_title: "选择器",
     selectors_description: "选择器检查文件夹中的文件，并应用技能操作。规则可用 AND、OR、NOT 和括号组合，实现复杂的匹配逻辑。",
@@ -788,24 +748,6 @@ static ZH: Texts = Texts {
     settings_agents_manual: "手动配置",
     settings_agents_hint: "选择要同步技能的 AI 客户端。自动检测会检查本机上已安装的客户端。",
 
-    mcp_title: "MCP 服务器",
-    mcp_server_status: "服务器状态",
-    mcp_running: "运行中",
-    mcp_stopped: "已停止",
-    mcp_start: "启动服务",
-    mcp_stop: "停止服务",
-    mcp_starting: "启动中...",
-    mcp_stopping: "停止中...",
-    mcp_registration: "AI 客户端注册",
-    mcp_register_all: "全部注册",
-    mcp_unregister_all: "全部注销",
-    mcp_registered: "已注册",
-    mcp_not_registered: "未注册",
-    mcp_not_supported: "不支持",
-    mcp_auto_start: "开机自启",
-    mcp_auto_start_hint: "登录时自动启动 Savhub 和 MCP 服务器。",
-    mcp_auto_start_enabled: "已启用",
-    mcp_auto_start_disabled: "已禁用",
 };
 
 pub fn texts(lang: Language) -> &'static Texts {
