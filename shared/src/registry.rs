@@ -1289,17 +1289,9 @@ pub fn write_registry_state(state: &RegistryState) -> Result<()> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum RegistryDataPath {
-    Repo {
-        repo_id: String,
-    },
-    Flock {
-        repo_id: String,
-        flock_slug: String,
-    },
-    Skills {
-        repo_id: String,
-        flock_slug: String,
-    },
+    Repo { repo_id: String },
+    Flock { repo_id: String, flock_slug: String },
+    Skills { repo_id: String, flock_slug: String },
 }
 
 #[derive(Debug, Default)]
@@ -1357,7 +1349,9 @@ fn ensure_registry_clone() -> Result<PathBuf> {
     let git_url = format!("https://github.com/{DEFAULT_REGISTRY_REPO}.git");
     let target = repo_dir.display().to_string();
     git_ok(
-        &["clone", "--depth", "1", "--branch", "main", &git_url, &target],
+        &[
+            "clone", "--depth", "1", "--branch", "main", &git_url, &target,
+        ],
         None,
     )?;
     Ok(repo_dir)
@@ -1416,7 +1410,10 @@ fn parse_registry_data_path(rel_path: &str) -> Option<RegistryDataPath> {
             [flock, repo] => (repo.to_string(), flock.to_string()),
             _ => return None,
         };
-        return Some(RegistryDataPath::Flock { repo_id, flock_slug });
+        return Some(RegistryDataPath::Flock {
+            repo_id,
+            flock_slug,
+        });
     }
 
     if let Some(stripped) = rel.strip_suffix("/skills.json") {
@@ -1424,7 +1421,10 @@ fn parse_registry_data_path(rel_path: &str) -> Option<RegistryDataPath> {
             [flock, repo] => (repo.to_string(), flock.to_string()),
             _ => return None,
         };
-        return Some(RegistryDataPath::Skills { repo_id, flock_slug });
+        return Some(RegistryDataPath::Skills {
+            repo_id,
+            flock_slug,
+        });
     }
 
     None
@@ -1435,12 +1435,20 @@ fn queue_registry_delete(plan: &mut IncrementalRegistryPlan, rel_path: &str) {
         Some(RegistryDataPath::Repo { repo_id }) => {
             plan.repo_deletes.insert(repo_id);
         }
-        Some(RegistryDataPath::Flock { repo_id, flock_slug }) => {
+        Some(RegistryDataPath::Flock {
+            repo_id,
+            flock_slug,
+        }) => {
             plan.flock_deletes.insert(format!("{repo_id}/{flock_slug}"));
-            plan.skills_deletes.insert(format!("{repo_id}/{flock_slug}"));
+            plan.skills_deletes
+                .insert(format!("{repo_id}/{flock_slug}"));
         }
-        Some(RegistryDataPath::Skills { repo_id, flock_slug }) => {
-            plan.skills_deletes.insert(format!("{repo_id}/{flock_slug}"));
+        Some(RegistryDataPath::Skills {
+            repo_id,
+            flock_slug,
+        }) => {
+            plan.skills_deletes
+                .insert(format!("{repo_id}/{flock_slug}"));
         }
         None => {}
     }
@@ -1528,7 +1536,10 @@ fn load_flock_from_clone(
     repo_dir: &Path,
     rel_path: &str,
 ) -> Result<(String, String, RegistryFlock, String)> {
-    let RegistryDataPath::Flock { repo_id, flock_slug } = parse_registry_data_path(rel_path)
+    let RegistryDataPath::Flock {
+        repo_id,
+        flock_slug,
+    } = parse_registry_data_path(rel_path)
         .with_context(|| format!("invalid flock path: {rel_path}"))?
     else {
         bail!("invalid flock path: {rel_path}");
@@ -1546,7 +1557,10 @@ fn load_flock_from_clone(
 }
 
 fn load_skills_from_clone(repo_dir: &Path, rel_path: &str) -> Result<SkillsFile> {
-    let RegistryDataPath::Skills { repo_id, flock_slug } = parse_registry_data_path(rel_path)
+    let RegistryDataPath::Skills {
+        repo_id,
+        flock_slug,
+    } = parse_registry_data_path(rel_path)
         .with_context(|| format!("invalid skills path: {rel_path}"))?
     else {
         bail!("invalid skills path: {rel_path}");

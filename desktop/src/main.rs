@@ -228,8 +228,8 @@ fn Shell() -> Element {
         // Registry sync strategy:
         // 1. Always render from SQLite immediately.
         // 2. If the cache is empty, sync now in the background and refresh pages after it lands.
-        // 3. If the cache already has data, only sync when the remote head differs from the
-        //    synced commit recorded in registry.json, and do not force-refresh current pages.
+        // 3. If the cache already has data, only sync when the remote head differs from the synced
+        //    commit recorded in registry.json, and do not force-refresh current pages.
         spawn(async move {
             let db_has_data = tokio::task::spawn_blocking(|| {
                 savhub_local::registry::skill_count().unwrap_or(0) > 0
