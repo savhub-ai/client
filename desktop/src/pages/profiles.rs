@@ -695,7 +695,11 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                                 }
                             }
                         }
-                        ScanData { matched_signs: matched, flock_signs: flocks, skill_signs: skills }
+                        ScanData {
+                            matched_signs: matched,
+                            flock_signs: flocks,
+                            skill_signs: skills,
+                        }
                     } else {
                         ScanData::default()
                     }
@@ -750,94 +754,111 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
         let matched_data = matched_signs_cl.clone();
         let _flock_data = flock_signs_cl.clone();
         spawn(async move {
-        let workdir_bg = workdir.clone();
-        let checked_bg = checked.clone();
-        let _ = tokio::task::spawn_blocking(move || -> Result<(), Box<dyn std::error::Error + Send>> {
-        if !matched_data.is_empty() {
-            if let Ok(mut cfg) = savhub_local::presets::read_project_config(&workdir_bg) {
-                // Re-run selectors in this thread to get full match data
-                if let Ok(result) = savhub_local::selectors::run_selectors(&workdir_bg) {
-                    cfg.selectors.matched = result
-                        .matched
-                        .iter()
-                        .map(|m| savhub_local::presets::ProjectSelectorMatch {
-                            selector: m.selector.name.clone(),
-                            flocks: m.flocks.clone(),
-                            skills: m.skills.clone(),
-                            repos: m.repos.clone(),
-                        })
-                        .collect();
-                }
-                let _ = savhub_local::presets::write_project_config(&workdir_bg, &cfg);
-            }
-
-            let config = savhub_local::presets::read_project_config(&workdir_bg).unwrap_or_default();
-            let skipped = &config.skills.manual_skipped;
-            let filtered: Vec<String> = skills_to_install
-                .iter()
-                .filter(|s| !savhub_local::registry::skill_matches_skipped(s, skipped))
-                .cloned()
-                .collect();
-
-            if let Ok(results) = savhub_local::registry::install_skills_batch(&filtered) {
-                let agents = savhub_local::clients::resolve_clients(&checked_bg);
-                for info in &results {
-                    for client in &agents {
-                        if !client.installed {
-                            continue;
+            let workdir_bg = workdir.clone();
+            let checked_bg = checked.clone();
+            let _ = tokio::task::spawn_blocking(
+                move || -> Result<(), Box<dyn std::error::Error + Send>> {
+                    if !matched_data.is_empty() {
+                        if let Ok(mut cfg) = savhub_local::presets::read_project_config(&workdir_bg)
+                        {
+                            // Re-run selectors in this thread to get full match data
+                            if let Ok(result) = savhub_local::selectors::run_selectors(&workdir_bg)
+                            {
+                                cfg.selectors.matched = result
+                                    .matched
+                                    .iter()
+                                    .map(|m| savhub_local::presets::ProjectSelectorMatch {
+                                        selector: m.selector.name.clone(),
+                                        flocks: m.flocks.clone(),
+                                        skills: m.skills.clone(),
+                                        repos: m.repos.clone(),
+                                    })
+                                    .collect();
+                            }
+                            let _ = savhub_local::presets::write_project_config(&workdir_bg, &cfg);
                         }
-                        let Some(rel_dir) = client.kind.project_skills_dir() else {
-                            continue;
-                        };
-                        let target = workdir_bg.join(rel_dir).join(&info.slug);
-                        let _ = std::fs::create_dir_all(target.parent().unwrap());
-                        let _ = savhub_local::skills::copy_skill_folder(&info.local_path, &target);
-                    }
-                }
-                let mut lock =
-                    savhub_local::presets::read_project_lockfile(&workdir_bg).unwrap_or_default();
-                for info in &results {
-                    if !lock.skills.iter().any(|s| s.slug() == info.slug) {
-                        let vi = savhub_local::skills::read_skill_version_info(&info.local_path)
-                            .unwrap_or_default();
-                        lock.skills.push(savhub_local::presets::ProjectLockedSkill {
-                            sign: savhub_local::registry::make_skill_sign(
-                                &info.repo_sign,
-                                &info.skill_path,
-                            ),
-                            version: vi.version,
-                            commit_hash: vi.git_commit,
-                        });
-                    }
-                }
-                let _ = savhub_local::presets::write_project_lockfile(&workdir, &lock);
-            }
-        } else {
-            let lock = savhub_local::presets::read_project_lockfile(&workdir_bg).unwrap_or_default();
-            let agents = savhub_local::clients::resolve_clients(&checked_bg);
-            for skill in &lock.skills {
-                for client in &agents {
-                    if !client.installed {
-                        continue;
-                    }
-                    let Some(rel_dir) = client.kind.project_skills_dir() else {
-                        continue;
-                    };
-                    let _ = std::fs::remove_dir_all(workdir_bg.join(rel_dir).join(skill.slug()));
-                }
-            }
-            if let Ok(mut cfg) = savhub_local::presets::read_project_config(&workdir_bg) {
-                cfg.selectors.matched.clear();
-                let _ = savhub_local::presets::write_project_config(&workdir_bg, &cfg);
-            }
-            let _ = std::fs::remove_file(workdir_bg.join("savhub.lock"));
-        }
 
-        let _ = savhub_local::config::add_project(&workdir_bg.display().to_string());
-        Ok(())
-        }).await;
-        apply_status.set(2);
-        version.with_mut(|v| *v += 1);
+                        let config = savhub_local::presets::read_project_config(&workdir_bg)
+                            .unwrap_or_default();
+                        let skipped = &config.skills.manual_skipped;
+                        let filtered: Vec<String> = skills_to_install
+                            .iter()
+                            .filter(|s| !savhub_local::registry::skill_matches_skipped(s, skipped))
+                            .cloned()
+                            .collect();
+
+                        if let Ok(results) = savhub_local::registry::install_skills_batch(&filtered)
+                        {
+                            let agents = savhub_local::clients::resolve_clients(&checked_bg);
+                            for info in &results {
+                                for client in &agents {
+                                    if !client.installed {
+                                        continue;
+                                    }
+                                    let Some(rel_dir) = client.kind.project_skills_dir() else {
+                                        continue;
+                                    };
+                                    let target = workdir_bg.join(rel_dir).join(&info.slug);
+                                    let _ = std::fs::create_dir_all(target.parent().unwrap());
+                                    let _ = savhub_local::skills::copy_skill_folder(
+                                        &info.local_path,
+                                        &target,
+                                    );
+                                }
+                            }
+                            let mut lock =
+                                savhub_local::presets::read_project_lockfile(&workdir_bg)
+                                    .unwrap_or_default();
+                            for info in &results {
+                                if !lock.skills.iter().any(|s| s.slug() == info.slug) {
+                                    let vi = savhub_local::skills::read_skill_version_info(
+                                        &info.local_path,
+                                    )
+                                    .unwrap_or_default();
+                                    lock.skills.push(savhub_local::presets::ProjectLockedSkill {
+                                        sign: savhub_local::registry::make_skill_sign(
+                                            &info.repo_sign,
+                                            &info.skill_path,
+                                        ),
+                                        version: vi.version,
+                                        commit_hash: vi.git_commit,
+                                    });
+                                }
+                            }
+                            let _ = savhub_local::presets::write_project_lockfile(&workdir, &lock);
+                        }
+                    } else {
+                        let lock = savhub_local::presets::read_project_lockfile(&workdir_bg)
+                            .unwrap_or_default();
+                        let agents = savhub_local::clients::resolve_clients(&checked_bg);
+                        for skill in &lock.skills {
+                            for client in &agents {
+                                if !client.installed {
+                                    continue;
+                                }
+                                let Some(rel_dir) = client.kind.project_skills_dir() else {
+                                    continue;
+                                };
+                                let _ = std::fs::remove_dir_all(
+                                    workdir_bg.join(rel_dir).join(skill.slug()),
+                                );
+                            }
+                        }
+                        if let Ok(mut cfg) = savhub_local::presets::read_project_config(&workdir_bg)
+                        {
+                            cfg.selectors.matched.clear();
+                            let _ = savhub_local::presets::write_project_config(&workdir_bg, &cfg);
+                        }
+                        let _ = std::fs::remove_file(workdir_bg.join("savhub.lock"));
+                    }
+
+                    let _ = savhub_local::config::add_project(&workdir_bg.display().to_string());
+                    Ok(())
+                },
+            )
+            .await;
+            apply_status.set(2);
+            version.with_mut(|v| *v += 1);
         }); // end spawn
     };
 

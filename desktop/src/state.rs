@@ -1,9 +1,8 @@
 use std::path::PathBuf;
 
 use dioxus::prelude::*;
-use savhub_shared::UserSummary;
-
 use savhub_local::config::SecurityLevel;
+use savhub_shared::UserSummary;
 
 use crate::api::{ApiClient, ApiCompatibility};
 use crate::i18n::Language;
@@ -24,7 +23,14 @@ fn default_workdir() -> PathBuf {
 ///   2. `~/.savhub/registry.json` → `rest_api.base_url`
 ///   3. `~/.savhub/config.toml` → `registry`
 ///   4. Default fallback
-fn load_config() -> (String, Option<String>, Language, PathBuf, Vec<String>, SecurityLevel) {
+fn load_config() -> (
+    String,
+    Option<String>,
+    Language,
+    PathBuf,
+    Vec<String>,
+    SecurityLevel,
+) {
     // Highest priority: config.toml / registry.json via read_api_base_url()
     let api_override = savhub_local::registry::read_api_base_url();
 

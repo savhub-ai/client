@@ -469,7 +469,14 @@ fn AccountPane() -> Element {
                     let base = state.api_base.read().clone();
                     let lang_code = state.lang.read().code();
                     let workdir = state.workdir.read().clone();
-                    save_config(&base, &token, lang_code, &workdir, &[], *state.security_level.read());
+                    save_config(
+                        &base,
+                        &token,
+                        lang_code,
+                        &workdir,
+                        &[],
+                        *state.security_level.read(),
+                    );
                     state.token.set(Some(token.clone()));
                     token_input.set(token);
 
@@ -506,7 +513,14 @@ fn AccountPane() -> Element {
         let base = state.api_base.read().clone();
         let lang_code = state.lang.read().code();
         let workdir = state.workdir.read().clone();
-        save_config(&base, "", lang_code, &workdir, &[], *state.security_level.read());
+        save_config(
+            &base,
+            "",
+            lang_code,
+            &workdir,
+            &[],
+            *state.security_level.read(),
+        );
         login_status.set(Some(t.logged_out.to_string()));
     };
 

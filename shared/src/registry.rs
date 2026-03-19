@@ -2047,8 +2047,7 @@ pub fn count_cached_skills(
     installed_only: bool,
 ) -> Result<usize> {
     let conn = open_cache()?;
-    let (where_clause, search_params) =
-        build_search_clause(query, status_filter, installed_only);
+    let (where_clause, search_params) = build_search_clause(query, status_filter, installed_only);
     let count_sql = format!("SELECT COUNT(*) FROM skills {where_clause}");
     let mut stmt = conn.prepare(&count_sql)?;
     bind_search_params(&mut stmt, &search_params)
@@ -2064,8 +2063,7 @@ pub fn list_cached_skill_summaries(
 ) -> Result<(Vec<CachedSkillSummary>, usize)> {
     let conn = open_cache()?;
     let offset = page * page_size;
-    let (where_clause, search_params) =
-        build_search_clause(query, status_filter, installed_only);
+    let (where_clause, search_params) = build_search_clause(query, status_filter, installed_only);
 
     let count_sql = format!("SELECT COUNT(*) FROM skills {where_clause}");
     let total: usize = {

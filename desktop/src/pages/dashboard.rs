@@ -476,7 +476,14 @@ fn UserCard(label: &'static str) -> Element {
                     let base = state.api_base.read().clone();
                     let lang_code = state.lang.read().code();
                     let workdir = state.workdir.read().clone();
-                    crate::pages::settings::save_config(&base, &token, lang_code, &workdir, &[], *state.security_level.read());
+                    crate::pages::settings::save_config(
+                        &base,
+                        &token,
+                        lang_code,
+                        &workdir,
+                        &[],
+                        *state.security_level.read(),
+                    );
                     state.token.set(Some(token));
 
                     let client = state.api_client();

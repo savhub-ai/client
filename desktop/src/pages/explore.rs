@@ -5,9 +5,9 @@ use savhub_local::registry::{CachedSkillSummary, RegistryFlock, SecuritySummary}
 
 use crate::components::pagination::{self, PaginationControls};
 use crate::components::view_toggle::{ViewMode, ViewToggleButton};
+use crate::i18n;
 use crate::state::AppState;
 use crate::theme::Theme;
-use crate::i18n;
 
 const EXPLORE_PAGE_SIZE: usize = 24;
 
@@ -74,13 +74,17 @@ fn load_skills_page(
                 EXPLORE_PAGE_SIZE,
             )
             .map_err(|e| e.to_string())?;
-            let total = savhub_local::registry::count_cached_skills(query_ref, Some("active"), false)
-                .map_err(|e| e.to_string())?;
+            let total =
+                savhub_local::registry::count_cached_skills(query_ref, Some("active"), false)
+                    .map_err(|e| e.to_string())?;
             let installed_total =
                 savhub_local::registry::count_cached_skills(query_ref, Some("active"), true)
                     .map_err(|e| e.to_string())?;
             Ok::<_, String>((
-                items.into_iter().map(DisplaySkill::from).collect::<Vec<_>>(),
+                items
+                    .into_iter()
+                    .map(DisplaySkill::from)
+                    .collect::<Vec<_>>(),
                 filtered_total,
                 total,
                 installed_total,
@@ -262,15 +266,16 @@ pub fn ExplorePage() -> Element {
     let current_view = *active_view.read();
     let visible_skills = skill_list.read().clone();
     let skill_total = *total_skills.read();
-    let current_page_index = pagination::clamp_page(
-        *current_page.read(),
-        skill_total,
-        EXPLORE_PAGE_SIZE,
-    );
+    let current_page_index =
+        pagination::clamp_page(*current_page.read(), skill_total, EXPLORE_PAGE_SIZE);
     let total_pages = pagination::total_pages(skill_total, EXPLORE_PAGE_SIZE);
     let filter_items = [
         (SkillFilter::All, all_label, *total_skills.read()),
-        (SkillFilter::Installed, installed_label, *installed_skill_total.read()),
+        (
+            SkillFilter::Installed,
+            installed_label,
+            *installed_skill_total.read(),
+        ),
     ];
 
     rsx! {
