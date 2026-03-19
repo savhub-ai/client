@@ -2443,8 +2443,7 @@ pub fn list_flocks_page(
     bound.push(Box::new(page_size as i64));
     bound.push(Box::new(offset as i64));
 
-    let refs: Vec<&dyn rusqlite::types::ToSql> =
-        bound.iter().map(|value| value.as_ref()).collect();
+    let refs: Vec<&dyn rusqlite::types::ToSql> = bound.iter().map(|value| value.as_ref()).collect();
     let rows = stmt.query_map(refs.as_slice(), |row| {
         let slug: String = row.get(0)?;
         let json: String = row.get(1)?;

@@ -141,12 +141,9 @@ fn load_flocks_page(
             } else {
                 Some(query.as_str())
             };
-            let (flocks, total) = savhub_local::registry::list_flocks_page(
-                query_ref,
-                page_index,
-                FLOCKS_PAGE_SIZE,
-            )
-            .map_err(|e| e.to_string())?;
+            let (flocks, total) =
+                savhub_local::registry::list_flocks_page(query_ref, page_index, FLOCKS_PAGE_SIZE)
+                    .map_err(|e| e.to_string())?;
             let mut items = Vec::with_capacity(flocks.len());
             for flock in flocks {
                 let skill_slugs =
