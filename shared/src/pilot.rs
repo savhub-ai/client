@@ -43,8 +43,7 @@ pub fn install(agents: &[String]) -> Result<Vec<PathBuf>> {
     let mut installed = Vec::new();
     for agent in agents {
         let dir = agent_skill_dir(agent)?;
-        fs::create_dir_all(&dir)
-            .with_context(|| format!("failed to create {}", dir.display()))?;
+        fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
 
         let dest = dir.join("savhub-pilot.md");
         fs::write(&dest, SKILL_CONTENT)

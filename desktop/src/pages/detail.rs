@@ -391,4 +391,3 @@ fn format_bytes(size: i32) -> String {
         format!("{:.1} MB", size as f64 / 1024.0 / 1024.0)
     }
 }
-

@@ -2883,8 +2883,7 @@ fn cmd_pilot(command: PilotCommand) -> Result<()> {
         if !args.agents.is_empty() {
             return Ok(args.agents.clone());
         }
-        let cfg = savhub_local::config::read_global_config()?
-            .unwrap_or_default();
+        let cfg = savhub_local::config::read_global_config()?.unwrap_or_default();
         if cfg.agents.is_empty() {
             // Default to claude-code if nothing configured
             Ok(vec!["claude-code".to_string()])
@@ -2900,7 +2899,10 @@ fn cmd_pilot(command: PilotCommand) -> Result<()> {
             for dir in &installed {
                 println!("  Installed: {}", dir.display());
             }
-            println!("\n{} agent(s) configured. Run `savhub apply` in your project to activate.", installed.len());
+            println!(
+                "\n{} agent(s) configured. Run `savhub apply` in your project to activate.",
+                installed.len()
+            );
         }
         PilotCommand::Uninstall(args) => {
             let agents = resolve_agents(&args)?;

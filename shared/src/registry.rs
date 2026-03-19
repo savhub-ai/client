@@ -1002,8 +1002,8 @@ pub fn install_skill_from_registry(sign: &str) -> Result<PathBuf> {
     install_skill(slug)?;
 
     // Find the actual skill directory within the repo
-    let skill_path = find_skill_in_repo(&repo_dir, &source_path)
-        .unwrap_or_else(|| repo_dir.join(&source_path));
+    let skill_path =
+        find_skill_in_repo(&repo_dir, &source_path).unwrap_or_else(|| repo_dir.join(&source_path));
 
     // Update repo/path metadata in installed_skills.json
     let mut entries = read_installed_skills_file().unwrap_or_default();
