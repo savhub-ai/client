@@ -189,5 +189,6 @@ pub fn write_global_config(config: &GlobalConfig) -> Result<()> {
         }
     }
 
+    let _ = crate::pilot::notify_config_changed();
     Ok(())
 }

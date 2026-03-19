@@ -151,6 +151,13 @@ pub struct Texts {
     pub compat_incompatible: &'static str,
     pub compat_update_now: &'static str,
 
+    // Security
+    pub security_unverified: &'static str,
+    pub security_scanning: &'static str,
+    pub security_verified: &'static str,
+    pub security_flagged: &'static str,
+    pub security_rejected: &'static str,
+
     // Detail
     pub back_to_explore: &'static str,
     pub latest_version: &'static str,
@@ -437,6 +444,12 @@ static EN: Texts = Texts {
     compat_incompatible: "Registry API version is incompatible with this client. Data may not work correctly. Please update immediately.",
     compat_update_now: "Check for Updates",
 
+    security_unverified: "Unverified",
+    security_scanning: "Scanning",
+    security_verified: "Verified",
+    security_flagged: "Flagged",
+    security_rejected: "Rejected",
+
     back_to_explore: "\u{2190} Back to Skills",
     latest_version: "Latest Version",
     statistics: "Statistics",
@@ -645,6 +658,12 @@ static ZH: Texts = Texts {
 
     compat_incompatible: "注册表 API 版本与此客户端不兼容，数据可能无法正常使用。请立即更新客户端。",
     compat_update_now: "检查更新",
+
+    security_unverified: "未验证",
+    security_scanning: "扫描中",
+    security_verified: "已验证",
+    security_flagged: "已标记",
+    security_rejected: "已拒绝",
 
     back_to_explore: "\u{2190} 返回技能",
     latest_version: "最新版本",

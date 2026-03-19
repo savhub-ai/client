@@ -69,6 +69,8 @@ pub struct AppState {
     /// Registry API version compatibility status.
     pub registry_compat: Signal<ApiCompatibility>,
     pub agents: Signal<Vec<String>>,
+    /// Incremented when an external config change is detected via the signal file.
+    pub config_version: Signal<u64>,
 }
 
 impl AppState {
@@ -83,6 +85,7 @@ impl AppState {
             lang: Signal::new(lang),
             registry_compat: Signal::new(ApiCompatibility::Unknown),
             agents: Signal::new(agents),
+            config_version: Signal::new(0),
         }
     }
 

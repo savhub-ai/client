@@ -680,6 +680,7 @@ pub fn write_selectors_store(store: &SelectorsStore) -> Result<()> {
     }
     let payload = serde_json::to_string_pretty(store)?;
     fs::write(&path, format!("{payload}\n"))?;
+    let _ = crate::pilot::notify_config_changed();
     Ok(())
 }
 

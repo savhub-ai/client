@@ -193,6 +193,8 @@ fn DetailContent(detail: SkillDetailResponse, slug: String) -> Element {
                 div {
                     h1 { style: "font-size: 28px; font-weight: 700; color: {Theme::TEXT}; margin-bottom: 4px;",
                         "{detail.skill.display_name}"
+                        // TODO: add security badge once savhub-shared is published
+                        // with the security_status field on SkillListItem.
                     }
                     p { style: "font-size: 14px; color: {Theme::MUTED}; margin-bottom: 8px; display: flex; align-items: center; gap: 4px;",
                         crate::components::copy_sign::CopySign { value: slug.clone() }
@@ -389,3 +391,4 @@ fn format_bytes(size: i32) -> String {
         format!("{:.1} MB", size as f64 / 1024.0 / 1024.0)
     }
 }
+

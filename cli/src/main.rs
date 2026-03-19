@@ -158,6 +158,11 @@ enum Command {
         #[command(subcommand)]
         command: FlockCommand,
     },
+    /// Manage the savhub-pilot AI skill (install/uninstall/status)
+    Pilot {
+        #[command(subcommand)]
+        command: PilotCommand,
+    },
     /// Open documentation in the browser
     Docs,
 }
@@ -259,6 +264,25 @@ struct FlockInstallArgs {
     /// Skip confirmation prompt
     #[arg(long, action = ArgAction::SetTrue)]
     yes: bool,
+}
+
+#[derive(Debug, Subcommand)]
+enum PilotCommand {
+    /// Install the savhub-pilot skill into AI agent skill directories
+    Install(PilotAgentArgs),
+    /// Uninstall the savhub-pilot skill from AI agent skill directories
+    Uninstall(PilotAgentArgs),
+    /// Show installation status for each configured agent
+    Status(PilotAgentArgs),
+    /// Touch the config-changed signal file (useful for external tools)
+    Notify,
+}
+
+#[derive(Debug, Args)]
+struct PilotAgentArgs {
+    /// Override which agents to target (defaults to agents from config)
+    #[arg(long, num_args = 1.., value_delimiter = ',')]
+    agents: Vec<String>,
 }
 
 #[derive(Debug, Default, Args)]
@@ -523,6 +547,7 @@ async fn main() -> Result<()> {
         Some(Command::Selector { command }) => cmd_selector(&opts, command)?,
         Some(Command::Apply(args)) => cmd_apply(&opts, args)?,
         Some(Command::Flock { command }) => cmd_flock(&opts, command)?,
+        Some(Command::Pilot { command }) => cmd_pilot(command)?,
         Some(Command::Docs) => {
             let url = "https://savhub.ai/docs/en/client";
             println!("Documentation: {url}");
@@ -2841,6 +2866,67 @@ fn cmd_flock(_opts: &GlobalOpts, command: FlockCommand) -> Result<()> {
                 "\nDone. {added} skill(s) added from flock \"{}\".",
                 flock.slug
             );
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// pilot command
+// ---------------------------------------------------------------------------
+
+fn cmd_pilot(command: PilotCommand) -> Result<()> {
+    use savhub_local::pilot;
+
+    // Resolve agents: use --agents flag, or fall back to config
+    let resolve_agents = |args: &PilotAgentArgs| -> Result<Vec<String>> {
+        if !args.agents.is_empty() {
+            return Ok(args.agents.clone());
+        }
+        let cfg = savhub_local::config::read_global_config()?
+            .unwrap_or_default();
+        if cfg.agents.is_empty() {
+            // Default to claude-code if nothing configured
+            Ok(vec!["claude-code".to_string()])
+        } else {
+            Ok(cfg.agents)
+        }
+    };
+
+    match command {
+        PilotCommand::Install(args) => {
+            let agents = resolve_agents(&args)?;
+            let installed = pilot::install(&agents)?;
+            for dir in &installed {
+                println!("  Installed: {}", dir.display());
+            }
+            println!("\n{} agent(s) configured. Run `savhub apply` in your project to activate.", installed.len());
+        }
+        PilotCommand::Uninstall(args) => {
+            let agents = resolve_agents(&args)?;
+            let removed = pilot::uninstall(&agents)?;
+            if removed.is_empty() {
+                println!("Nothing to remove.");
+            } else {
+                for dir in &removed {
+                    println!("  Removed: {}", dir.display());
+                }
+            }
+        }
+        PilotCommand::Status(args) => {
+            let agents = resolve_agents(&args)?;
+            let statuses = pilot::status(&agents)?;
+            for (agent, path) in &statuses {
+                if let Some(p) = path {
+                    println!("  {agent}: installed at {}", p.display());
+                } else {
+                    println!("  {agent}: not installed");
+                }
+            }
+        }
+        PilotCommand::Notify => {
+            pilot::notify_config_changed()?;
+            println!("Config change signal sent.");
         }
     }
     Ok(())

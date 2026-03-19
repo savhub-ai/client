@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use dioxus::prelude::*;
-use savhub_local::registry::RegistryFlock;
+use savhub_local::registry::{RegistryFlock, SecuritySummary};
 use savhub_shared::{PagedResponse, SearchResponse, SearchResult, SkillListItem};
 
 use crate::components::pagination::{self, PaginationControls};
@@ -854,6 +854,7 @@ fn FlockListRow(
                     h3 { style: "font-size: 15px; font-weight: 600; color: {Theme::TEXT};",
                         "{flock.name}"
                     }
+                    SecurityBadge { security: flock.security.clone() }
                     span { style: "font-size: 12px; padding: 2px 8px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border-radius: 999px; white-space: nowrap;",
                         "v{version_display}"
                     }
@@ -980,8 +981,11 @@ fn FlockCard(
             onclick: move |_| { nav.push(crate::Route::FlockDetail { slug: nav_slug.clone() }); },
             div { style: "display: flex; justify-content: space-between; align-items: flex-start;",
                 div {
-                    h3 { style: "font-size: 15px; font-weight: 600; color: {Theme::TEXT}; margin-bottom: 2px;",
-                        "{flock.name}"
+                    div { style: "display: flex; align-items: center; gap: 6px; margin-bottom: 2px;",
+                        h3 { style: "font-size: 15px; font-weight: 600; color: {Theme::TEXT};",
+                            "{flock.name}"
+                        }
+                        SecurityBadge { security: flock.security.clone() }
                     }
                     p { style: "font-size: 12px; color: {Theme::MUTED};",
                         "{slug_display}"
@@ -1022,6 +1026,33 @@ fn FlockCard(
             if let Some(err) = action_error.read().as_ref() {
                 p { style: "font-size: 11px; color: {Theme::DANGER};", "{err}" }
             }
+        }
+    }
+}
+
+#[component]
+fn SecurityBadge(security: SecuritySummary) -> Element {
+    let state = use_context::<AppState>();
+    let t = i18n::texts(*state.lang.read());
+    let status = security.status.as_deref().unwrap_or("unverified");
+    let value_bg = match status {
+        "verified" => "#2e8b57",
+        "scanning" => "#1e82d2",
+        "flagged" => "#b8860b",
+        "rejected" => "#9f2b2b",
+        _ => "#999",
+    };
+    let value_label = match status {
+        "verified" => t.security_verified,
+        "scanning" => t.security_scanning,
+        "flagged" => t.security_flagged,
+        "rejected" => t.security_rejected,
+        _ => t.security_unverified,
+    };
+    rsx! {
+        span { style: "display: inline-flex; align-items: center; font-size: 11px; line-height: 1; border-radius: 3px; overflow: hidden; vertical-align: middle; white-space: nowrap; position: relative; top: -1px;",
+            span { style: "padding: 3px 6px; background: #555; color: #fff;", "security" }
+            span { style: "padding: 3px 6px; background: {value_bg}; color: #fff; font-weight: 600;", "{value_label}" }
         }
     }
 }

@@ -40,6 +40,10 @@ pub struct SecuritySummary {
     /// Timestamp of the most recent scan (RFC 3339).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scanned_at: Option<DateTime<Utc>>,
+    /// Git commit SHA that was scanned. Clients should install this exact
+    /// commit to guarantee they get the code that was verified.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scanned_commit: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -884,7 +888,8 @@ pub fn install_skill_from_registry(sign: &str) -> Result<PathBuf> {
 
     let source = get_repo_source_for_skill(slug)?
         .with_context(|| format!("no repo source found for skill '{slug}'"))?;
-    let (git_url, git_ref, source_path) = match &source {
+    let scanned_commit = skill.security.scanned_commit.clone();
+    let (git_url, _git_ref, source_path) = match &source {
         RegistrySource::Git { url, r#ref, .. } => {
             let sp = if !skill.path.is_empty() {
                 skill.path.clone()
@@ -896,75 +901,100 @@ pub fn install_skill_from_registry(sign: &str) -> Result<PathBuf> {
         _ => bail!("skill '{slug}' has no git source"),
     };
 
+    // Only install code that has been security-scanned. If no scanned_commit
+    // is available the skill has never been verified — refuse to install.
+    let pinned_ref = match &scanned_commit {
+        Some(commit) => commit.clone(),
+        None => bail!(
+            "skill '{slug}' has no scanned commit — \
+             it has not been security-verified and cannot be installed"
+        ),
+    };
+
     let base = repos_dir()?;
     fs::create_dir_all(&base)?;
 
     let repo_name = repo_dir_name(&git_url);
-    let repo_sign = base.join(&repo_name);
+    let repo_dir = base.join(&repo_name);
 
-    if repo_sign.exists() {
-        // Existing repo: add the skill path to sparse-checkout and pull
-        sparse_checkout_add(&repo_sign, &[source_path.as_str()])?;
+    if repo_dir.exists() {
+        // Existing repo: fetch the exact scanned commit and checkout
+        sparse_checkout_add(&repo_dir, &[source_path.as_str()])?;
 
-        let status = std::process::Command::new("git")
-            .args(["pull", "--ff-only"])
-            .current_dir(&repo_sign)
+        let fetch_ok = std::process::Command::new("git")
+            .args(["fetch", "--depth", "1", "origin", &pinned_ref])
+            .current_dir(&repo_dir)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::piped())
-            .status();
-        match status {
-            Ok(s) if s.success() => {}
-            _ => {
-                // Pull failed, try fetch+reset
-                let _ = std::process::Command::new("git")
-                    .args(["fetch", "--depth", "1", "origin", &git_ref.value])
-                    .current_dir(&repo_sign)
-                    .status();
-                let _ = std::process::Command::new("git")
-                    .args(["checkout", &git_ref.value, "--"])
-                    .current_dir(&repo_sign)
-                    .status();
-            }
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !fetch_ok {
+            bail!("failed to fetch scanned commit {pinned_ref} from {git_url}");
+        }
+        let checkout_ok = std::process::Command::new("git")
+            .args(["checkout", &pinned_ref])
+            .current_dir(&repo_dir)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !checkout_ok {
+            bail!("failed to checkout scanned commit {pinned_ref}");
         }
     } else {
-        // Fresh shallow clone with sparse-checkout (only check out the needed path)
-        let mut args = vec![
-            "clone".to_string(),
-            "--depth".to_string(),
-            "1".to_string(),
-            "--no-checkout".to_string(),
-            "--filter=blob:none".to_string(),
-        ];
-        if git_ref.r#type == "branch" || git_ref.r#type == "tag" {
-            args.push("--branch".to_string());
-            args.push(git_ref.value.clone());
-        }
-        args.push(git_url.clone());
-        args.push(repo_sign.display().to_string());
+        // Fresh init + fetch of the exact scanned commit (never pulls HEAD)
+        fs::create_dir_all(&repo_dir)?;
 
-        let status = std::process::Command::new("git")
-            .args(&args)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
+        let init_ok = std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(&repo_dir)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .status()
-            .with_context(|| "failed to run git clone")?;
-
-        if !status.success() {
-            bail!("git clone failed for {git_url}");
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !init_ok {
+            bail!("git init failed for {git_url}");
         }
 
-        // Initialize sparse-checkout with the skill path
+        let _ = std::process::Command::new("git")
+            .args(["remote", "add", "origin", &git_url])
+            .current_dir(&repo_dir)
+            .status();
+
+        // Configure sparse-checkout before fetching so only needed files are
+        // downloaded.
         let _ = std::process::Command::new("git")
             .args(["sparse-checkout", "init", "--cone"])
-            .current_dir(&repo_sign)
+            .current_dir(&repo_dir)
             .status();
         let _ = std::process::Command::new("git")
             .args(["sparse-checkout", "set", &source_path])
-            .current_dir(&repo_sign)
+            .current_dir(&repo_dir)
             .status();
+
+        // Fetch only the scanned commit — never the branch HEAD.
+        let fetch_ok = std::process::Command::new("git")
+            .args(["fetch", "--depth", "1", "origin", &pinned_ref])
+            .current_dir(&repo_dir)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !fetch_ok {
+            // Clean up the empty repo dir on failure
+            let _ = fs::remove_dir_all(&repo_dir);
+            bail!("failed to fetch scanned commit {pinned_ref} from {git_url}");
+        }
+
         let _ = std::process::Command::new("git")
-            .args(["checkout"])
-            .current_dir(&repo_sign)
+            .args(["checkout", "FETCH_HEAD"])
+            .current_dir(&repo_dir)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .status();
     }
 
@@ -972,8 +1002,8 @@ pub fn install_skill_from_registry(sign: &str) -> Result<PathBuf> {
     install_skill(slug)?;
 
     // Find the actual skill directory within the repo
-    let skill_path = find_skill_in_repo(&repo_sign, &source_path)
-        .unwrap_or_else(|| repo_sign.join(&source_path));
+    let skill_path = find_skill_in_repo(&repo_dir, &source_path)
+        .unwrap_or_else(|| repo_dir.join(&source_path));
 
     // Update repo/path metadata in installed_skills.json
     let mut entries = read_installed_skills_file().unwrap_or_default();

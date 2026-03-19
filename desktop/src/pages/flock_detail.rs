@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use dioxus::prelude::*;
-use savhub_local::registry::{self, RegistryFlock, RegistrySkill};
+use savhub_local::registry::{self, RegistryFlock, RegistrySkill, SecuritySummary};
 
 use crate::i18n;
 use crate::state::AppState;
@@ -117,6 +117,7 @@ pub fn FlockDetailPage(slug: String) -> Element {
                     h1 { style: "font-size: 18px; font-weight: 700; color: {Theme::TEXT};",
                         "{flock.name}"
                     }
+                    SecurityBadge { security: flock.security.clone() }
                     span { style: "font-size: 12px; padding: 2px 10px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border-radius: 999px;",
                         "v{version_display}"
                     }
@@ -251,6 +252,7 @@ fn FlockSkillRow(skill: RegistrySkill, mut installed: Signal<BTreeMap<String, bo
                     h3 { style: "font-size: 14px; font-weight: 600; color: {Theme::TEXT};",
                         "{skill.name}"
                     }
+                    SecurityBadge { security: skill.security.clone() }
                     span { style: "font-size: 11px; padding: 1px 7px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border-radius: 999px;",
                         "v{version_display}"
                     }
@@ -285,6 +287,33 @@ fn FlockSkillRow(skill: RegistrySkill, mut installed: Signal<BTreeMap<String, bo
             if let Some(err) = error_msg.read().as_ref() {
                 p { style: "font-size: 11px; color: {Theme::DANGER};", "{err}" }
             }
+        }
+    }
+}
+
+#[component]
+fn SecurityBadge(security: SecuritySummary) -> Element {
+    let state = use_context::<AppState>();
+    let t = i18n::texts(*state.lang.read());
+    let status = security.status.as_deref().unwrap_or("unverified");
+    let value_bg = match status {
+        "verified" => "#2e8b57",
+        "scanning" => "#1e82d2",
+        "flagged" => "#b8860b",
+        "rejected" => "#9f2b2b",
+        _ => "#999",
+    };
+    let value_label = match status {
+        "verified" => t.security_verified,
+        "scanning" => t.security_scanning,
+        "flagged" => t.security_flagged,
+        "rejected" => t.security_rejected,
+        _ => t.security_unverified,
+    };
+    rsx! {
+        span { style: "display: inline-flex; align-items: center; font-size: 11px; line-height: 1; border-radius: 3px; overflow: hidden; vertical-align: middle; white-space: nowrap; position: relative; top: -1px;",
+            span { style: "padding: 3px 6px; background: #555; color: #fff;", "security" }
+            span { style: "padding: 3px 6px; background: {value_bg}; color: #fff; font-weight: 600;", "{value_label}" }
         }
     }
 }

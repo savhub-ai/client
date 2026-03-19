@@ -11,6 +11,7 @@ mod skills;
 mod state;
 mod theme;
 mod updater;
+mod watcher;
 
 use api::{ApiCompatibility, CLIENT_API_VERSION};
 use dioxus::prelude::*;
@@ -193,6 +194,15 @@ fn Shell() -> Element {
     let mut update_status = use_signal(|| updater::UpdateStatus::Checking);
     let mut user_loaded = use_signal(|| false);
 
+    // Poll for external config changes (selectors.json, config.kdl, etc.)
+    let config_version = watcher::use_config_watcher();
+    use_effect(move || {
+        let v = *config_version.read();
+        if v > 0 {
+            state.config_version.set(v);
+        }
+    });
+
     // Check for updates and registry API compatibility on mount
     use_effect(move || {
         spawn(async move {
@@ -260,6 +270,7 @@ fn Shell() -> Element {
             div { style: "flex: 1; display: flex; flex-direction: column; overflow: hidden;",
                 CompatBanner {}
                 UpdateBanner { status: update_status }
+                ConfigChangedBanner {}
                 div { style: "flex: 1; overflow-y: auto;",
                     Outlet::<Route> {}
                 }
@@ -375,6 +386,29 @@ fn CompatBanner() -> Element {
             }
         }
         _ => rsx! {},
+    }
+}
+
+/// Thin banner shown when external config changes are detected.
+#[component]
+fn ConfigChangedBanner() -> Element {
+    let state = use_context::<AppState>();
+    let version = *state.config_version.read();
+    let mut dismissed = use_signal(|| 0u64);
+
+    if version == 0 || version <= *dismissed.read() {
+        return rsx! {};
+    }
+
+    rsx! {
+        div { style: "display: flex; align-items: center; justify-content: space-between; padding: 6px 20px; background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%); color: white; font-size: 13px;",
+            span { "Config updated externally. Pages will reflect the latest changes." }
+            button {
+                style: "padding: 3px 10px; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 4px; font-size: 11px; cursor: pointer;",
+                onclick: move |_| dismissed.set(version),
+                "Dismiss"
+            }
+        }
     }
 }
 

@@ -143,11 +143,8 @@ fn dash_to_json(node: &kdl::KdlNode) -> Value {
 
 fn kdl_val(value: &kdl::KdlValue) -> Value {
     match value {
-        kdl::KdlValue::RawString(s) | kdl::KdlValue::String(s) => Value::String(s.clone()),
-        kdl::KdlValue::Base2(i)
-        | kdl::KdlValue::Base8(i)
-        | kdl::KdlValue::Base10(i)
-        | kdl::KdlValue::Base16(i) => Value::Number((*i).into()),
+        kdl::KdlValue::String(s) => Value::String(s.clone()),
+        kdl::KdlValue::Integer(i) => Value::Number((*i as i64).into()),
         kdl::KdlValue::Float(f) => serde_json::Number::from_f64(*f)
             .map(Value::Number)
             .unwrap_or(Value::Null),
@@ -190,7 +187,7 @@ fn json_to_kdl_node(name: &str, value: &Value) -> kdl::KdlNode {
         }
         Value::Number(n) => {
             if let Some(i) = n.as_i64() {
-                node.push(kdl::KdlEntry::new(kdl::KdlValue::Base10(i)));
+                node.push(kdl::KdlEntry::new(kdl::KdlValue::Integer(i as i128)));
             } else if let Some(f) = n.as_f64() {
                 node.push(kdl::KdlEntry::new(kdl::KdlValue::Float(f)));
             }
@@ -240,7 +237,7 @@ fn json_to_kdl_value(value: &Value) -> kdl::KdlValue {
         Value::String(s) => kdl::KdlValue::String(s.clone()),
         Value::Number(n) => {
             if let Some(i) = n.as_i64() {
-                kdl::KdlValue::Base10(i)
+                kdl::KdlValue::Integer(i as i128)
             } else if let Some(f) = n.as_f64() {
                 kdl::KdlValue::Float(f)
             } else {

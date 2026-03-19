@@ -229,6 +229,12 @@ jobs:
               <Feature Id="DesktopFeature" Title="Desktop shortcut" Description="Create a shortcut on the Desktop." Level="1">
                 <ComponentRef Id="DesktopShortcut" />
               </Feature>
+              <CustomAction Id="InstallPilotSkill" Directory="INSTALLDIR"
+                            ExeCommand="[INSTALLDIR]savhub.exe pilot install"
+                            Execute="deferred" Impersonate="yes" Return="ignore" />
+              <InstallExecuteSequence>
+                <Custom Action="InstallPilotSkill" After="InstallFinalize">NOT Installed OR REINSTALL</Custom>
+              </InstallExecuteSequence>
             </Package>
           </Wix>
           "@
@@ -302,6 +308,19 @@ jobs:
           CTRL
           sed -i 's/^          //' "${PKG_ROOT}/DEBIAN/control"
 
+          cat > "${PKG_ROOT}/DEBIAN/postinst" <<'POSTINST'
+          #!/bin/sh
+          set -e
+          # Install savhub-pilot skill for the installing user
+          if [ -n "${SUDO_USER:-}" ]; then
+            su - "$SUDO_USER" -c '/usr/local/bin/savhub pilot install 2>/dev/null || true'
+          else
+            /usr/local/bin/savhub pilot install 2>/dev/null || true
+          fi
+          POSTINST
+          sed -i 's/^          //' "${PKG_ROOT}/DEBIAN/postinst"
+          chmod 755 "${PKG_ROOT}/DEBIAN/postinst"
+
           dpkg-deb --build "${PKG_ROOT}" "dist/savhub-linux-x64.deb"
 
       - name: Upload .deb artifact
@@ -342,11 +361,27 @@ jobs:
           chmod 755 "${INSTALL_DEST}/savhub"
           chmod 755 "${INSTALL_DEST}/savhub-desktop"
 
+          # Create postinstall script for pilot skill installation
+          SCRIPTS_DIR="pkg-scripts"
+          mkdir -p "${SCRIPTS_DIR}"
+          cat > "${SCRIPTS_DIR}/postinstall" <<'POSTINST'
+          #!/bin/sh
+          # Install savhub-pilot skill for the installing user
+          REAL_USER="${USER:-$(whoami)}"
+          if [ -n "${SUDO_USER:-}" ]; then
+            REAL_USER="$SUDO_USER"
+          fi
+          su - "$REAL_USER" -c '/usr/local/bin/savhub pilot install 2>/dev/null || true'
+          POSTINST
+          sed -i '' 's/^          //' "${SCRIPTS_DIR}/postinstall"
+          chmod 755 "${SCRIPTS_DIR}/postinstall"
+
           pkgbuild \
             --root "${PKG_ROOT}" \
             --identifier ai.savhub.cli \
             --version "${VERSION}" \
             --install-location / \
+            --scripts "${SCRIPTS_DIR}" \
             "dist/savhub-macos-${ARCH}.pkg"
 
       - name: Upload .pkg artifact
