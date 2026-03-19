@@ -648,39 +648,71 @@ fn AddProjectSkillDialog(
 // Rescan & Apply modal
 // ---------------------------------------------------------------------------
 
+#[derive(Clone, Default)]
+struct ScanData {
+    matched_signs: Vec<String>,
+    flock_signs: Vec<String>,
+    skill_signs: Vec<String>,
+}
+
 #[component]
 fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal<u32>) -> Element {
     let state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
 
-    let workdir = PathBuf::from(&project_path);
-    let scan_result = savhub_local::selectors::run_selectors(&workdir).ok();
+    let mut scan_data = use_signal(ScanData::default);
+    let mut scan_loaded = use_signal(|| false);
 
-    // Collect skills from matched selectors + flocks
-    let (matched_signs, flock_signs, skill_signs) = if let Some(ref result) = scan_result {
-        let matched: Vec<String> = result
-            .matched
-            .iter()
-            .map(|m| m.selector.name.clone())
-            .collect();
-        let flocks = result.flocks.clone();
-
-        let mut skills: Vec<String> = result.skills.clone();
-        for flock_sign in &flocks {
-            if let Ok(flock_skills) = savhub_local::registry::list_flock_skill_slugs(flock_sign) {
-                for s in flock_skills {
-                    if !skills.contains(&s) {
-                        skills.push(s);
-                    }
-                }
+    // Run selectors off the UI thread
+    use_effect({
+        let project_path = project_path.clone();
+        move || {
+            if *scan_loaded.read() {
+                return;
             }
+            scan_loaded.set(true);
+            let pp = project_path.clone();
+            spawn(async move {
+                let data = tokio::task::spawn_blocking(move || {
+                    let workdir = PathBuf::from(&pp);
+                    let scan_result = savhub_local::selectors::run_selectors(&workdir).ok();
+                    if let Some(result) = scan_result {
+                        let matched: Vec<String> = result
+                            .matched
+                            .iter()
+                            .map(|m| m.selector.name.clone())
+                            .collect();
+                        let flocks = result.flocks.clone();
+                        let mut skills: Vec<String> = result.skills.clone();
+                        for flock_sign in &flocks {
+                            if let Ok(flock_skills) =
+                                savhub_local::registry::list_flock_skill_slugs(flock_sign)
+                            {
+                                for s in flock_skills {
+                                    if !skills.contains(&s) {
+                                        skills.push(s);
+                                    }
+                                }
+                            }
+                        }
+                        ScanData { matched_signs: matched, flock_signs: flocks, skill_signs: skills }
+                    } else {
+                        ScanData::default()
+                    }
+                })
+                .await
+                .unwrap_or_default();
+                scan_data.set(data);
+            });
         }
-        (matched, flocks, skills)
-    } else {
-        (Vec::new(), Vec::new(), Vec::new())
-    };
+    });
 
+    let data = scan_data.read();
+    let matched_signs = data.matched_signs.clone();
+    let flock_signs = data.flock_signs.clone();
+    let skill_signs = data.skill_signs.clone();
     let has_match = !matched_signs.is_empty();
+    drop(data);
 
     // Resolve AI agents with checkboxes
     let configured_agents = state.agents.read().clone();
@@ -701,6 +733,8 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
 
     let project_path_clone = project_path.clone();
     let skill_signs_cl = skill_signs.clone();
+    let matched_signs_cl = matched_signs.clone();
+    let flock_signs_cl = flock_signs.clone();
     let do_apply = move |_| {
         apply_status.set(1);
         let workdir = PathBuf::from(&project_path_clone);
@@ -712,33 +746,41 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
             .map(|(id, _)| id.clone())
             .collect();
 
-        if has_match {
-            if let Ok(mut cfg) = savhub_local::presets::read_project_config(&workdir) {
-                cfg.selectors.matched = scan_result
-                    .as_ref()
-                    .unwrap()
-                    .matched
-                    .iter()
-                    .map(|m| savhub_local::presets::ProjectSelectorMatch {
-                        selector: m.selector.name.clone(),
-                        flocks: m.flocks.clone(),
-                        skills: m.skills.clone(),
-                        repos: m.repos.clone(),
-                    })
-                    .collect();
-                let _ = savhub_local::presets::write_project_config(&workdir, &cfg);
+        let skills_to_install = skill_signs_cl.clone();
+        let matched_data = matched_signs_cl.clone();
+        let _flock_data = flock_signs_cl.clone();
+        spawn(async move {
+        let workdir_bg = workdir.clone();
+        let checked_bg = checked.clone();
+        let _ = tokio::task::spawn_blocking(move || -> Result<(), Box<dyn std::error::Error + Send>> {
+        if !matched_data.is_empty() {
+            if let Ok(mut cfg) = savhub_local::presets::read_project_config(&workdir_bg) {
+                // Re-run selectors in this thread to get full match data
+                if let Ok(result) = savhub_local::selectors::run_selectors(&workdir_bg) {
+                    cfg.selectors.matched = result
+                        .matched
+                        .iter()
+                        .map(|m| savhub_local::presets::ProjectSelectorMatch {
+                            selector: m.selector.name.clone(),
+                            flocks: m.flocks.clone(),
+                            skills: m.skills.clone(),
+                            repos: m.repos.clone(),
+                        })
+                        .collect();
+                }
+                let _ = savhub_local::presets::write_project_config(&workdir_bg, &cfg);
             }
 
-            let config = savhub_local::presets::read_project_config(&workdir).unwrap_or_default();
+            let config = savhub_local::presets::read_project_config(&workdir_bg).unwrap_or_default();
             let skipped = &config.skills.manual_skipped;
-            let filtered: Vec<String> = skill_signs_cl
+            let filtered: Vec<String> = skills_to_install
                 .iter()
                 .filter(|s| !savhub_local::registry::skill_matches_skipped(s, skipped))
                 .cloned()
                 .collect();
 
             if let Ok(results) = savhub_local::registry::install_skills_batch(&filtered) {
-                let agents = savhub_local::clients::resolve_clients(&checked);
+                let agents = savhub_local::clients::resolve_clients(&checked_bg);
                 for info in &results {
                     for client in &agents {
                         if !client.installed {
@@ -747,13 +789,13 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                         let Some(rel_dir) = client.kind.project_skills_dir() else {
                             continue;
                         };
-                        let target = workdir.join(rel_dir).join(&info.slug);
+                        let target = workdir_bg.join(rel_dir).join(&info.slug);
                         let _ = std::fs::create_dir_all(target.parent().unwrap());
                         let _ = savhub_local::skills::copy_skill_folder(&info.local_path, &target);
                     }
                 }
                 let mut lock =
-                    savhub_local::presets::read_project_lockfile(&workdir).unwrap_or_default();
+                    savhub_local::presets::read_project_lockfile(&workdir_bg).unwrap_or_default();
                 for info in &results {
                     if !lock.skills.iter().any(|s| s.slug() == info.slug) {
                         let vi = savhub_local::skills::read_skill_version_info(&info.local_path)
@@ -771,8 +813,8 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                 let _ = savhub_local::presets::write_project_lockfile(&workdir, &lock);
             }
         } else {
-            let lock = savhub_local::presets::read_project_lockfile(&workdir).unwrap_or_default();
-            let agents = savhub_local::clients::resolve_clients(&checked);
+            let lock = savhub_local::presets::read_project_lockfile(&workdir_bg).unwrap_or_default();
+            let agents = savhub_local::clients::resolve_clients(&checked_bg);
             for skill in &lock.skills {
                 for client in &agents {
                     if !client.installed {
@@ -781,19 +823,22 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                     let Some(rel_dir) = client.kind.project_skills_dir() else {
                         continue;
                     };
-                    let _ = std::fs::remove_dir_all(workdir.join(rel_dir).join(skill.slug()));
+                    let _ = std::fs::remove_dir_all(workdir_bg.join(rel_dir).join(skill.slug()));
                 }
             }
-            if let Ok(mut cfg) = savhub_local::presets::read_project_config(&workdir) {
+            if let Ok(mut cfg) = savhub_local::presets::read_project_config(&workdir_bg) {
                 cfg.selectors.matched.clear();
-                let _ = savhub_local::presets::write_project_config(&workdir, &cfg);
+                let _ = savhub_local::presets::write_project_config(&workdir_bg, &cfg);
             }
-            let _ = std::fs::remove_file(workdir.join("savhub.lock"));
+            let _ = std::fs::remove_file(workdir_bg.join("savhub.lock"));
         }
 
-        let _ = savhub_local::config::add_project(&workdir.display().to_string());
+        let _ = savhub_local::config::add_project(&workdir_bg.display().to_string());
+        Ok(())
+        }).await;
         apply_status.set(2);
         version.with_mut(|v| *v += 1);
+        }); // end spawn
     };
 
     let status = *apply_status.read();

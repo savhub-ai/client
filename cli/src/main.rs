@@ -2903,14 +2903,15 @@ fn cmd_pilot(command: PilotCommand) -> Result<()> {
     match command {
         PilotCommand::Install(args) => {
             let agents = resolve_agents(&args)?;
-            let installed = pilot::install(&agents)?;
-            for dir in &installed {
-                println!("  Installed: {}", dir.display());
+            let (shared, agent_dirs) = pilot::install(&agents)?;
+            println!("Installed savhub-pilot skill:\n");
+            println!("  shared:");
+            println!("    {}", shared.join("SKILL.md").display());
+            for (agent, dir) in &agent_dirs {
+                println!("  {agent}:");
+                println!("    {}", dir.join("SKILL.md").display());
             }
-            println!(
-                "\n{} agent(s) configured. Run `savhub apply` in your project to activate.",
-                installed.len()
-            );
+            println!("\nRun `savhub apply` in your project to activate.");
         }
         PilotCommand::Uninstall(args) => {
             let agents = resolve_agents(&args)?;

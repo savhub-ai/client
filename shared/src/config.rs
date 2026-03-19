@@ -5,6 +5,63 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Deserializer, Serialize};
 
+/// Minimum security level required for installing skills/flocks.
+///
+/// Maps to the server's `SecurityStatus` enum:
+/// - `verified` — Only install skills that passed all security scans
+/// - `flagged`  — Also allow skills flagged as suspicious
+/// - `any`      — Allow all skills regardless of security status (including unverified)
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SecurityLevel {
+    /// Only install skills with status = "verified" and verdict = "clean".
+    #[default]
+    Verified,
+    /// Also allow skills with status = "flagged" (suspicious patterns detected).
+    Flagged,
+    /// Allow all skills regardless of security status, including unverified.
+    Any,
+}
+
+impl SecurityLevel {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SecurityLevel::Verified => "verified",
+            SecurityLevel::Flagged => "flagged",
+            SecurityLevel::Any => "any",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "flagged" => SecurityLevel::Flagged,
+            "any" => SecurityLevel::Any,
+            _ => SecurityLevel::Verified,
+        }
+    }
+
+    /// Check if a skill/flock with the given security status and verdict is allowed.
+    pub fn allows(&self, status: Option<&str>, verdict: Option<&str>) -> bool {
+        match self {
+            SecurityLevel::Any => true,
+            SecurityLevel::Flagged => {
+                // Allow verified, flagged, scanning, unverified — reject only "rejected"
+                status.map_or(true, |s| s != "rejected")
+            }
+            SecurityLevel::Verified => {
+                // Only allow verified + clean
+                let status_ok = status.map_or(false, |s| s == "verified");
+                let verdict_ok = verdict.map_or(true, |v| v == "clean");
+                status_ok && verdict_ok
+            }
+        }
+    }
+}
+
+fn is_default_security_level(level: &SecurityLevel) -> bool {
+    *level == SecurityLevel::default()
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GlobalConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -17,6 +74,9 @@ pub struct GlobalConfig {
     pub workdir: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub agents: Vec<String>,
+    /// Minimum security level for skill/flock installation.
+    #[serde(default, skip_serializing_if = "is_default_security_level")]
+    pub security_level: SecurityLevel,
 }
 
 /// Resolve the savhub config/data directory.

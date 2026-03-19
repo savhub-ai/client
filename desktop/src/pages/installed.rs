@@ -45,25 +45,36 @@ pub fn InstalledPage() -> Element {
         }
         loaded.set(true);
         let workdir = state.workdir.read().clone();
-        let lock_path = workdir.join(".savhub").join("lock.json");
 
-        if let Ok(raw) = std::fs::read_to_string(&lock_path) {
-            if let Ok(lock) = serde_json::from_str::<Lockfile>(&raw) {
-                let mut list = Vec::new();
-                for (slug, entry) in &lock.skills {
-                    let ts = chrono::DateTime::from_timestamp(entry.installed_at, 0)
-                        .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
-                        .unwrap_or_else(|| "\u{2014}".to_string());
-                    list.push(InstalledSkill {
-                        slug: slug.clone(),
-                        version: entry.version.clone(),
-                        installed_at: ts,
-                        path: workdir.join(slug),
-                    });
-                }
-                skill_list.set(list);
-            }
-        }
+        spawn(async move {
+            let workdir_bg = workdir.clone();
+            let list = tokio::task::spawn_blocking(move || {
+                let lock_path = workdir_bg.join(".savhub").join("lock.json");
+                let raw = std::fs::read_to_string(&lock_path).ok()?;
+                let lock: Lockfile = serde_json::from_str(&raw).ok()?;
+                let list: Vec<InstalledSkill> = lock
+                    .skills
+                    .iter()
+                    .map(|(slug, entry)| {
+                        let ts = chrono::DateTime::from_timestamp(entry.installed_at, 0)
+                            .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+                            .unwrap_or_else(|| "\u{2014}".to_string());
+                        InstalledSkill {
+                            slug: slug.clone(),
+                            version: entry.version.clone(),
+                            installed_at: ts,
+                            path: workdir_bg.join(slug),
+                        }
+                    })
+                    .collect();
+                Some(list)
+            })
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+            skill_list.set(list);
+        });
     });
 
     let update_all = move |_| {

@@ -484,7 +484,18 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
     let all_presets: Vec<(String, Option<String>)> = read_presets_store()
         .map(|s| s.presets.into_iter().map(|(k, v)| (k, v.description)).collect())
         .unwrap_or_default();
-    let installed_skills = savhub_local::registry::list_installed_slugs().unwrap_or_default();
+    let mut installed_skills_sig = use_signal(Vec::<String>::new);
+    use_effect(move || {
+        spawn(async move {
+            let slugs = tokio::task::spawn_blocking(|| {
+                savhub_local::registry::list_installed_slugs().unwrap_or_default()
+            })
+            .await
+            .unwrap_or_default();
+            installed_skills_sig.set(slugs);
+        });
+    });
+    let installed_skills = installed_skills_sig.read().clone();
 
     let save = move |_: MouseEvent| {
         let guard = form.read();
@@ -535,7 +546,18 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
     let error_val = f.error.clone();
     drop(guard);
 
-    let all_flock_slugs = savhub_local::registry::list_flock_slugs().unwrap_or_default();
+    let mut all_flock_slugs_sig = use_signal(Vec::<String>::new);
+    use_effect(move || {
+        spawn(async move {
+            let slugs = tokio::task::spawn_blocking(|| {
+                savhub_local::registry::list_flock_slugs().unwrap_or_default()
+            })
+            .await
+            .unwrap_or_default();
+            all_flock_slugs_sig.set(slugs);
+        });
+    });
+    let all_flock_slugs = all_flock_slugs_sig.read().clone();
 
     let skill_search_val = skill_search.read().to_lowercase();
     // Only show unselected skills that match the search query; empty search = show nothing

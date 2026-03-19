@@ -53,14 +53,3 @@ pub fn update_lockfile(workdir: &Path, slug: &str, version: &str) {
         serde_json::to_string_pretty(&lock).unwrap_or_default(),
     );
 }
-
-/// Simple URL encoding for query strings.
-pub fn urlencoding(s: &str) -> String {
-    s.chars()
-        .map(|c| match c {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | '~' => c.to_string(),
-            ' ' => "+".to_string(),
-            _ => format!("%{:02X}", c as u8),
-        })
-        .collect()
-}

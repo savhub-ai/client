@@ -372,6 +372,19 @@ pub struct SyncInfo {
     pub skill_count: usize,
 }
 
+/// Lightweight skill row for sqlite-backed catalog UIs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CachedSkillSummary {
+    pub sign: String,
+    pub slug: String,
+    pub name: String,
+    pub summary: Option<String>,
+    pub version: Option<String>,
+    pub owner: Option<String>,
+    #[serde(default, skip_serializing_if = "is_default_security")]
+    pub security: SecuritySummary,
+}
+
 // ---------------------------------------------------------------------------
 // SQLite helpers
 // ---------------------------------------------------------------------------
@@ -1774,7 +1787,7 @@ pub fn list_skills(
     let conn = open_cache()?;
     let offset = page * page_size;
 
-    let (where_clause, search_params) = build_search_clause(query, status_filter);
+    let (where_clause, search_params) = build_search_clause(query, status_filter, false);
 
     // Count total
     let count_sql = format!("SELECT COUNT(*) FROM skills {where_clause}");
@@ -2019,6 +2032,117 @@ pub fn skill_count() -> Result<usize> {
     Ok(count)
 }
 
+fn owner_from_repo_id(repo_id: &str) -> Option<String> {
+    let parts: Vec<&str> = repo_id.split('/').filter(|part| !part.is_empty()).collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    Some(parts[parts.len() - 2].to_string())
+}
+
+/// Count cached skills matching the provided query and filter.
+pub fn count_cached_skills(
+    query: Option<&str>,
+    status_filter: Option<&str>,
+    installed_only: bool,
+) -> Result<usize> {
+    let conn = open_cache()?;
+    let (where_clause, search_params) =
+        build_search_clause(query, status_filter, installed_only);
+    let count_sql = format!("SELECT COUNT(*) FROM skills {where_clause}");
+    let mut stmt = conn.prepare(&count_sql)?;
+    bind_search_params(&mut stmt, &search_params)
+}
+
+/// List cached skills as lightweight rows for the desktop catalog UI.
+pub fn list_cached_skill_summaries(
+    query: Option<&str>,
+    status_filter: Option<&str>,
+    installed_only: bool,
+    page: usize,
+    page_size: usize,
+) -> Result<(Vec<CachedSkillSummary>, usize)> {
+    let conn = open_cache()?;
+    let offset = page * page_size;
+    let (where_clause, search_params) =
+        build_search_clause(query, status_filter, installed_only);
+
+    let count_sql = format!("SELECT COUNT(*) FROM skills {where_clause}");
+    let total: usize = {
+        let mut stmt = conn.prepare(&count_sql)?;
+        bind_search_params(&mut stmt, &search_params)?
+    };
+
+    let select_sql = format!(
+        "SELECT repo_id, path, slug, name, summary, version, security_status, security_verdict
+         FROM skills
+         {where_clause}
+         ORDER BY name ASC
+         LIMIT ?{} OFFSET ?{}",
+        search_params.len() + 1,
+        search_params.len() + 2,
+    );
+    let mut stmt = conn.prepare(&select_sql)?;
+    let mut bound: Vec<Box<dyn rusqlite::types::ToSql>> = search_params
+        .into_iter()
+        .map(|value| Box::new(value) as Box<dyn rusqlite::types::ToSql>)
+        .collect();
+    bound.push(Box::new(page_size as i64));
+    bound.push(Box::new(offset as i64));
+
+    let refs: Vec<&dyn rusqlite::types::ToSql> = bound.iter().map(|value| value.as_ref()).collect();
+    let rows = stmt.query_map(refs.as_slice(), |row| {
+        let repo_id: String = row.get(0)?;
+        let path: String = row.get(1)?;
+        let slug: String = row.get(2)?;
+        let name: String = row.get(3)?;
+        let summary: String = row.get(4)?;
+        let version: String = row.get(5)?;
+        let security_status: String = row.get(6)?;
+        let security_verdict: String = row.get(7)?;
+        Ok(CachedSkillSummary {
+            sign: if path.is_empty() {
+                slug.clone()
+            } else {
+                make_skill_sign(&repo_id, &path)
+            },
+            slug,
+            name,
+            summary: if summary.is_empty() {
+                None
+            } else {
+                Some(summary)
+            },
+            version: if version.is_empty() {
+                None
+            } else {
+                Some(version)
+            },
+            owner: owner_from_repo_id(&repo_id),
+            security: SecuritySummary {
+                status: if security_status.is_empty() {
+                    None
+                } else {
+                    Some(security_status)
+                },
+                verdict: if security_verdict.is_empty() {
+                    None
+                } else {
+                    Some(security_verdict)
+                },
+                ..SecuritySummary::default()
+            },
+        })
+    })?;
+
+    let mut items = Vec::new();
+    for row in rows {
+        items.push(row?);
+    }
+
+    Ok((items, total))
+}
+
 /// List skills as unified `SkillEntry` items (from local SQLite).
 pub fn list_skill_entries(
     query: Option<&str>,
@@ -2068,7 +2192,11 @@ pub fn all_categories() -> Result<Vec<String>> {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-fn build_search_clause(query: Option<&str>, status: Option<&str>) -> (String, Vec<String>) {
+fn build_search_clause(
+    query: Option<&str>,
+    status: Option<&str>,
+    installed_only: bool,
+) -> (String, Vec<String>) {
     let mut conditions = Vec::new();
     let mut params = Vec::new();
 
@@ -2085,6 +2213,10 @@ fn build_search_clause(query: Option<&str>, status: Option<&str>) -> (String, Ve
         let idx = params.len() + 1;
         conditions.push(format!("status = ?{idx}"));
         params.push(s.to_string());
+    }
+
+    if installed_only {
+        conditions.push("installed = 1".to_string());
     }
 
     let clause = if conditions.is_empty() {

@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use dioxus::prelude::*;
 use savhub_shared::UserSummary;
 
+use savhub_local::config::SecurityLevel;
+
 use crate::api::{ApiClient, ApiCompatibility};
 use crate::i18n::Language;
 
@@ -22,7 +24,7 @@ fn default_workdir() -> PathBuf {
 ///   2. `~/.savhub/registry.json` → `rest_api.base_url`
 ///   3. `~/.savhub/config.toml` → `registry`
 ///   4. Default fallback
-fn load_config() -> (String, Option<String>, Language, PathBuf, Vec<String>) {
+fn load_config() -> (String, Option<String>, Language, PathBuf, Vec<String>, SecurityLevel) {
     // Highest priority: config.toml / registry.json via read_api_base_url()
     let api_override = savhub_local::registry::read_api_base_url();
 
@@ -39,13 +41,14 @@ fn load_config() -> (String, Option<String>, Language, PathBuf, Vec<String>) {
         .map(PathBuf::from)
         .unwrap_or_else(default_workdir);
     let agents = cfg.agents;
+    let security_level = cfg.security_level;
 
     // Priority: config.toml [rest_api] override > registry.json > config.toml registry > default
     let registry = api_override
         .or(cfg.registry)
         .unwrap_or_else(|| DEFAULT_API_BASE.to_string());
 
-    (registry, token, lang, workdir, agents)
+    (registry, token, lang, workdir, agents, security_level)
 }
 
 /// Read just the language setting from config (used before full state init).
@@ -69,13 +72,17 @@ pub struct AppState {
     /// Registry API version compatibility status.
     pub registry_compat: Signal<ApiCompatibility>,
     pub agents: Signal<Vec<String>>,
+    /// Minimum security level for skill/flock installation.
+    pub security_level: Signal<SecurityLevel>,
+    /// Whether the registry is currently syncing in the background.
+    pub registry_syncing: Signal<bool>,
     /// Incremented when an external config change is detected via the signal file.
     pub config_version: Signal<u64>,
 }
 
 impl AppState {
     pub fn init() -> Self {
-        let (registry, token, lang, workdir, agents) = load_config();
+        let (registry, token, lang, workdir, agents, security_level) = load_config();
         Self {
             api_base: Signal::new(registry),
             token: Signal::new(token),
@@ -85,6 +92,8 @@ impl AppState {
             lang: Signal::new(lang),
             registry_compat: Signal::new(ApiCompatibility::Unknown),
             agents: Signal::new(agents),
+            security_level: Signal::new(security_level),
+            registry_syncing: Signal::new(false),
             config_version: Signal::new(0),
         }
     }

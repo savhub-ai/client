@@ -193,7 +193,8 @@ fn GeneralPane() -> Element {
         state.agents.set(agents.clone());
 
         let lang_code = state.lang.read().code();
-        save_config(&base, &token, lang_code, &saved_workdir, &agents);
+        let sec_level = *state.security_level.read();
+        save_config(&base, &token, lang_code, &saved_workdir, &agents, sec_level);
         save_status.set(Some(t.settings_saved.to_string()));
     };
 
@@ -249,7 +250,7 @@ fn GeneralPane() -> Element {
                             let base = state.api_base.read().clone();
                             let token = state.token.read().clone().unwrap_or_default();
                             let workdir = state.workdir.read().clone();
-                            save_config(&base, &token, "en", &workdir, &[]);
+                            save_config(&base, &token, "en", &workdir, &[], *state.security_level.read());
                         },
                         "English"
                     }
@@ -260,7 +261,7 @@ fn GeneralPane() -> Element {
                             let base = state.api_base.read().clone();
                             let token = state.token.read().clone().unwrap_or_default();
                             let workdir = state.workdir.read().clone();
-                            save_config(&base, &token, "zh", &workdir, &[]);
+                            save_config(&base, &token, "zh", &workdir, &[], *state.security_level.read());
                         },
                         "\u{4e2d}\u{6587}"
                     }
@@ -373,6 +374,49 @@ fn GeneralPane() -> Element {
                 }
             }
 
+            // Security Level
+            div {
+                label { style: "display: block; font-size: 13px; font-weight: 600; color: {Theme::TEXT}; margin-bottom: 6px;",
+                    "Security Level"
+                }
+                p { style: "font-size: 12px; color: {Theme::MUTED}; margin-bottom: 8px;",
+                    "Minimum security level required when installing skills and flocks."
+                }
+                {
+                    use savhub_local::config::SecurityLevel;
+                    let current_sec = *state.security_level.read();
+                    let levels = [
+                        (SecurityLevel::Verified, "Verified Only", "Only install skills that passed all security scans (recommended)"),
+                        (SecurityLevel::Flagged, "Allow Flagged", "Also allow skills with suspicious patterns detected"),
+                        (SecurityLevel::Any, "Allow All", "Install any skill regardless of security status, including unverified"),
+                    ];
+                    rsx! {
+                        div { style: "display: flex; flex-direction: column; gap: 6px;",
+                            for (level, label, desc) in levels {
+                                {
+                                    let is_active = current_sec == level;
+                                    let (bg, color, weight) = if is_active {
+                                        (Theme::ACCENT_LIGHT, Theme::ACCENT_STRONG, "600")
+                                    } else {
+                                        ("transparent", Theme::MUTED, "400")
+                                    };
+                                    rsx! {
+                                        button {
+                                            style: "display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 14px; background: {bg}; color: {color}; font-weight: {weight}; border: 1px solid {Theme::LINE}; border-radius: 6px; cursor: pointer; text-align: left; font-size: 13px;",
+                                            onclick: move |_| {
+                                                state.security_level.set(level);
+                                            },
+                                            span { "{label}" }
+                                            span { style: "font-size: 11px; font-weight: 400; opacity: 0.7;", "{desc}" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Buttons
             div { style: "display: flex; gap: 8px; flex-wrap: wrap;",
                 button {
@@ -425,7 +469,7 @@ fn AccountPane() -> Element {
                     let base = state.api_base.read().clone();
                     let lang_code = state.lang.read().code();
                     let workdir = state.workdir.read().clone();
-                    save_config(&base, &token, lang_code, &workdir, &[]);
+                    save_config(&base, &token, lang_code, &workdir, &[], *state.security_level.read());
                     state.token.set(Some(token.clone()));
                     token_input.set(token);
 
@@ -462,7 +506,7 @@ fn AccountPane() -> Element {
         let base = state.api_base.read().clone();
         let lang_code = state.lang.read().code();
         let workdir = state.workdir.read().clone();
-        save_config(&base, "", lang_code, &workdir, &[]);
+        save_config(&base, "", lang_code, &workdir, &[], *state.security_level.read());
         login_status.set(Some(t.logged_out.to_string()));
     };
 
@@ -727,6 +771,7 @@ pub fn save_config(
     lang: &str,
     workdir: &std::path::Path,
     agents: &[String],
+    security_level: savhub_local::config::SecurityLevel,
 ) {
     let default_workdir = directories::UserDirs::new()
         .map(|u| u.home_dir().join(".savhub"))
@@ -753,6 +798,7 @@ pub fn save_config(
             }
         },
         agents: agents.to_vec(),
+        security_level,
     };
     let _ = savhub_local::config::write_global_config(&config);
 }

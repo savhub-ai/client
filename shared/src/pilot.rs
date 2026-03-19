@@ -1,12 +1,12 @@
 use std::fs;
 use std::path::PathBuf;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 
 use crate::config::get_config_dir;
 
 /// The embedded skill markdown shipped with the binary.
-const SKILL_CONTENT: &str = include_str!("../../skills/savhub-pilot/savhub-pilot.md");
+const SKILL_CONTENT: &str = include_str!("../../skills/savhub-pilot/SKILL.md");
 
 // ---------------------------------------------------------------------------
 // Agent skill directories
@@ -32,38 +32,64 @@ fn agent_skill_dir(agent: &str) -> Result<PathBuf> {
 // Install / Uninstall
 // ---------------------------------------------------------------------------
 
-/// Install the savhub-pilot skill for the given agents.
-///
-/// Returns the list of directories where the skill was written.
-pub fn install(agents: &[String]) -> Result<Vec<PathBuf>> {
-    if agents.is_empty() {
-        bail!("no agents specified; set `agents` in ~/.savhub/config or pass --agents");
-    }
-
-    let mut installed = Vec::new();
-    for agent in agents {
-        let dir = agent_skill_dir(agent)?;
-        fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
-
-        let dest = dir.join("savhub-pilot.md");
-        fs::write(&dest, SKILL_CONTENT)
-            .with_context(|| format!("failed to write {}", dest.display()))?;
-
-        installed.push(dir);
-    }
-
-    Ok(installed)
+/// Return the shared skill directory: `~/.agents/skills/savhub-pilot/`
+fn shared_skill_dir() -> Result<PathBuf> {
+    let home = directories::UserDirs::new()
+        .map(|u| u.home_dir().to_path_buf())
+        .context("cannot determine home directory")?;
+    Ok(home.join(".agents").join("skills").join("savhub-pilot"))
 }
 
-/// Uninstall the savhub-pilot skill for the given agents.
+/// Write the skill file into a directory, creating it if needed.
+fn write_skill_to(dir: &PathBuf) -> Result<()> {
+    fs::create_dir_all(dir).with_context(|| format!("failed to create {}", dir.display()))?;
+    let dest = dir.join("SKILL.md");
+    fs::write(&dest, SKILL_CONTENT)
+        .with_context(|| format!("failed to write {}", dest.display()))?;
+    Ok(())
+}
+
+/// Install the savhub-pilot skill for the given agents.
+///
+/// Always installs to:
+/// - `~/.agents/skills/savhub-pilot/` (shared, for any agent)
+/// - Agent-specific directories (e.g. `~/.claude/skills/savhub-pilot/`)
+///
+/// Returns `(shared_dir, Vec<(agent_name, dir)>)`.
+pub fn install(agents: &[String]) -> Result<(PathBuf, Vec<(String, PathBuf)>)> {
+    // Always install to the shared ~/.agents/skills/ directory
+    let shared = shared_skill_dir()?;
+    write_skill_to(&shared)?;
+
+    let mut agent_dirs = Vec::new();
+    for agent in agents {
+        let dir = agent_skill_dir(agent)?;
+        // Skip if it resolves to the same as the shared dir
+        if dir == shared {
+            continue;
+        }
+        write_skill_to(&dir)?;
+        agent_dirs.push((agent.clone(), dir));
+    }
+
+    Ok((shared, agent_dirs))
+}
+
+/// Uninstall the savhub-pilot skill from shared and agent-specific directories.
 ///
 /// Returns the list of directories that were removed.
 pub fn uninstall(agents: &[String]) -> Result<Vec<PathBuf>> {
-    if agents.is_empty() {
-        bail!("no agents specified; set `agents` in ~/.savhub/config or pass --agents");
+    let mut removed = Vec::new();
+
+    // Remove from shared ~/.agents/skills/
+    if let Ok(shared) = shared_skill_dir() {
+        if shared.exists() {
+            fs::remove_dir_all(&shared)
+                .with_context(|| format!("failed to remove {}", shared.display()))?;
+            removed.push(shared);
+        }
     }
 
-    let mut removed = Vec::new();
     for agent in agents {
         let dir = agent_skill_dir(agent)?;
         if dir.exists() {
@@ -76,14 +102,25 @@ pub fn uninstall(agents: &[String]) -> Result<Vec<PathBuf>> {
     Ok(removed)
 }
 
-/// Check installation status for each agent.
+/// Check installation status for shared and agent-specific directories.
 ///
-/// Returns a vec of `(agent_name, installed_path_or_none)`.
+/// Returns a vec of `(label, installed_path_or_none)`.
 pub fn status(agents: &[String]) -> Result<Vec<(String, Option<PathBuf>)>> {
     let mut result = Vec::new();
+
+    // Check shared ~/.agents/skills/
+    if let Ok(shared) = shared_skill_dir() {
+        let skill_file = shared.join("SKILL.md");
+        if skill_file.exists() {
+            result.push(("shared".to_string(), Some(shared)));
+        } else {
+            result.push(("shared".to_string(), None));
+        }
+    }
+
     for agent in agents {
         let dir = agent_skill_dir(agent)?;
-        let skill_file = dir.join("savhub-pilot.md");
+        let skill_file = dir.join("SKILL.md");
         if skill_file.exists() {
             result.push((agent.clone(), Some(dir)));
         } else {

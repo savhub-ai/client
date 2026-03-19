@@ -1,19 +1,16 @@
 use std::collections::BTreeMap;
 
 use dioxus::prelude::*;
-use savhub_local::registry::{RegistryFlock, SecuritySummary};
-use savhub_shared::{PagedResponse, SearchResponse, SearchResult, SkillListItem};
+use savhub_local::registry::{CachedSkillSummary, RegistryFlock, SecuritySummary};
 
 use crate::components::pagination::{self, PaginationControls};
 use crate::components::view_toggle::{ViewMode, ViewToggleButton};
 use crate::state::AppState;
 use crate::theme::Theme;
-use crate::{i18n, skills};
+use crate::i18n;
 
 const EXPLORE_PAGE_SIZE: usize = 24;
-const EXPLORE_SEARCH_FETCH_LIMIT: usize = 120;
 
-/// Unified display item for skills from either browse or search APIs.
 #[derive(Debug, Clone, PartialEq)]
 struct DisplaySkill {
     sign: String,
@@ -24,30 +21,23 @@ struct DisplaySkill {
     owner: Option<String>,
 }
 
-impl From<&SkillListItem> for DisplaySkill {
-    fn from(item: &SkillListItem) -> Self {
+impl From<CachedSkillSummary> for DisplaySkill {
+    fn from(item: CachedSkillSummary) -> Self {
         Self {
-            sign: item.sign.clone(),
-            slug: item.slug.clone(),
-            name: item.display_name.clone(),
-            summary: item.summary.clone(),
-            version: item.latest_version.as_ref().map(|v| v.version.clone()),
-            owner: Some(item.owner.handle.clone()),
+            sign: item.sign,
+            slug: item.slug,
+            name: item.name,
+            summary: item.summary,
+            version: item.version,
+            owner: item.owner,
         }
     }
 }
 
-impl From<&SearchResult> for DisplaySkill {
-    fn from(item: &SearchResult) -> Self {
-        Self {
-            sign: String::new(), // SearchResult doesn't have sign
-            slug: item.slug.clone(),
-            name: item.display_name.clone(),
-            summary: item.summary.clone(),
-            version: item.latest_version.clone(),
-            owner: item.owner_handle.clone(),
-        }
-    }
+#[derive(Debug, Clone, PartialEq)]
+struct DisplayFlock {
+    flock: RegistryFlock,
+    skill_slugs: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,79 +46,108 @@ enum SkillFilter {
     Installed,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SkillInstallState {
-    NotInstalled,
-    Installed,
-    Latest,
-    Outdated,
-}
-
-fn skill_install_state(
-    skill: &DisplaySkill,
-    installed_versions: &BTreeMap<String, String>,
-) -> SkillInstallState {
-    let Some(local_version) = installed_versions.get(&skill.slug) else {
-        return SkillInstallState::NotInstalled;
-    };
-
-    match skill.version.as_deref() {
-        Some(remote_version) if remote_version == local_version => SkillInstallState::Latest,
-        Some(_) => SkillInstallState::Outdated,
-        None => SkillInstallState::Installed,
-    }
-}
-
-fn matches_filter(state: SkillInstallState, filter: SkillFilter) -> bool {
-    match filter {
-        SkillFilter::All => true,
-        SkillFilter::Installed => !matches!(state, SkillInstallState::NotInstalled),
-    }
-}
-
-fn browse_path(cursor: Option<&str>) -> String {
-    let mut path = format!("/skills?limit={EXPLORE_PAGE_SIZE}");
-    if let Some(cursor) = cursor {
-        path.push_str("&cursor=");
-        path.push_str(&skills::urlencoding(cursor));
-    }
-    path
-}
-
-fn load_browse_page(
-    state: AppState,
-    cursor: Option<String>,
-    previous_cursors: Vec<Option<String>>,
+fn load_skills_page(
+    query: String,
+    filter: SkillFilter,
     page_index: usize,
     mut loading: Signal<bool>,
     mut error: Signal<Option<String>>,
     mut skill_list: Signal<Vec<DisplaySkill>>,
-    mut showing_search_results: Signal<bool>,
-    mut browse_page: Signal<usize>,
-    mut browse_current_cursor: Signal<Option<String>>,
-    mut browse_previous_cursors: Signal<Vec<Option<String>>>,
-    mut browse_next_cursor: Signal<Option<String>>,
-    mut search_page: Signal<usize>,
+    mut total_skills: Signal<usize>,
+    mut installed_skill_total: Signal<usize>,
 ) {
-    let client = state.api_client();
     spawn(async move {
         loading.set(true);
-        match client
-            .get_json::<PagedResponse<SkillListItem>>(&browse_path(cursor.as_deref()))
-            .await
-        {
-            Ok(resp) => {
-                let items = resp.items.iter().map(DisplaySkill::from).collect();
+        let query = query.trim().to_string();
+        let result = tokio::task::spawn_blocking(move || {
+            let query_ref = if query.is_empty() {
+                None
+            } else {
+                Some(query.as_str())
+            };
+            let installed_only = matches!(filter, SkillFilter::Installed);
+            let (items, filtered_total) = savhub_local::registry::list_cached_skill_summaries(
+                query_ref,
+                Some("active"),
+                installed_only,
+                page_index,
+                EXPLORE_PAGE_SIZE,
+            )
+            .map_err(|e| e.to_string())?;
+            let total = savhub_local::registry::count_cached_skills(query_ref, Some("active"), false)
+                .map_err(|e| e.to_string())?;
+            let installed_total =
+                savhub_local::registry::count_cached_skills(query_ref, Some("active"), true)
+                    .map_err(|e| e.to_string())?;
+            Ok::<_, String>((
+                items.into_iter().map(DisplaySkill::from).collect::<Vec<_>>(),
+                filtered_total,
+                total,
+                installed_total,
+            ))
+        })
+        .await;
+
+        match result {
+            Ok(Ok((items, filtered_total, total, installed_total))) => {
                 skill_list.set(items);
+                total_skills.set(if matches!(filter, SkillFilter::Installed) {
+                    filtered_total
+                } else {
+                    total
+                });
+                installed_skill_total.set(installed_total);
                 error.set(None);
-                showing_search_results.set(false);
-                browse_page.set(page_index);
-                browse_current_cursor.set(cursor);
-                browse_previous_cursors.set(previous_cursors);
-                browse_next_cursor.set(resp.next_cursor);
-                search_page.set(0);
             }
-            Err(e) => error.set(Some(e)),
+            Ok(Err(e)) => {
+                skill_list.set(Vec::new());
+                total_skills.set(0);
+                installed_skill_total.set(0);
+                error.set(Some(e.to_string()));
+            }
+            Err(e) => {
+                skill_list.set(Vec::new());
+                total_skills.set(0);
+                installed_skill_total.set(0);
+                error.set(Some(e.to_string()));
+            }
+        }
+        loading.set(false);
+    });
+}
+
+fn load_flocks(
+    mut flocks_data: Signal<Vec<DisplayFlock>>,
+    mut loading: Signal<bool>,
+    mut error: Signal<Option<String>>,
+) {
+    spawn(async move {
+        loading.set(true);
+        let result = tokio::task::spawn_blocking(move || {
+            let flocks = savhub_local::registry::list_flocks().map_err(|e| e.to_string())?;
+            let mut items = Vec::with_capacity(flocks.len());
+            for flock in flocks {
+                let skill_slugs =
+                    savhub_local::registry::list_flock_skill_slugs(&flock.slug).unwrap_or_default();
+                items.push(DisplayFlock { flock, skill_slugs });
+            }
+            Ok::<_, String>(items)
+        })
+        .await;
+
+        match result {
+            Ok(Ok(items)) => {
+                flocks_data.set(items);
+                error.set(None);
+            }
+            Ok(Err(e)) => {
+                flocks_data.set(Vec::new());
+                error.set(Some(e.to_string()));
+            }
+            Err(e) => {
+                flocks_data.set(Vec::new());
+                error.set(Some(e.to_string()));
+            }
         }
         loading.set(false);
     });
@@ -139,108 +158,66 @@ pub fn ExplorePage() -> Element {
     let state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
     let mut query = use_signal(String::new);
-    let mut skill_list: Signal<Vec<DisplaySkill>> = use_signal(Vec::new);
+    let mut applied_query = use_signal(String::new);
+    let skill_list: Signal<Vec<DisplaySkill>> = use_signal(Vec::new);
+    let total_skills = use_signal(|| 0usize);
+    let installed_skill_total = use_signal(|| 0usize);
     let mut installed_versions: Signal<BTreeMap<String, String>> = use_signal(BTreeMap::new);
     let mut active_filter = use_signal(|| SkillFilter::All);
     let mut active_view = use_signal(|| ViewMode::Cards);
-    let mut showing_search_results = use_signal(|| false);
-    let mut browse_page = use_signal(|| 0usize);
-    let mut browse_current_cursor = use_signal(|| Option::<String>::None);
-    let mut browse_previous_cursors = use_signal(Vec::<Option<String>>::new);
-    let mut browse_next_cursor = use_signal(|| Option::<String>::None);
-    let mut search_page = use_signal(|| 0usize);
-    let mut loading = use_signal(|| false);
-    let mut error = use_signal(|| Option::<String>::None);
-    let mut initial_loaded = use_signal(|| false);
+    let mut current_page = use_signal(|| 0usize);
+    let loading = use_signal(|| false);
+    let error = use_signal(|| Option::<String>::None);
     let mut grouped = use_signal(|| true);
-    let mut flocks_data: Signal<Vec<RegistryFlock>> = use_signal(Vec::new);
+    let flocks_data: Signal<Vec<DisplayFlock>> = use_signal(Vec::new);
+    let mut reload_version = use_signal(|| 0u32);
     let mut flocks_version = use_signal(|| 0u32);
 
     use_effect(move || {
-        // Load installed state from installed_skills.json
-        let entries = savhub_local::registry::read_installed_skills_file().unwrap_or_default();
-        let installed: BTreeMap<String, String> = entries
-            .into_iter()
-            .map(|e| (e.slug, "installed".to_string()))
-            .collect();
-        installed_versions.set(installed);
+        let _ = *state.config_version.read();
+        spawn(async move {
+            let installed = tokio::task::spawn_blocking(|| {
+                savhub_local::registry::read_installed_skills_file()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|e| (e.slug, "installed".to_string()))
+                    .collect::<BTreeMap<String, String>>()
+            })
+            .await
+            .unwrap_or_default();
+            installed_versions.set(installed);
+        });
     });
 
-    // Load initial browse on mount
     use_effect(move || {
-        if *initial_loaded.read() {
-            return;
-        }
-        initial_loaded.set(true);
-        load_browse_page(
-            state,
-            None,
-            Vec::new(),
-            0,
+        let query = applied_query.read().clone();
+        let filter = *active_filter.read();
+        let page = *current_page.read();
+        let _ = *reload_version.read();
+        let _ = *state.config_version.read();
+        load_skills_page(
+            query,
+            filter,
+            page,
             loading,
             error,
             skill_list,
-            showing_search_results,
-            browse_page,
-            browse_current_cursor,
-            browse_previous_cursors,
-            browse_next_cursor,
-            search_page,
+            total_skills,
+            installed_skill_total,
         );
     });
 
-    // Load flocks when grouped is on (re-triggers on version bump from Refresh)
     use_effect(move || {
         let _ = *flocks_version.read();
+        let _ = *state.config_version.read();
         if *grouped.read() {
-            let flocks = savhub_local::registry::list_flocks().unwrap_or_default();
-            flocks_data.set(flocks);
+            load_flocks(flocks_data, loading, error);
         }
     });
 
-    let run_search = move || {
-        let q = query.read().clone();
-        if q.trim().is_empty() {
-            load_browse_page(
-                state,
-                None,
-                Vec::new(),
-                0,
-                loading,
-                error,
-                skill_list,
-                showing_search_results,
-                browse_page,
-                browse_current_cursor,
-                browse_previous_cursors,
-                browse_next_cursor,
-                search_page,
-            );
-        } else {
-            let client = state.api_client();
-            spawn(async move {
-                loading.set(true);
-                let path = format!(
-                    "/search?q={}&kind=skill&limit={EXPLORE_SEARCH_FETCH_LIMIT}",
-                    skills::urlencoding(&q)
-                );
-                match client.get_json::<SearchResponse>(&path).await {
-                    Ok(resp) => {
-                        let items = resp.results.iter().map(DisplaySkill::from).collect();
-                        skill_list.set(items);
-                        error.set(None);
-                        showing_search_results.set(true);
-                        browse_page.set(0);
-                        browse_current_cursor.set(None);
-                        browse_previous_cursors.set(Vec::new());
-                        browse_next_cursor.set(None);
-                        search_page.set(0);
-                    }
-                    Err(e) => error.set(Some(e)),
-                }
-                loading.set(false);
-            });
-        }
+    let mut run_search = move || {
+        current_page.set(0);
+        applied_query.set(query.read().clone());
     };
 
     let do_search = move |_: Event<MouseData>| {
@@ -263,17 +240,17 @@ pub fn ExplorePage() -> Element {
     let flock_skills_label = t.flock_skills_count;
     let is_grouped = *grouped.read();
 
-    // Filter flocks by search query when grouped
-    let filtered_flocks: Vec<RegistryFlock> = if is_grouped {
-        let search_lower = query.read().to_lowercase();
+    let active_query_value = applied_query.read().clone();
+    let filtered_flocks: Vec<DisplayFlock> = if is_grouped {
+        let search_lower = active_query_value.to_lowercase();
         flocks_data
             .read()
             .iter()
             .filter(|f| {
                 search_lower.is_empty()
-                    || f.name.to_lowercase().contains(&search_lower)
-                    || f.slug.to_lowercase().contains(&search_lower)
-                    || f.description.to_lowercase().contains(&search_lower)
+                    || f.flock.name.to_lowercase().contains(&search_lower)
+                    || f.flock.slug.to_lowercase().contains(&search_lower)
+                    || f.flock.description.to_lowercase().contains(&search_lower)
             })
             .cloned()
             .collect()
@@ -281,47 +258,19 @@ pub fn ExplorePage() -> Element {
         Vec::new()
     };
 
-    let all_skills = skill_list.read().clone();
-    let installed_map = installed_versions.read().clone();
     let current_filter = *active_filter.read();
     let current_view = *active_view.read();
-    let is_search_mode = *showing_search_results.read();
-    let filtered_skills: Vec<DisplaySkill> = all_skills
-        .iter()
-        .filter(|skill| matches_filter(skill_install_state(skill, &installed_map), current_filter))
-        .cloned()
-        .collect();
-    let search_current_page = pagination::clamp_page(
-        *search_page.read(),
-        filtered_skills.len(),
+    let visible_skills = skill_list.read().clone();
+    let skill_total = *total_skills.read();
+    let current_page_index = pagination::clamp_page(
+        *current_page.read(),
+        skill_total,
         EXPLORE_PAGE_SIZE,
     );
-    let search_visible_skills =
-        pagination::slice_for_page(&filtered_skills, search_current_page, EXPLORE_PAGE_SIZE);
-    let search_total_pages = pagination::total_pages(filtered_skills.len(), EXPLORE_PAGE_SIZE);
-    let current_browse_page = *browse_page.read();
-    let browse_has_prev = !browse_previous_cursors.read().is_empty();
-    let browse_has_next = browse_next_cursor.read().is_some();
-    let visible_skills: &[DisplaySkill] = if is_search_mode {
-        search_visible_skills
-    } else {
-        filtered_skills.as_slice()
-    };
+    let total_pages = pagination::total_pages(skill_total, EXPLORE_PAGE_SIZE);
     let filter_items = [
-        (SkillFilter::All, all_label, all_skills.len()),
-        (
-            SkillFilter::Installed,
-            installed_label,
-            all_skills
-                .iter()
-                .filter(|skill| {
-                    matches_filter(
-                        skill_install_state(skill, &installed_map),
-                        SkillFilter::Installed,
-                    )
-                })
-                .count(),
-        ),
+        (SkillFilter::All, all_label, *total_skills.read()),
+        (SkillFilter::Installed, installed_label, *installed_skill_total.read()),
     ];
 
     rsx! {
@@ -352,7 +301,8 @@ pub fn ExplorePage() -> Element {
                         title: "Refresh",
                         style: "display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex-shrink: 0; background: {Theme::PANEL}; color: {Theme::ACCENT_STRONG}; border: 1px solid {Theme::LINE}; border-radius: 8px; cursor: pointer; font-size: 16px;",
                         onclick: move |_| {
-                            initial_loaded.set(false);
+                            current_page.set(0);
+                            reload_version += 1;
                             flocks_version += 1;
                         },
                         "\u{21BB}"
@@ -393,7 +343,10 @@ pub fn ExplorePage() -> Element {
                             rsx! {
                                 button {
                                     style: "display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; background: {bg}; color: {color}; border: 1px solid {border}; border-radius: 999px; font-size: 11px; font-weight: 600; cursor: pointer;",
-                                    onclick: move |_| active_filter.set(filter),
+                                    onclick: move |_| {
+                                        current_page.set(0);
+                                        active_filter.set(filter);
+                                    },
                                     span { "{label}" }
                                     span { style: "font-size: 10px; opacity: 0.8;", "{count}" }
                                 }
@@ -466,66 +419,18 @@ pub fn ExplorePage() -> Element {
                     }
                 }
 
-                if is_search_mode {
+                if skill_total > 0 {
                     PaginationControls {
-                        current_page: search_current_page,
-                        total_pages: Some(search_total_pages),
-                        has_prev: search_current_page > 0,
-                        has_next: search_current_page + 1 < search_total_pages,
-                        on_prev: move |_| search_page.set(search_current_page.saturating_sub(1)),
-                        on_next: move |_| search_page.set(search_current_page + 1),
-                    }
-                } else {
-                    PaginationControls {
-                        current_page: current_browse_page,
-                        total_pages: None,
-                        has_prev: browse_has_prev,
-                        has_next: browse_has_next,
-                        on_prev: move |_| {
-                            let mut history = browse_previous_cursors.read().clone();
-                            if let Some(previous_cursor) = history.pop() {
-                                load_browse_page(
-                                    state,
-                                    previous_cursor,
-                                    history,
-                                    current_browse_page.saturating_sub(1),
-                                    loading,
-                                    error,
-                                    skill_list,
-                                    showing_search_results,
-                                    browse_page,
-                                    browse_current_cursor,
-                                    browse_previous_cursors,
-                                    browse_next_cursor,
-                                    search_page,
-                                );
-                            }
-                        },
-                        on_next: move |_| {
-                            if let Some(next_cursor) = browse_next_cursor.read().clone() {
-                                let mut history = browse_previous_cursors.read().clone();
-                                history.push(browse_current_cursor.read().clone());
-                                load_browse_page(
-                                    state,
-                                    Some(next_cursor),
-                                    history,
-                                    current_browse_page + 1,
-                                    loading,
-                                    error,
-                                    skill_list,
-                                    showing_search_results,
-                                    browse_page,
-                                    browse_current_cursor,
-                                    browse_previous_cursors,
-                                    browse_next_cursor,
-                                    search_page,
-                                );
-                            }
-                        },
+                        current_page: current_page_index,
+                        total_pages: Some(total_pages),
+                        has_prev: current_page_index > 0,
+                        has_next: current_page_index + 1 < total_pages,
+                        on_prev: move |_| current_page.set(current_page_index.saturating_sub(1)),
+                        on_next: move |_| current_page.set(current_page_index + 1),
                     }
                 }
 
-                if !*loading.read() && filtered_skills.is_empty() && error.read().is_none() && *initial_loaded.read() {
+                if !*loading.read() && visible_skills.is_empty() && error.read().is_none() {
                     p { style: "color: {Theme::MUTED}; text-align: center; padding: 40px 0;",
                         "{no_found}"
                     }
@@ -546,20 +451,23 @@ fn SkillListRow(
     let mut working = use_signal(|| false);
     let mut action_error = use_signal(|| Option::<String>::None);
     let sign = skill.sign.clone();
-    let is_installed = installed_versions.read().contains_key(&skill.sign);
+    let slug = skill.slug.clone();
+    let is_installed = installed_versions.read().contains_key(&skill.slug);
 
     let do_action = move |e: Event<MouseData>| {
         e.stop_propagation();
         let sign = sign.clone();
+        let slug = slug.clone();
         let uninstall = is_installed;
         spawn(async move {
             working.set(true);
             action_error.set(None);
             let result = {
                 let sign = sign.clone();
+                let slug = slug.clone();
                 tokio::task::spawn_blocking(move || {
                     if uninstall {
-                        savhub_local::registry::uninstall_skill_from_registry(&sign).map(|_| ())
+                        savhub_local::registry::uninstall_skill_from_registry(&slug).map(|_| ())
                     } else {
                         savhub_local::registry::install_skill_from_registry(&sign).map(|_| ())
                     }
@@ -572,9 +480,9 @@ fn SkillListRow(
                 Ok(()) => {
                     installed_versions.with_mut(|entries| {
                         if uninstall {
-                            entries.remove(&sign);
+                            entries.remove(&slug);
                         } else {
-                            entries.insert(sign.clone(), "installed".to_string());
+                            entries.insert(slug.clone(), "installed".to_string());
                         }
                     });
                     if !uninstall {
@@ -663,20 +571,23 @@ fn SkillCard(
     let mut working = use_signal(|| false);
     let mut action_error = use_signal(|| Option::<String>::None);
     let sign = skill.sign.clone();
-    let is_installed = installed_versions.read().contains_key(&skill.sign);
+    let slug = skill.slug.clone();
+    let is_installed = installed_versions.read().contains_key(&skill.slug);
 
     let do_action = move |e: Event<MouseData>| {
         e.stop_propagation();
         let sign = sign.clone();
+        let slug = slug.clone();
         let uninstall = is_installed;
         spawn(async move {
             working.set(true);
             action_error.set(None);
             let result = {
                 let s = sign.clone();
+                let slug = slug.clone();
                 tokio::task::spawn_blocking(move || {
                     if uninstall {
-                        savhub_local::registry::uninstall_skill_from_registry(&s).map(|_| ())
+                        savhub_local::registry::uninstall_skill_from_registry(&slug).map(|_| ())
                     } else {
                         savhub_local::registry::install_skill_from_registry(&s).map(|_| ())
                     }
@@ -689,9 +600,9 @@ fn SkillCard(
                 Ok(()) => {
                     installed_versions.with_mut(|entries| {
                         if uninstall {
-                            entries.remove(&sign);
+                            entries.remove(&slug);
                         } else {
-                            entries.insert(sign.clone(), "installed".to_string());
+                            entries.insert(slug.clone(), "installed".to_string());
                         }
                     });
                     if !uninstall {
@@ -770,7 +681,7 @@ fn SkillCard(
 
 #[component]
 fn FlockListRow(
-    flock: RegistryFlock,
+    flock: DisplayFlock,
     flock_skills_label: &'static str,
     mut installed_versions: Signal<BTreeMap<String, String>>,
 ) -> Element {
@@ -778,19 +689,18 @@ fn FlockListRow(
     let t = i18n::texts(*state.lang.read());
     let mut working = use_signal(|| false);
     let mut action_error = use_signal(|| Option::<String>::None);
-    let flock_slug = flock.slug.clone();
-    let skill_slugs =
-        savhub_local::registry::list_flock_skill_slugs(&flock_slug).unwrap_or_default();
+    let flock_info = flock.flock.clone();
+    let skill_slugs = flock.skill_slugs.clone();
     let skill_count = skill_slugs.len();
     let all_installed = skill_count > 0 && {
         let map = installed_versions.read();
         skill_slugs.iter().all(|s| map.contains_key(s))
     };
-    let version_display = flock.version.as_deref().unwrap_or("\u{2014}");
-    let slug_display = if flock.repo.is_empty() {
-        flock.slug.clone()
+    let version_display = flock_info.version.as_deref().unwrap_or("\u{2014}");
+    let slug_display = if flock_info.repo.is_empty() {
+        flock_info.slug.clone()
     } else {
-        format!("{}/{}", flock.repo, flock.slug)
+        format!("{}/{}", flock_info.repo, flock_info.slug)
     };
 
     let do_action = move |e: Event<MouseData>| {
@@ -844,7 +754,7 @@ fn FlockListRow(
     };
 
     let nav = use_navigator();
-    let nav_slug = flock.slug.clone();
+    let nav_slug = flock_info.slug.clone();
 
     rsx! {
         div { style: "background: {Theme::PANEL}; border: 1px solid {Theme::LINE}; border-radius: 10px; padding: 14px 16px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; cursor: pointer;",
@@ -852,9 +762,9 @@ fn FlockListRow(
             div { style: "min-width: 0; flex: 1;",
                 div { style: "display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px;",
                     h3 { style: "font-size: 15px; font-weight: 600; color: {Theme::TEXT};",
-                        "{flock.name}"
+                        "{flock_info.name}"
                     }
-                    SecurityBadge { security: flock.security.clone() }
+                    SecurityBadge { security: flock_info.security.clone() }
                     span { style: "font-size: 12px; padding: 2px 8px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border-radius: 999px; white-space: nowrap;",
                         "v{version_display}"
                     }
@@ -862,9 +772,9 @@ fn FlockListRow(
                 div { style: "margin-bottom: 6px;",
                     crate::components::copy_sign::CopySign { value: slug_display.clone() }
                 }
-                if !flock.description.is_empty() {
+                if !flock_info.description.is_empty() {
                     p { style: "font-size: 13px; color: {Theme::MUTED}; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;",
-                        "{flock.description}"
+                        "{flock_info.description}"
                     }
                 }
             }
@@ -900,7 +810,7 @@ fn FlockListRow(
 
 #[component]
 fn FlockCard(
-    flock: RegistryFlock,
+    flock: DisplayFlock,
     flock_skills_label: &'static str,
     mut installed_versions: Signal<BTreeMap<String, String>>,
 ) -> Element {
@@ -908,19 +818,18 @@ fn FlockCard(
     let t = i18n::texts(*state.lang.read());
     let mut working = use_signal(|| false);
     let mut action_error = use_signal(|| Option::<String>::None);
-    let flock_slug = flock.slug.clone();
-    let skill_slugs =
-        savhub_local::registry::list_flock_skill_slugs(&flock_slug).unwrap_or_default();
+    let flock_info = flock.flock.clone();
+    let skill_slugs = flock.skill_slugs.clone();
     let skill_count = skill_slugs.len();
     let all_installed = skill_count > 0 && {
         let map = installed_versions.read();
         skill_slugs.iter().all(|s| map.contains_key(s))
     };
-    let version_display = flock.version.as_deref().unwrap_or("\u{2014}");
-    let slug_display = if flock.repo.is_empty() {
-        flock.slug.clone()
+    let version_display = flock_info.version.as_deref().unwrap_or("\u{2014}");
+    let slug_display = if flock_info.repo.is_empty() {
+        flock_info.slug.clone()
     } else {
-        format!("{}/{}", flock.repo, flock.slug)
+        format!("{}/{}", flock_info.repo, flock_info.slug)
     };
 
     let do_action = move |e: Event<MouseData>| {
@@ -974,7 +883,7 @@ fn FlockCard(
     };
 
     let nav = use_navigator();
-    let nav_slug = flock.slug.clone();
+    let nav_slug = flock_info.slug.clone();
 
     rsx! {
         div { style: "background: {Theme::PANEL}; border: 1px solid {Theme::LINE}; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 8px; cursor: pointer; transition: box-shadow 0.15s;",
@@ -983,9 +892,9 @@ fn FlockCard(
                 div {
                     div { style: "display: flex; align-items: center; gap: 6px; margin-bottom: 2px;",
                         h3 { style: "font-size: 15px; font-weight: 600; color: {Theme::TEXT};",
-                            "{flock.name}"
+                            "{flock_info.name}"
                         }
-                        SecurityBadge { security: flock.security.clone() }
+                        SecurityBadge { security: flock_info.security.clone() }
                     }
                     p { style: "font-size: 12px; color: {Theme::MUTED};",
                         "{slug_display}"
@@ -995,9 +904,9 @@ fn FlockCard(
                     "v{version_display}"
                 }
             }
-            if !flock.description.is_empty() {
+            if !flock_info.description.is_empty() {
                 p { style: "font-size: 13px; color: {Theme::MUTED}; flex: 1; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;",
-                    "{flock.description}"
+                    "{flock_info.description}"
                 }
             }
             div { style: "display: flex; justify-content: space-between; align-items: center; margin-top: 4px;",

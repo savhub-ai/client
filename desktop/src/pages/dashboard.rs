@@ -32,7 +32,7 @@ struct RecentProject {
 
 #[component]
 pub fn DashboardPage() -> Element {
-    let state = use_context::<AppState>();
+    let mut state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
     let mut health = use_signal(|| t.checking.to_string());
     let mut health_error = use_signal(|| Option::<String>::None);
@@ -44,7 +44,6 @@ pub fn DashboardPage() -> Element {
     let mut recent_projects_page = use_signal(|| 0usize);
     let mut detected_agents_page = use_signal(|| 0usize);
     let mut loaded = use_signal(|| false);
-    let mut registry_syncing = use_signal(|| false);
     let mut registry_sync_result = use_signal(|| Option::<Result<bool, String>>::None);
 
     use_effect(move || {
@@ -56,22 +55,30 @@ pub fn DashboardPage() -> Element {
         let client = state.api_client();
         let workdir = state.workdir.read().clone();
         let mut current_user = state.current_user;
-        detected_agents.set(
-            savhub_local::clients::detect_clients()
-                .into_iter()
-                .filter(|client| client.installed)
-                .collect(),
-        );
-        recent_projects.set(load_recent_projects());
 
-        let lock_path = workdir.join(".savhub").join("lock.json");
-        if let Ok(raw) = std::fs::read_to_string(&lock_path) {
-            if let Ok(lock) = serde_json::from_str::<serde_json::Value>(&raw) {
-                if let Some(skills) = lock.get("skills").and_then(|value| value.as_object()) {
-                    skill_count.set(skills.len());
-                }
-            }
-        }
+        // Move all filesystem I/O off the UI thread
+        let workdir_bg = workdir.clone();
+        spawn(async move {
+            let (agents, projects, skills) = tokio::task::spawn_blocking(move || {
+                let agents: Vec<_> = savhub_local::clients::detect_clients()
+                    .into_iter()
+                    .filter(|c| c.installed)
+                    .collect();
+                let projects = load_recent_projects();
+                let lock_path = workdir_bg.join(".savhub").join("lock.json");
+                let skills = std::fs::read_to_string(&lock_path)
+                    .ok()
+                    .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+                    .and_then(|lock| lock.get("skills")?.as_object().map(|o| o.len()))
+                    .unwrap_or(0);
+                (agents, projects, skills)
+            })
+            .await
+            .unwrap_or_default();
+            detected_agents.set(agents);
+            recent_projects.set(projects);
+            skill_count.set(skills);
+        });
 
         spawn(async move {
             let t = i18n::texts(*state.lang.read());
@@ -189,7 +196,7 @@ pub fn DashboardPage() -> Element {
                         p { style: "font-size: 12px; color: {Theme::MUTED};",
                             "{registry_label}"
                         }
-                        if *registry_syncing.read() {
+                        if *state.registry_syncing.read() {
                             span { style: "display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: {Theme::ACCENT}; font-weight: 600;",
                                 span { style: "display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(90, 158, 63, 0.3); border-top-color: {Theme::ACCENT}; border-radius: 50%; animation: spin 0.8s linear infinite;" }
                                 "{t.registry_syncing}"
@@ -199,7 +206,7 @@ pub fn DashboardPage() -> Element {
                                 style: "padding: 3px 10px; font-size: 11px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border: 1px solid rgba(90, 158, 63, 0.18); border-radius: 6px; cursor: pointer; font-weight: 600;",
                                 onclick: move |_| {
                                     spawn(async move {
-                                        registry_syncing.set(true);
+                                        state.registry_syncing.set(true);
                                         registry_sync_result.set(None);
                                         let result = tokio::task::spawn_blocking(|| {
                                             // Force sync by clearing registry.json first
@@ -212,7 +219,7 @@ pub fn DashboardPage() -> Element {
                                         .map_err(|e| e.to_string())
                                         .and_then(|r| r.map_err(|e| e.to_string()));
                                         registry_sync_result.set(Some(result));
-                                        registry_syncing.set(false);
+                                        state.registry_syncing.set(false);
 
                                         // Re-check API health after sync so status updates if back online
                                         let client = state.api_client();
@@ -469,7 +476,7 @@ fn UserCard(label: &'static str) -> Element {
                     let base = state.api_base.read().clone();
                     let lang_code = state.lang.read().code();
                     let workdir = state.workdir.read().clone();
-                    crate::pages::settings::save_config(&base, &token, lang_code, &workdir, &[]);
+                    crate::pages::settings::save_config(&base, &token, lang_code, &workdir, &[], *state.security_level.read());
                     state.token.set(Some(token));
 
                     let client = state.api_client();
