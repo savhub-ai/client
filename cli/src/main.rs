@@ -78,11 +78,19 @@ struct TransferDecisionResponse {
     skill_slug: String,
 }
 
+fn exe_location() -> String {
+    let path = std::env::current_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
+    format!("Binary: {path}")
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "savhub",
     version = savhub_local::build_info::VERSION_LONG,
-    about = "Savhub CLI\n\nDocumentation: https://savhub.ai/docs/en/client"
+    about = "Savhub CLI\n\nDocumentation: https://savhub.ai/docs/en/client",
+    after_help = exe_location(),
 )]
 struct Cli {
     #[arg(long, global = true)]
