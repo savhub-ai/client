@@ -52,9 +52,8 @@ pub struct SecuritySummary {
 // ---------------------------------------------------------------------------
 //
 // Priority (highest first):
-//   1. ~/.savhub/config.toml  → [rest_api] base_url  (user override, for testing)
-//   2. ~/.config/savhub/registry.json → rest_api.base_url (from registry)
-//   3. Caller-provided default
+//   1. ~/.savhub/config.toml or ~/.savhub/config.kdl → [rest_api] base_url
+//   2. Caller-provided default
 
 /// User-level config file (`~/.savhub/config.toml`).
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -65,19 +64,6 @@ struct UserConfigFile {
 
 #[derive(Debug, Clone, Deserialize)]
 struct UserRestApi {
-    #[serde(default)]
-    base_url: Option<String>,
-}
-
-/// Registry config file (`~/.config/savhub/registry.json`).
-#[derive(Debug, Clone, Deserialize)]
-struct RegistryConfigFile {
-    #[serde(default)]
-    rest_api: Option<RegistryRestApi>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct RegistryRestApi {
     #[serde(default)]
     base_url: Option<String>,
 }
@@ -93,10 +79,9 @@ fn user_config_path() -> Option<PathBuf> {
 
 /// Read the REST API base URL.
 ///
-/// Checks `~/.savhub/config.toml` first (user override for testing),
-/// then falls back to `~/.config/savhub/registry.json`.
+/// Reads `~/.savhub/config.toml` / `config.kdl` for the legacy `[rest_api] base_url`
+/// override. Normal runtime config should use the `registry` field in `config.toml`.
 pub fn read_api_base_url() -> Option<String> {
-    // 1. User override: ~/.savhub/config.kdl or ~/.savhub/config.toml
     if let Some(path) = user_config_path() {
         if let Ok(raw) = std::fs::read_to_string(&path) {
             let cfg_result = if crate::kdl_support::is_kdl_path(&path) {
@@ -115,29 +100,7 @@ pub fn read_api_base_url() -> Option<String> {
             }
         }
     }
-
-    // 2. Registry config: ~/.config/savhub/registry.json
-    let path = get_config_dir().ok()?.join("registry.json");
-    let raw = std::fs::read_to_string(&path).ok()?;
-    let cfg: RegistryConfigFile = serde_json::from_str(&raw).ok()?;
-    cfg.rest_api?.base_url.filter(|u| !u.trim().is_empty())
-}
-
-/// Write the REST API base URL to `~/.config/savhub/registry.json`.
-pub fn write_api_base_url(base_url: &str) -> Result<()> {
-    let path = get_config_dir()?.join("registry.json");
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let payload = serde_json::json!({
-        "version": "1.0",
-        "rest_api": {
-            "base_url": base_url
-        }
-    });
-    let json = serde_json::to_string_pretty(&payload)?;
-    std::fs::write(&path, format!("{json}\n"))?;
-    Ok(())
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -1320,36 +1283,6 @@ fn registry_clone_dir() -> Result<PathBuf> {
     Ok(get_config_dir()?.join("registry"))
 }
 
-/// Persistent state for the registry sync, stored as `~/.savhub/registry.json`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct RegistryState {
-    /// The git commit SHA that was last synced into registry.db.
-    #[serde(default)]
-    pub synced_commit: String,
-}
-
-fn registry_state_path() -> Result<PathBuf> {
-    Ok(get_config_dir()?.join("registry.json"))
-}
-
-pub fn read_registry_state() -> Result<RegistryState> {
-    let path = registry_state_path()?;
-    let Ok(raw) = fs::read_to_string(&path) else {
-        return Ok(RegistryState::default());
-    };
-    Ok(serde_json::from_str(&raw).unwrap_or_default())
-}
-
-pub fn write_registry_state(state: &RegistryState) -> Result<()> {
-    let path = registry_state_path()?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let payload = serde_json::to_string_pretty(state)?;
-    fs::write(&path, format!("{payload}\n"))?;
-    Ok(())
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum RegistryDataPath {
     Repo { repo_id: String },
@@ -1367,12 +1300,25 @@ struct IncrementalRegistryPlan {
     skills_upserts: std::collections::BTreeSet<String>,
 }
 
-fn effective_synced_commit() -> Result<Option<String>> {
-    let state = read_registry_state()?;
-    if !state.synced_commit.trim().is_empty() {
-        return Ok(Some(state.synced_commit));
+impl IncrementalRegistryPlan {
+    fn total_changes(&self) -> usize {
+        self.repo_deletes.len()
+            + self.repo_upserts.len()
+            + self.flock_deletes.len()
+            + self.flock_upserts.len()
+            + self.skills_deletes.len()
+            + self.skills_upserts.len()
     }
-    cached_commit_sha()
+}
+
+const MAX_INCREMENTAL_PLAN_ITEMS: usize = 5000;
+
+fn effective_synced_commit() -> Result<Option<String>> {
+    cached_commit_sha().map(|commit| commit.filter(|value| !value.trim().is_empty()))
+}
+
+fn short_commit_sha(sha: &str) -> &str {
+    &sha[..8.min(sha.len())]
 }
 
 fn git_output(args: &[&str], cwd: Option<&Path>) -> Result<String> {
@@ -1639,8 +1585,38 @@ fn load_skills_from_clone(repo_dir: &Path, rel_path: &str) -> Result<SkillsFile>
     })
 }
 
+fn repo_source_json_from_repo(repo: &RegistryRepo) -> String {
+    repo.source
+        .as_ref()
+        .map(|source| serde_json::to_string(source).unwrap_or_default())
+        .unwrap_or_default()
+}
+
+fn load_repo_source_cache(
+    conn: &Connection,
+    repo_ids: &std::collections::BTreeSet<String>,
+) -> Result<std::collections::HashMap<String, String>> {
+    let mut cache = std::collections::HashMap::new();
+    if repo_ids.is_empty() {
+        return Ok(cache);
+    }
+
+    let mut stmt = conn.prepare("SELECT data_json FROM repos WHERE id = ?1 LIMIT 1")?;
+    for repo_id in repo_ids {
+        let data_json: Option<String> = stmt.query_row(params![repo_id], |row| row.get(0)).ok();
+        let Some(data_json) = data_json else {
+            continue;
+        };
+        let Ok(repo) = serde_json::from_str::<RegistryRepo>(&data_json) else {
+            continue;
+        };
+        cache.insert(repo_id.clone(), repo_source_json_from_repo(&repo));
+    }
+    Ok(cache)
+}
+
 fn upsert_repo_row(
-    tx: &rusqlite::Transaction<'_>,
+    stmt: &mut rusqlite::Statement<'_>,
     id: &str,
     repo: &RegistryRepo,
     raw: &str,
@@ -1656,9 +1632,7 @@ fn upsert_repo_row(
             _ => None,
         })
     });
-    tx.execute(
-        "INSERT OR REPLACE INTO repos (id, sign, name, description, git_url, git_rev, git_branch, visibility, verified, data_json)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+    stmt.execute(
         params![
             id,
             sign,
@@ -1676,7 +1650,7 @@ fn upsert_repo_row(
 }
 
 fn upsert_flock_row(
-    tx: &rusqlite::Transaction<'_>,
+    stmt: &mut rusqlite::Statement<'_>,
     id: &str,
     slug: &str,
     flock: &RegistryFlock,
@@ -1687,9 +1661,7 @@ fn upsert_flock_row(
     } else {
         flock.sign.clone()
     };
-    tx.execute(
-        "INSERT OR REPLACE INTO flocks (id, sign, repo_id, slug, name, description, version, status, license, source_json, data_json, security_status, security_verdict)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+    stmt.execute(
         params![
             id,
             flock_sign,
@@ -1709,25 +1681,14 @@ fn upsert_flock_row(
     Ok(())
 }
 
-fn repo_source_json_for_repo(tx: &rusqlite::Transaction<'_>, repo_id: &str) -> Result<String> {
-    let data_json: String = tx.query_row(
-        "SELECT data_json FROM repos WHERE id = ?1 LIMIT 1",
-        params![repo_id],
-        |row| row.get(0),
-    )?;
-    let repo = serde_json::from_str::<RegistryRepo>(&data_json)
-        .with_context(|| format!("invalid repo data_json for {repo_id}"))?;
-    Ok(repo
-        .source
-        .as_ref()
-        .map(|source| serde_json::to_string(source).unwrap_or_default())
-        .unwrap_or_default())
-}
-
-fn replace_skills_for_flock(tx: &rusqlite::Transaction<'_>, sf: &SkillsFile) -> Result<usize> {
+fn replace_skills_for_flock(
+    delete_stmt: &mut rusqlite::Statement<'_>,
+    insert_stmt: &mut rusqlite::Statement<'_>,
+    sf: &SkillsFile,
+    repo_source: &str,
+) -> Result<usize> {
     let flock_id = format!("{}/{}", sf.repo_id, sf.flock_slug);
-    tx.execute("DELETE FROM skills WHERE flock_id = ?1", params![flock_id])?;
-    let repo_source = repo_source_json_for_repo(tx, &sf.repo_id).unwrap_or_default();
+    delete_stmt.execute(params![flock_id])?;
 
     let mut inserted = 0usize;
     for skill in &sf.items {
@@ -1735,9 +1696,7 @@ fn replace_skills_for_flock(tx: &rusqlite::Transaction<'_>, sf: &SkillsFile) -> 
         let categories = serde_json::to_string(&skill.categories).unwrap_or_default();
         let keywords = serde_json::to_string(&skill.keywords).unwrap_or_default();
         let data = serde_json::to_string(&skill).unwrap_or_default();
-        tx.execute(
-            "INSERT OR REPLACE INTO skills (id, flock_id, repo_id, slug, name, path, summary, description, version, status, license, categories_json, keywords_json, source_json, entry_json, data_json, security_status, security_verdict)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+        insert_stmt.execute(
             params![
                 skill_id,
                 format!("{}/{}", sf.repo_id, sf.flock_slug),
@@ -1770,45 +1729,143 @@ fn apply_incremental_registry_sync(
     plan: &IncrementalRegistryPlan,
     commit_sha: &str,
 ) -> Result<SyncStats> {
-    let conn = open_cache()?;
-    let tx = conn.unchecked_transaction()?;
+    const PROGRESS_STEP: usize = 500;
+    println!(
+        "[registry-sync] applying incremental sqlite sync to {}: repo -{} +{}, flock -{} +{}, skills -{} +{}",
+        short_commit_sha(commit_sha),
+        plan.repo_deletes.len(),
+        plan.repo_upserts.len(),
+        plan.flock_deletes.len(),
+        plan.flock_upserts.len(),
+        plan.skills_deletes.len(),
+        plan.skills_upserts.len()
+    );
+    let skill_repo_ids: std::collections::BTreeSet<String> = plan
+        .skills_upserts
+        .iter()
+        .filter_map(|rel_path| match parse_registry_data_path(rel_path) {
+            Some(RegistryDataPath::Skills { repo_id, .. }) => Some(repo_id),
+            _ => None,
+        })
+        .collect();
+    let repo_upsert_ids: std::collections::BTreeSet<String> = plan
+        .repo_upserts
+        .iter()
+        .filter_map(|rel_path| match parse_registry_data_path(rel_path) {
+            Some(RegistryDataPath::Repo { repo_id }) => Some(repo_id),
+            _ => None,
+        })
+        .collect();
 
+    let conn = open_cache()?;
+    let unchanged_repo_ids: std::collections::BTreeSet<String> = skill_repo_ids
+        .difference(&repo_upsert_ids)
+        .cloned()
+        .collect();
+    let mut repo_source_cache = load_repo_source_cache(&conn, &unchanged_repo_ids)?;
+    let tx = conn.unchecked_transaction()?;
+    let mut delete_skills_by_repo_stmt = tx.prepare("DELETE FROM skills WHERE repo_id = ?1")?;
+    let mut delete_flocks_by_repo_stmt = tx.prepare("DELETE FROM flocks WHERE repo_id = ?1")?;
+    let mut delete_repo_stmt = tx.prepare("DELETE FROM repos WHERE id = ?1")?;
+    let mut delete_skills_by_flock_stmt = tx.prepare("DELETE FROM skills WHERE flock_id = ?1")?;
+    let mut delete_flock_stmt = tx.prepare("DELETE FROM flocks WHERE id = ?1")?;
+    let mut upsert_repo_stmt = tx.prepare(
+        "INSERT OR REPLACE INTO repos (id, sign, name, description, git_url, git_rev, git_branch, visibility, verified, data_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+    )?;
+    let mut upsert_flock_stmt = tx.prepare(
+        "INSERT OR REPLACE INTO flocks (id, sign, repo_id, slug, name, description, version, status, license, source_json, data_json, security_status, security_verdict)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+    )?;
+    let mut upsert_skill_stmt = tx.prepare(
+        "INSERT OR REPLACE INTO skills (id, flock_id, repo_id, slug, name, path, summary, description, version, status, license, categories_json, keywords_json, source_json, entry_json, data_json, security_status, security_verdict)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+    )?;
+
+    if !plan.repo_deletes.is_empty() || !plan.flock_deletes.is_empty() || !plan.skills_deletes.is_empty()
+    {
+        println!(
+            "[registry-sync] deleting stale rows: repo={}, flock={}, skills={}",
+            plan.repo_deletes.len(),
+            plan.flock_deletes.len(),
+            plan.skills_deletes.len()
+        );
+    }
     for repo_id in &plan.repo_deletes {
-        tx.execute("DELETE FROM skills WHERE repo_id = ?1", params![repo_id])?;
-        tx.execute("DELETE FROM flocks WHERE repo_id = ?1", params![repo_id])?;
-        tx.execute("DELETE FROM repos WHERE id = ?1", params![repo_id])?;
+        delete_skills_by_repo_stmt.execute(params![repo_id])?;
+        delete_flocks_by_repo_stmt.execute(params![repo_id])?;
+        delete_repo_stmt.execute(params![repo_id])?;
     }
 
     for flock_id in &plan.flock_deletes {
-        tx.execute("DELETE FROM skills WHERE flock_id = ?1", params![flock_id])?;
-        tx.execute("DELETE FROM flocks WHERE id = ?1", params![flock_id])?;
+        delete_skills_by_flock_stmt.execute(params![flock_id])?;
+        delete_flock_stmt.execute(params![flock_id])?;
     }
 
     for flock_id in &plan.skills_deletes {
-        tx.execute("DELETE FROM skills WHERE flock_id = ?1", params![flock_id])?;
+        delete_skills_by_flock_stmt.execute(params![flock_id])?;
     }
 
     let mut repo_count = 0usize;
+    let repo_total = plan.repo_upserts.len();
     for rel_path in &plan.repo_upserts {
         let (id, repo, raw) = load_repo_from_clone(repo_dir, rel_path)?;
-        upsert_repo_row(&tx, &id, &repo, &raw)?;
+        upsert_repo_row(&mut upsert_repo_stmt, &id, &repo, &raw)?;
+        repo_source_cache.insert(id.clone(), repo_source_json_from_repo(&repo));
         repo_count += 1;
+        if repo_count % PROGRESS_STEP == 0 || repo_count == repo_total {
+            println!(
+                "[registry-sync] repos progress: {}/{}",
+                repo_count, repo_total
+            );
+        }
     }
 
     let mut flock_count = 0usize;
+    let flock_total = plan.flock_upserts.len();
     for rel_path in &plan.flock_upserts {
         let (id, slug, flock, raw) = load_flock_from_clone(repo_dir, rel_path)?;
-        upsert_flock_row(&tx, &id, &slug, &flock, &raw)?;
+        upsert_flock_row(&mut upsert_flock_stmt, &id, &slug, &flock, &raw)?;
         flock_count += 1;
+        if flock_count % PROGRESS_STEP == 0 || flock_count == flock_total {
+            println!(
+                "[registry-sync] flocks progress: {}/{}",
+                flock_count, flock_total
+            );
+        }
     }
 
     let mut skill_count = 0usize;
+    let skills_total = plan.skills_upserts.len();
+    let mut skills_files_done = 0usize;
     for rel_path in &plan.skills_upserts {
         let skills = load_skills_from_clone(repo_dir, rel_path)?;
-        skill_count += replace_skills_for_flock(&tx, &skills)?;
+        let repo_source = repo_source_cache
+            .get(&skills.repo_id)
+            .cloned()
+            .unwrap_or_default();
+        skill_count += replace_skills_for_flock(
+            &mut delete_skills_by_flock_stmt,
+            &mut upsert_skill_stmt,
+            &skills,
+            &repo_source,
+        )?;
+        skills_files_done += 1;
+        if skills_files_done % PROGRESS_STEP == 0 || skills_files_done == skills_total {
+            println!(
+                "[registry-sync] skills files progress: {}/{} (rows written={})",
+                skills_files_done, skills_total, skill_count
+            );
+        }
     }
 
     let now = chrono::Utc::now().to_rfc3339();
+    println!("[registry-sync] incremental sqlite writes finished; committing transaction");
+    println!(
+        "[registry-sync] writing sqlite sync_state commit_sha={} synced_at={}",
+        short_commit_sha(commit_sha),
+        now
+    );
     tx.execute(
         "INSERT OR REPLACE INTO sync_state (key, value) VALUES ('commit_sha', ?1)",
         params![commit_sha],
@@ -1817,6 +1874,14 @@ fn apply_incremental_registry_sync(
         "INSERT OR REPLACE INTO sync_state (key, value) VALUES ('synced_at', ?1)",
         params![now],
     )?;
+    drop(delete_skills_by_repo_stmt);
+    drop(delete_flocks_by_repo_stmt);
+    drop(delete_repo_stmt);
+    drop(delete_skills_by_flock_stmt);
+    drop(delete_flock_stmt);
+    drop(upsert_repo_stmt);
+    drop(upsert_flock_stmt);
+    drop(upsert_skill_stmt);
     tx.commit()?;
 
     Ok(SyncStats {
@@ -1832,15 +1897,26 @@ pub fn registry_has_remote_updates() -> Result<bool> {
     let local_commit = effective_synced_commit()?;
     let repo_dir = registry_clone_dir().ok();
     let remote_commit = remote_registry_head(repo_dir.as_deref())?;
-    Ok(local_commit.as_deref() != Some(remote_commit.as_str()))
+    let needs_sync = local_commit.as_deref() != Some(remote_commit.as_str());
+    let local_display = local_commit
+        .as_deref()
+        .map(short_commit_sha)
+        .unwrap_or("none");
+    println!(
+        "[registry-sync] update check: sqlite_commit={}, remote_head={}, needs_sync={}",
+        local_display,
+        short_commit_sha(&remote_commit),
+        needs_sync
+    );
+    Ok(needs_sync)
 }
 
 /// Ensure the local registry clone is up-to-date and synced to SQLite.
 ///
-/// 1. Compare the remote registry head with the last synced commit in `registry.json`
+/// 1. Compare the remote registry head with the last synced commit in SQLite
 /// 2. If unchanged, skip the sqlite sync entirely
-/// 3. If changed, fetch the remote head and sync only the changed registry files
-/// 4. Fall back to a full sqlite rebuild only when an incremental diff cannot be applied
+/// 3. If changed, fetch the remote head and sync only the changed registry files when the diff is small
+/// 4. For large diffs, or when incremental apply fails, fall back to a full sqlite rebuild
 ///
 /// Returns `Ok(true)` if a sync was performed, `Ok(false)` if already current.
 pub fn ensure_registry_synced() -> Result<bool> {
@@ -1848,36 +1924,104 @@ pub fn ensure_registry_synced() -> Result<bool> {
     let synced_commit = effective_synced_commit()?.unwrap_or_default();
     let db_has_data = skill_count().unwrap_or(0) > 0;
     let remote_head = remote_registry_head(Some(&repo_dir))?;
+    let synced_display = if synced_commit.is_empty() {
+        "none".to_string()
+    } else {
+        short_commit_sha(&synced_commit).to_string()
+    };
+    println!(
+        "[registry-sync] begin: db_has_data={}, sqlite_commit={}, remote_head={}, repo={}",
+        db_has_data,
+        synced_display,
+        short_commit_sha(&remote_head),
+        repo_dir.display()
+    );
 
     if db_has_data && !synced_commit.is_empty() && synced_commit == remote_head {
+        println!(
+            "[registry-sync] skip: sqlite already synced to {}",
+            short_commit_sha(&remote_head)
+        );
         let _ = sync_installed_from_json();
         return Ok(false);
     }
 
+    println!("[registry-sync] fetching latest registry main");
     fetch_registry_main(&repo_dir)?;
 
-    let performed = if !db_has_data || synced_commit.is_empty() {
+    let stats = if !db_has_data || synced_commit.is_empty() {
+        println!(
+            "[registry-sync] full sqlite rebuild: reason={}",
+            if !db_has_data {
+                "cache-empty"
+            } else {
+                "missing-synced-commit"
+            }
+        );
         checkout_registry_commit(&repo_dir, &remote_head)?;
-        let _ = sync_from_local_clone()?;
-        true
+        sync_from_local_clone()?
     } else if !registry_commit_exists(&repo_dir, &synced_commit) {
+        println!(
+            "[registry-sync] full sqlite rebuild: reason=missing-old-commit old={} new={}",
+            short_commit_sha(&synced_commit),
+            short_commit_sha(&remote_head)
+        );
         checkout_registry_commit(&repo_dir, &remote_head)?;
-        let _ = sync_from_local_clone()?;
-        true
+        sync_from_local_clone()?
     } else {
+        println!(
+            "[registry-sync] diffing registry data: {} -> {}",
+            short_commit_sha(&synced_commit),
+            short_commit_sha(&remote_head)
+        );
         let plan = diff_registry_changes(&repo_dir, &synced_commit, &remote_head)?;
+        let total_changes = plan.total_changes();
+        println!(
+            "[registry-sync] incremental plan: repo -{} +{}, flock -{} +{}, skills -{} +{}, total={}",
+            plan.repo_deletes.len(),
+            plan.repo_upserts.len(),
+            plan.flock_deletes.len(),
+            plan.flock_upserts.len(),
+            plan.skills_deletes.len(),
+            plan.skills_upserts.len(),
+            total_changes
+        );
         checkout_registry_commit(&repo_dir, &remote_head)?;
-        let _ = apply_incremental_registry_sync(&repo_dir, &plan, &remote_head)
-            .or_else(|_| sync_from_local_clone())?;
-        true
+        if total_changes > MAX_INCREMENTAL_PLAN_ITEMS {
+            println!(
+                "[registry-sync] full sqlite rebuild: reason=large-diff total_changes={} threshold={}",
+                total_changes,
+                MAX_INCREMENTAL_PLAN_ITEMS
+            );
+            sync_from_local_clone()?
+        } else {
+            match apply_incremental_registry_sync(&repo_dir, &plan, &remote_head) {
+                Ok(stats) => stats,
+                Err(err) => {
+                    println!(
+                        "[registry-sync] incremental sync failed: {}. Falling back to full rebuild.",
+                        err
+                    );
+                    sync_from_local_clone()?
+                }
+            }
+        }
     };
 
-    write_registry_state(&RegistryState {
-        synced_commit: remote_head,
-    })?;
-
+    println!(
+        "[registry-sync] sqlite sync complete: commit={}, repos={}, flocks={}, skills={}",
+        short_commit_sha(&stats.commit_sha),
+        stats.repos,
+        stats.flocks,
+        stats.skills
+    );
+    println!("[registry-sync] refreshing installed flags from installed_skills.json");
     let _ = sync_installed_from_json();
-    Ok(performed)
+    println!(
+        "[registry-sync] finished: sqlite commit now {}",
+        short_commit_sha(&stats.commit_sha)
+    );
+    Ok(true)
 }
 
 /// Ensure the local registry clone exists and fetch the latest main branch.
@@ -1910,6 +2054,11 @@ pub fn sync_from_local_clone() -> Result<SyncStats> {
             });
         String::from_utf8_lossy(&output.stdout).trim().to_string()
     };
+    println!(
+        "[registry-sync] full clone scan: reading data directory at {} for commit {}",
+        repo_dir.join("data").display(),
+        short_commit_sha(&commit_sha)
+    );
 
     let data_dir = repo_dir.join("data");
     let mut repos = Vec::new();
@@ -1981,6 +2130,12 @@ pub fn sync_from_local_clone() -> Result<SyncStats> {
         }
     }
 
+    println!(
+        "[registry-sync] parsed full registry snapshot: repos={}, flocks={}, skills_files={}",
+        repos.len(),
+        flocks.len(),
+        skills_files.len()
+    );
     write_parsed_to_db(&repos, &flocks, &skills_files, &commit_sha)
 }
 
@@ -2090,8 +2245,19 @@ fn write_parsed_to_db(
     skills_files: &[SkillsFile],
     commit_sha: &str,
 ) -> Result<SyncStats> {
+    println!(
+        "[registry-sync] writing full sqlite snapshot: commit={}, repos={}, flocks={}, skills_files={}",
+        short_commit_sha(commit_sha),
+        repos.len(),
+        flocks.len(),
+        skills_files.len()
+    );
     let conn = open_cache()?;
     let tx = conn.unchecked_transaction()?;
+    let repo_source_map: std::collections::HashMap<String, String> = repos
+        .iter()
+        .map(|(id, repo, _)| (id.clone(), repo_source_json_from_repo(repo)))
+        .collect();
 
     // Save installed state before clearing
     let mut installed_map = std::collections::HashMap::<String, String>::new();
@@ -2109,6 +2275,20 @@ fn write_parsed_to_db(
 
     // Clear all existing data
     tx.execute_batch("DELETE FROM skills; DELETE FROM flocks; DELETE FROM repos;")?;
+    let mut upsert_repo_stmt = tx.prepare(
+        "INSERT OR REPLACE INTO repos (id, sign, name, description, git_url, git_rev, git_branch, visibility, verified, data_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+    )?;
+    let mut upsert_flock_stmt = tx.prepare(
+        "INSERT OR REPLACE INTO flocks (id, sign, repo_id, slug, name, description, version, status, license, source_json, data_json, security_status, security_verdict)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+    )?;
+    let mut upsert_skill_stmt = tx.prepare(
+        "INSERT OR REPLACE INTO skills (id, flock_id, repo_id, slug, name, path, summary, description, version, status, license, categories_json, keywords_json, source_json, entry_json, data_json, security_status, security_verdict)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+    )?;
+    let mut restore_installed_stmt =
+        tx.prepare("UPDATE skills SET installed = 1, installed_at = ?1 WHERE slug = ?2")?;
 
     // Insert repos
     for (id, repo, raw) in repos {
@@ -2123,9 +2303,7 @@ fn write_parsed_to_db(
                 _ => None,
             })
         });
-        tx.execute(
-            "INSERT OR REPLACE INTO repos (id, sign, name, description, git_url, git_rev, git_branch, visibility, verified, data_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        upsert_repo_stmt.execute(
             params![
                 id,
                 sign,
@@ -2148,9 +2326,7 @@ fn write_parsed_to_db(
         } else {
             flock.sign.clone()
         };
-        tx.execute(
-            "INSERT OR REPLACE INTO flocks (id, sign, repo_id, slug, name, description, version, status, license, source_json, data_json, security_status, security_verdict)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        upsert_flock_stmt.execute(
             params![
                 id,
                 flock_sign,
@@ -2173,12 +2349,9 @@ fn write_parsed_to_db(
     let mut total_skills = 0usize;
     for sf in skills_files {
         let flock_id = format!("{}/{}", sf.repo_id, sf.flock_slug);
-        // Look up repo source for this skill's repo
-        let repo_source = repos
-            .iter()
-            .find(|(id, ..)| *id == sf.repo_id)
-            .and_then(|(_, repo, _)| repo.source.as_ref())
-            .map(|s| serde_json::to_string(s).unwrap_or_default())
+        let repo_source = repo_source_map
+            .get(&sf.repo_id)
+            .cloned()
             .unwrap_or_default();
         for skill in &sf.items {
             // Derive id from path components
@@ -2187,9 +2360,7 @@ fn write_parsed_to_db(
             let keywords = serde_json::to_string(&skill.keywords).unwrap_or_default();
             let data = serde_json::to_string(&skill).unwrap_or_default();
 
-            tx.execute(
-                "INSERT OR REPLACE INTO skills (id, flock_id, repo_id, slug, name, path, summary, description, version, status, license, categories_json, keywords_json, source_json, entry_json, data_json, security_status, security_verdict)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+            upsert_skill_stmt.execute(
                 params![
                     skill_id,
                     flock_id,
@@ -2217,14 +2388,16 @@ fn write_parsed_to_db(
 
     // Restore installed state
     for (slug, at) in &installed_map {
-        tx.execute(
-            "UPDATE skills SET installed = 1, installed_at = ?1 WHERE slug = ?2",
-            params![at, slug],
-        )?;
+        restore_installed_stmt.execute(params![at, slug])?;
     }
 
     // Update sync state
     let now = chrono::Utc::now().to_rfc3339();
+    println!(
+        "[registry-sync] writing sqlite sync_state commit_sha={} synced_at={}",
+        short_commit_sha(commit_sha),
+        now
+    );
     tx.execute(
         "INSERT OR REPLACE INTO sync_state (key, value) VALUES ('commit_sha', ?1)",
         params![commit_sha],
@@ -2233,6 +2406,10 @@ fn write_parsed_to_db(
         "INSERT OR REPLACE INTO sync_state (key, value) VALUES ('synced_at', ?1)",
         params![now],
     )?;
+    drop(upsert_repo_stmt);
+    drop(upsert_flock_stmt);
+    drop(upsert_skill_stmt);
+    drop(restore_installed_stmt);
 
     tx.commit()?;
 
@@ -2288,6 +2465,13 @@ pub fn cached_commit_sha() -> Result<Option<String>> {
             |row| row.get(0),
         )
         .ok())
+}
+
+pub fn clear_cached_commit_sha() -> Result<()> {
+    let conn = open_cache()?;
+    conn.execute("DELETE FROM sync_state WHERE key = 'commit_sha'", [])?;
+    conn.execute("DELETE FROM sync_state WHERE key = 'synced_at'", [])?;
+    Ok(())
 }
 
 /// List skills with optional search, pagination, and status filter.

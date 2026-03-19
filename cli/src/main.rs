@@ -594,8 +594,7 @@ fn resolve_global_opts(cli: &Cli) -> Result<GlobalOpts> {
         .or_else(|| std::env::var("SAVHUB_SITE").ok())
         .unwrap_or_else(|| DEFAULT_SITE.to_string());
     let cached = read_global_config()?;
-    // Priority: --registry flag > env > config.toml [rest_api] override > config.toml registry >
-    // site default
+    // Priority: --registry flag > env > config [rest_api] override > config registry > site default
     let api_override = savhub_local::registry::read_api_base_url();
     let registry = cli
         .registry
@@ -2552,8 +2551,7 @@ async fn cmd_registry(_opts: &GlobalOpts, command: RegistryCommand) -> Result<()
             println!("Syncing registry...");
             match registry::ensure_registry_synced()? {
                 true => {
-                    let state = registry::read_registry_state()?;
-                    let sha = &state.synced_commit;
+                    let sha = registry::cached_commit_sha()?.unwrap_or_default();
                     println!("Done. Synced to commit {}", &sha[..8.min(sha.len())]);
                 }
                 false => println!("Already up to date."),

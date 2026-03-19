@@ -209,10 +209,8 @@ pub fn DashboardPage() -> Element {
                                         state.registry_syncing.set(true);
                                         registry_sync_result.set(None);
                                         let result = tokio::task::spawn_blocking(|| {
-                                            // Force sync by clearing registry.json first
-                                            let _ = savhub_local::registry::write_registry_state(
-                                                &savhub_local::registry::RegistryState::default(),
-                                            );
+                                            // Force sync by clearing the cached sqlite sync state first.
+                                            let _ = savhub_local::registry::clear_cached_commit_sha();
                                             savhub_local::registry::ensure_registry_synced()
                                         })
                                         .await

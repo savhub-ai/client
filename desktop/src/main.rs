@@ -229,7 +229,7 @@ fn Shell() -> Element {
         // 1. Always render from SQLite immediately.
         // 2. If the cache is empty, sync now in the background and refresh pages after it lands.
         // 3. If the cache already has data, only sync when the remote head differs from the synced
-        //    commit recorded in registry.json, and do not force-refresh current pages.
+        //    commit recorded in SQLite, and do not force-refresh current pages.
         spawn(async move {
             let db_has_data = tokio::task::spawn_blocking(|| {
                 savhub_local::registry::skill_count().unwrap_or(0) > 0
@@ -254,11 +254,20 @@ fn Shell() -> Element {
             state.registry_syncing.set(true);
             let sync_task =
                 tokio::task::spawn_blocking(|| savhub_local::registry::ensure_registry_synced());
-            let _ = tokio::time::timeout(std::time::Duration::from_secs(60), sync_task).await;
+            let sync_result = sync_task.await;
             state.registry_syncing.set(false);
-
-            if !db_has_data {
-                state.config_version.with_mut(|v| *v += 1);
+            match sync_result {
+                Ok(Ok(performed)) => {
+                    if !db_has_data && performed {
+                        state.config_version.with_mut(|v| *v += 1);
+                    }
+                }
+                Ok(Err(err)) => {
+                    eprintln!("background registry sync failed: {err}");
+                }
+                Err(err) => {
+                    eprintln!("background registry sync task failed: {err}");
+                }
             }
         });
     });
