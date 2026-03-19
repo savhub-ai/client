@@ -78,7 +78,12 @@ struct RegistryRestApi {
 }
 
 fn user_config_path() -> Option<PathBuf> {
-    get_config_dir().ok().map(|d| d.join("config.toml"))
+    let dir = get_config_dir().ok()?;
+    let kdl = dir.join("config.kdl");
+    if kdl.exists() {
+        return Some(kdl);
+    }
+    Some(dir.join("config.toml"))
 }
 
 /// Read the REST API base URL.
@@ -86,10 +91,15 @@ fn user_config_path() -> Option<PathBuf> {
 /// Checks `~/.savhub/config.toml` first (user override for testing),
 /// then falls back to `~/.config/savhub/registry.json`.
 pub fn read_api_base_url() -> Option<String> {
-    // 1. User override: ~/.savhub/config.toml
+    // 1. User override: ~/.savhub/config.kdl or ~/.savhub/config.toml
     if let Some(path) = user_config_path() {
         if let Ok(raw) = std::fs::read_to_string(&path) {
-            if let Ok(cfg) = toml::from_str::<UserConfigFile>(&raw) {
+            let cfg_result = if crate::kdl_support::is_kdl_path(&path) {
+                crate::kdl_support::parse_kdl::<UserConfigFile>(&raw).ok()
+            } else {
+                toml::from_str::<UserConfigFile>(&raw).ok()
+            };
+            if let Some(cfg) = cfg_result {
                 if let Some(url) = cfg
                     .rest_api
                     .and_then(|r| r.base_url)

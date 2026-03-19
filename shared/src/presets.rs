@@ -205,7 +205,16 @@ pub enum EnableProjectRepoSkillResult {
 // ---------------------------------------------------------------------------
 
 fn project_config_path(workdir: &Path) -> PathBuf {
-    workdir.join("savhub.toml")
+    let kdl = workdir.join("savhub.kdl");
+    if kdl.exists() {
+        return kdl;
+    }
+    let toml = workdir.join("savhub.toml");
+    if toml.exists() {
+        return toml;
+    }
+    // Default to KDL
+    kdl
 }
 
 fn project_lock_path(workdir: &Path) -> PathBuf {
@@ -431,8 +440,13 @@ fn project_added_skills_to_lockfile(skills: &[ProjectAddedSkill]) -> Lockfile {
 pub fn read_project_config(workdir: &Path) -> Result<ProjectConfigFile> {
     let path = project_config_path(workdir);
     if let Ok(raw) = fs::read_to_string(&path) {
-        let mut config: ProjectConfigFile =
-            toml::from_str(&raw).with_context(|| format!("invalid {}", path.display()))?;
+        let mut config: ProjectConfigFile = if crate::kdl_support::is_kdl_path(&path) {
+            crate::kdl_support::parse_kdl(&raw)
+                .map_err(|e| anyhow::anyhow!(e))
+                .with_context(|| format!("invalid {}", path.display()))?
+        } else {
+            toml::from_str(&raw).with_context(|| format!("invalid {}", path.display()))?
+        };
         config.selectors.matched = normalize_selector_matches(&config.selectors.matched);
         config.skills.manual_added = normalize_added_skills(&config.skills.manual_added);
         return Ok(config);
@@ -480,7 +494,12 @@ fn write_project_config_inner(
         fs::create_dir_all(parent)?;
     }
 
-    let payload = toml::to_string_pretty(&normalized)?;
+    let payload = if crate::kdl_support::is_kdl_path(&path) {
+        crate::kdl_support::to_kdl_string(&normalized)
+            .map_err(|e| anyhow::anyhow!(e))?
+    } else {
+        toml::to_string_pretty(&normalized)?
+    };
     fs::write(path, format!("{payload}\n"))?;
     Ok(())
 }
@@ -490,8 +509,14 @@ pub fn read_project_lockfile(workdir: &Path) -> Result<ProjectLockFile> {
     let Ok(raw) = fs::read_to_string(&path) else {
         return Ok(ProjectLockFile::default());
     };
-    let mut lockfile: ProjectLockFile =
-        toml::from_str(&raw).with_context(|| format!("invalid {}", path.display()))?;
+    let config_path = project_config_path(workdir);
+    let mut lockfile: ProjectLockFile = if crate::kdl_support::is_kdl_path(&config_path) {
+        crate::kdl_support::parse_kdl(&raw)
+            .map_err(|e| anyhow::anyhow!(e))
+            .with_context(|| format!("invalid {}", path.display()))?
+    } else {
+        toml::from_str(&raw).with_context(|| format!("invalid {}", path.display()))?
+    };
     lockfile.version = 1;
     lockfile.skills = normalize_project_lock_skills(&lockfile.skills);
     Ok(lockfile)
@@ -523,7 +548,13 @@ fn write_project_lockfile_inner(
         return Ok(());
     }
 
-    let payload = toml::to_string_pretty(&normalized)?;
+    let config_path = project_config_path(workdir);
+    let payload = if crate::kdl_support::is_kdl_path(&config_path) {
+        crate::kdl_support::to_kdl_string(&normalized)
+            .map_err(|e| anyhow::anyhow!(e))?
+    } else {
+        toml::to_string_pretty(&normalized)?
+    };
     fs::write(path, format!("{payload}\n"))?;
     Ok(())
 }

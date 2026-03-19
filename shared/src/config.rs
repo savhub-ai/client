@@ -38,7 +38,17 @@ pub fn get_config_path() -> Result<PathBuf> {
     if let Some(path) = std::env::var_os("SAVHUB_CONFIG_PATH") {
         return Ok(PathBuf::from(path));
     }
-    Ok(get_config_dir()?.join("config.toml"))
+    let dir = get_config_dir()?;
+    let kdl_path = dir.join("config.kdl");
+    if kdl_path.exists() {
+        return Ok(kdl_path);
+    }
+    let toml_path = dir.join("config.toml");
+    if toml_path.exists() {
+        return Ok(toml_path);
+    }
+    // Default to KDL for new installations
+    Ok(kdl_path)
 }
 
 pub fn read_global_config() -> Result<Option<GlobalConfig>> {
@@ -46,10 +56,12 @@ pub fn read_global_config() -> Result<Option<GlobalConfig>> {
     let Ok(raw) = fs::read_to_string(&path) else {
         return Ok(None);
     };
-    let Ok(config) = toml::from_str::<GlobalConfig>(&raw) else {
-        return Ok(None);
+    let config = if crate::kdl_support::is_kdl_path(&path) {
+        crate::kdl_support::parse_kdl::<GlobalConfig>(&raw).ok()
+    } else {
+        toml::from_str::<GlobalConfig>(&raw).ok()
     };
-    Ok(Some(config))
+    Ok(config)
 }
 
 // ---------------------------------------------------------------------------
@@ -159,8 +171,12 @@ pub fn write_global_config(config: &GlobalConfig) -> Result<()> {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create config directory {}", parent.display()))?;
     }
-    let payload =
-        toml::to_string_pretty(config).with_context(|| "failed to serialize config as TOML")?;
+    let payload = if crate::kdl_support::is_kdl_path(&path) {
+        crate::kdl_support::to_kdl_string(config)
+            .map_err(|e| anyhow::anyhow!(e))?
+    } else {
+        toml::to_string_pretty(config).with_context(|| "failed to serialize config as TOML")?
+    };
     fs::write(&path, format!("{payload}\n"))
         .with_context(|| format!("failed to write {}", path.display()))?;
 
