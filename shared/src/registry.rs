@@ -1632,20 +1632,18 @@ fn upsert_repo_row(
             _ => None,
         })
     });
-    stmt.execute(
-        params![
-            id,
-            sign,
-            repo.name,
-            repo.description,
-            git_url,
-            repo.git_rev,
-            repo.git_branch,
-            repo.visibility,
-            repo.verified.unwrap_or(false) as i32,
-            raw,
-        ],
-    )?;
+    stmt.execute(params![
+        id,
+        sign,
+        repo.name,
+        repo.description,
+        git_url,
+        repo.git_rev,
+        repo.git_branch,
+        repo.visibility,
+        repo.verified.unwrap_or(false) as i32,
+        raw,
+    ])?;
     Ok(())
 }
 
@@ -1661,23 +1659,21 @@ fn upsert_flock_row(
     } else {
         flock.sign.clone()
     };
-    stmt.execute(
-        params![
-            id,
-            flock_sign,
-            flock.repo,
-            slug,
-            flock.name,
-            flock.description,
-            flock.version,
-            flock.status,
-            flock.license,
-            "",
-            raw,
-            flock.security.status.as_deref().unwrap_or(""),
-            flock.security.verdict.as_deref().unwrap_or(""),
-        ],
-    )?;
+    stmt.execute(params![
+        id,
+        flock_sign,
+        flock.repo,
+        slug,
+        flock.name,
+        flock.description,
+        flock.version,
+        flock.status,
+        flock.license,
+        "",
+        raw,
+        flock.security.status.as_deref().unwrap_or(""),
+        flock.security.verdict.as_deref().unwrap_or(""),
+    ])?;
     Ok(())
 }
 
@@ -1696,28 +1692,26 @@ fn replace_skills_for_flock(
         let categories = serde_json::to_string(&skill.categories).unwrap_or_default();
         let keywords = serde_json::to_string(&skill.keywords).unwrap_or_default();
         let data = serde_json::to_string(&skill).unwrap_or_default();
-        insert_stmt.execute(
-            params![
-                skill_id,
-                format!("{}/{}", sf.repo_id, sf.flock_slug),
-                sf.repo_id,
-                skill.slug,
-                skill.name,
-                skill.path,
-                skill.description.as_deref().unwrap_or(""),
-                skill.description.as_deref().unwrap_or(""),
-                skill.version,
-                skill.status,
-                skill.license,
-                categories,
-                keywords,
-                repo_source,
-                "",
-                data,
-                skill.security.status.as_deref().unwrap_or(""),
-                skill.security.verdict.as_deref().unwrap_or(""),
-            ],
-        )?;
+        insert_stmt.execute(params![
+            skill_id,
+            format!("{}/{}", sf.repo_id, sf.flock_slug),
+            sf.repo_id,
+            skill.slug,
+            skill.name,
+            skill.path,
+            skill.description.as_deref().unwrap_or(""),
+            skill.description.as_deref().unwrap_or(""),
+            skill.version,
+            skill.status,
+            skill.license,
+            categories,
+            keywords,
+            repo_source,
+            "",
+            data,
+            skill.security.status.as_deref().unwrap_or(""),
+            skill.security.verdict.as_deref().unwrap_or(""),
+        ])?;
         inserted += 1;
     }
 
@@ -1782,7 +1776,9 @@ fn apply_incremental_registry_sync(
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
     )?;
 
-    if !plan.repo_deletes.is_empty() || !plan.flock_deletes.is_empty() || !plan.skills_deletes.is_empty()
+    if !plan.repo_deletes.is_empty()
+        || !plan.flock_deletes.is_empty()
+        || !plan.skills_deletes.is_empty()
     {
         println!(
             "[registry-sync] deleting stale rows: repo={}, flock={}, skills={}",
@@ -1915,7 +1911,8 @@ pub fn registry_has_remote_updates() -> Result<bool> {
 ///
 /// 1. Compare the remote registry head with the last synced commit in SQLite
 /// 2. If unchanged, skip the sqlite sync entirely
-/// 3. If changed, fetch the remote head and sync only the changed registry files when the diff is small
+/// 3. If changed, fetch the remote head and sync only the changed registry files when the diff is
+///    small
 /// 4. For large diffs, or when incremental apply fails, fall back to a full sqlite rebuild
 ///
 /// Returns `Ok(true)` if a sync was performed, `Ok(false)` if already current.
@@ -1990,8 +1987,7 @@ pub fn ensure_registry_synced() -> Result<bool> {
         if total_changes > MAX_INCREMENTAL_PLAN_ITEMS {
             println!(
                 "[registry-sync] full sqlite rebuild: reason=large-diff total_changes={} threshold={}",
-                total_changes,
-                MAX_INCREMENTAL_PLAN_ITEMS
+                total_changes, MAX_INCREMENTAL_PLAN_ITEMS
             );
             sync_from_local_clone()?
         } else {
@@ -2303,20 +2299,18 @@ fn write_parsed_to_db(
                 _ => None,
             })
         });
-        upsert_repo_stmt.execute(
-            params![
-                id,
-                sign,
-                repo.name,
-                repo.description,
-                git_url,
-                repo.git_rev,
-                repo.git_branch,
-                repo.visibility,
-                repo.verified.unwrap_or(false) as i32,
-                raw,
-            ],
-        )?;
+        upsert_repo_stmt.execute(params![
+            id,
+            sign,
+            repo.name,
+            repo.description,
+            git_url,
+            repo.git_rev,
+            repo.git_branch,
+            repo.visibility,
+            repo.verified.unwrap_or(false) as i32,
+            raw,
+        ])?;
     }
 
     // Insert flocks
@@ -2326,23 +2320,21 @@ fn write_parsed_to_db(
         } else {
             flock.sign.clone()
         };
-        upsert_flock_stmt.execute(
-            params![
-                id,
-                flock_sign,
-                flock.repo,
-                slug,
-                flock.name,
-                flock.description,
-                flock.version,
-                flock.status,
-                flock.license,
-                "", // source is now on repo level
-                raw,
-                flock.security.status.as_deref().unwrap_or(""),
-                flock.security.verdict.as_deref().unwrap_or(""),
-            ],
-        )?;
+        upsert_flock_stmt.execute(params![
+            id,
+            flock_sign,
+            flock.repo,
+            slug,
+            flock.name,
+            flock.description,
+            flock.version,
+            flock.status,
+            flock.license,
+            "", // source is now on repo level
+            raw,
+            flock.security.status.as_deref().unwrap_or(""),
+            flock.security.verdict.as_deref().unwrap_or(""),
+        ])?;
     }
 
     // Insert skills
@@ -2360,28 +2352,26 @@ fn write_parsed_to_db(
             let keywords = serde_json::to_string(&skill.keywords).unwrap_or_default();
             let data = serde_json::to_string(&skill).unwrap_or_default();
 
-            upsert_skill_stmt.execute(
-                params![
-                    skill_id,
-                    flock_id,
-                    sf.repo_id,
-                    skill.slug,
-                    skill.name,
-                    skill.path,
-                    skill.description.as_deref().unwrap_or(""),
-                    skill.description.as_deref().unwrap_or(""),
-                    skill.version,
-                    skill.status,
-                    skill.license,
-                    categories,
-                    keywords,
-                    repo_source,
-                    "",
-                    data,
-                    skill.security.status.as_deref().unwrap_or(""),
-                    skill.security.verdict.as_deref().unwrap_or(""),
-                ],
-            )?;
+            upsert_skill_stmt.execute(params![
+                skill_id,
+                flock_id,
+                sf.repo_id,
+                skill.slug,
+                skill.name,
+                skill.path,
+                skill.description.as_deref().unwrap_or(""),
+                skill.description.as_deref().unwrap_or(""),
+                skill.version,
+                skill.status,
+                skill.license,
+                categories,
+                keywords,
+                repo_source,
+                "",
+                data,
+                skill.security.status.as_deref().unwrap_or(""),
+                skill.security.verdict.as_deref().unwrap_or(""),
+            ])?;
             total_skills += 1;
         }
     }
