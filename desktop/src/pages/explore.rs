@@ -10,6 +10,7 @@ use crate::state::AppState;
 use crate::theme::Theme;
 
 const EXPLORE_PAGE_SIZE: usize = 24;
+const FLOCKS_PAGE_SIZE: usize = 12;
 
 #[derive(Debug, Clone, PartialEq)]
 struct DisplaySkill {
@@ -120,40 +121,65 @@ fn load_skills_page(
     });
 }
 
-fn load_flocks(
+fn load_flocks_page(
+    query: String,
+    page_index: usize,
+    append: bool,
     mut flocks_data: Signal<Vec<DisplayFlock>>,
     mut loading: Signal<bool>,
+    mut loaded: Signal<bool>,
     mut error: Signal<Option<String>>,
+    mut total_flocks: Signal<usize>,
 ) {
     spawn(async move {
         loading.set(true);
+        loaded.set(false);
+        let query = query.trim().to_string();
         let result = tokio::task::spawn_blocking(move || {
-            let flocks = savhub_local::registry::list_flocks().map_err(|e| e.to_string())?;
+            let query_ref = if query.is_empty() {
+                None
+            } else {
+                Some(query.as_str())
+            };
+            let (flocks, total) = savhub_local::registry::list_flocks_page(
+                query_ref,
+                page_index,
+                FLOCKS_PAGE_SIZE,
+            )
+            .map_err(|e| e.to_string())?;
             let mut items = Vec::with_capacity(flocks.len());
             for flock in flocks {
                 let skill_slugs =
                     savhub_local::registry::list_flock_skill_slugs(&flock.slug).unwrap_or_default();
                 items.push(DisplayFlock { flock, skill_slugs });
             }
-            Ok::<_, String>(items)
+            Ok::<_, String>((items, total))
         })
         .await;
 
         match result {
-            Ok(Ok(items)) => {
-                flocks_data.set(items);
+            Ok(Ok((items, total))) => {
+                if append {
+                    flocks_data.with_mut(|existing| existing.extend(items));
+                } else {
+                    flocks_data.set(items);
+                }
+                total_flocks.set(total);
                 error.set(None);
             }
             Ok(Err(e)) => {
                 flocks_data.set(Vec::new());
+                total_flocks.set(0);
                 error.set(Some(e.to_string()));
             }
             Err(e) => {
                 flocks_data.set(Vec::new());
+                total_flocks.set(0);
                 error.set(Some(e.to_string()));
             }
         }
         loading.set(false);
+        loaded.set(true);
     });
 }
 
@@ -170,10 +196,15 @@ pub fn ExplorePage() -> Element {
     let mut active_filter = use_signal(|| SkillFilter::All);
     let mut active_view = use_signal(|| ViewMode::Cards);
     let mut current_page = use_signal(|| 0usize);
-    let loading = use_signal(|| false);
-    let error = use_signal(|| Option::<String>::None);
+    let mut flocks_page = use_signal(|| 0usize);
+    let skills_loading = use_signal(|| false);
+    let skills_error = use_signal(|| Option::<String>::None);
+    let flocks_loading = use_signal(|| false);
+    let flocks_error = use_signal(|| Option::<String>::None);
+    let flocks_loaded = use_signal(|| false);
     let mut grouped = use_signal(|| true);
     let flocks_data: Signal<Vec<DisplayFlock>> = use_signal(Vec::new);
+    let total_flocks = use_signal(|| 0usize);
     let mut reload_version = use_signal(|| 0u32);
     let mut flocks_version = use_signal(|| 0u32);
 
@@ -203,8 +234,8 @@ pub fn ExplorePage() -> Element {
             query,
             filter,
             page,
-            loading,
-            error,
+            skills_loading,
+            skills_error,
             skill_list,
             total_skills,
             installed_skill_total,
@@ -212,15 +243,28 @@ pub fn ExplorePage() -> Element {
     });
 
     use_effect(move || {
+        let query = applied_query.read().clone();
+        let page = *flocks_page.read();
         let _ = *flocks_version.read();
+        let _ = *reload_version.read();
         let _ = *state.config_version.read();
         if *grouped.read() {
-            load_flocks(flocks_data, loading, error);
+            load_flocks_page(
+                query,
+                page,
+                page > 0,
+                flocks_data,
+                flocks_loading,
+                flocks_loaded,
+                flocks_error,
+                total_flocks,
+            );
         }
     });
 
     let mut run_search = move || {
         current_page.set(0);
+        flocks_page.set(0);
         applied_query.set(query.read().clone());
     };
 
@@ -244,23 +288,7 @@ pub fn ExplorePage() -> Element {
     let flock_skills_label = t.flock_skills_count;
     let is_grouped = *grouped.read();
 
-    let active_query_value = applied_query.read().clone();
-    let filtered_flocks: Vec<DisplayFlock> = if is_grouped {
-        let search_lower = active_query_value.to_lowercase();
-        flocks_data
-            .read()
-            .iter()
-            .filter(|f| {
-                search_lower.is_empty()
-                    || f.flock.name.to_lowercase().contains(&search_lower)
-                    || f.flock.slug.to_lowercase().contains(&search_lower)
-                    || f.flock.description.to_lowercase().contains(&search_lower)
-            })
-            .cloned()
-            .collect()
-    } else {
-        Vec::new()
-    };
+    let filtered_flocks = flocks_data.read().clone();
 
     let current_filter = *active_filter.read();
     let current_view = *active_view.read();
@@ -269,6 +297,10 @@ pub fn ExplorePage() -> Element {
     let current_page_index =
         pagination::clamp_page(*current_page.read(), skill_total, EXPLORE_PAGE_SIZE);
     let total_pages = pagination::total_pages(skill_total, EXPLORE_PAGE_SIZE);
+    let flock_total = *total_flocks.read();
+    let current_flocks_page =
+        pagination::clamp_page(*flocks_page.read(), flock_total, FLOCKS_PAGE_SIZE);
+    let has_more_flocks = filtered_flocks.len() < flock_total;
     let filter_items = [
         (SkillFilter::All, all_label, *total_skills.read()),
         (
@@ -307,6 +339,7 @@ pub fn ExplorePage() -> Element {
                         style: "display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex-shrink: 0; background: {Theme::PANEL}; color: {Theme::ACCENT_STRONG}; border: 1px solid {Theme::LINE}; border-radius: 8px; cursor: pointer; font-size: 16px;",
                         onclick: move |_| {
                             current_page.set(0);
+                            flocks_page.set(0);
                             reload_version += 1;
                             flocks_version += 1;
                         },
@@ -321,6 +354,8 @@ pub fn ExplorePage() -> Element {
                         ),
                         onclick: move |_| {
                             let current = *grouped.read();
+                            current_page.set(0);
+                            flocks_page.set(0);
                             grouped.set(!current);
                         },
                         "{t.grouped_label}"
@@ -362,15 +397,37 @@ pub fn ExplorePage() -> Element {
             }
 
             // ── Scrollable content ──
-            div { style: "flex: 1; overflow-y: auto; padding: 20px 32px 32px;",
+            div {
+                style: "flex: 1; overflow-y: auto; padding: 20px 32px 32px;",
+                onscroll: move |evt: Event<ScrollData>| {
+                    if !is_grouped || *flocks_loading.read() || !has_more_flocks {
+                        return;
+                    }
+                    let remaining = evt.scroll_height() as f64
+                        - evt.client_height() as f64
+                        - evt.scroll_top();
+                    if remaining <= 180.0 {
+                        flocks_page.set(current_flocks_page + 1);
+                    }
+                },
 
-            if *loading.read() {
-                p { style: "color: {Theme::MUTED}; padding: 20px 0;", "{loading_text}" }
-            }
-
-            if let Some(err) = error.read().as_ref() {
-                div { style: "padding: 12px 16px; background: rgba(139, 30, 30, 0.08); border: 1px solid rgba(139, 30, 30, 0.2); border-radius: 6px; color: {Theme::DANGER}; margin-bottom: 16px;",
-                    "{err}"
+            {
+                let is_loading = if is_grouped { *flocks_loading.read() } else { *skills_loading.read() };
+                let current_error = if is_grouped { flocks_error.read().clone() } else { skills_error.read().clone() };
+                let show_primary_loading = if is_grouped {
+                    is_loading && filtered_flocks.is_empty()
+                } else {
+                    is_loading
+                };
+                rsx! {
+                    if show_primary_loading {
+                        p { style: "color: {Theme::MUTED}; padding: 20px 0;", "{loading_text}" }
+                    }
+                    if let Some(err) = current_error.as_ref() {
+                        div { style: "padding: 12px 16px; background: rgba(139, 30, 30, 0.08); border: 1px solid rgba(139, 30, 30, 0.2); border-radius: 6px; color: {Theme::DANGER}; margin-bottom: 16px;",
+                            "{err}"
+                        }
+                    }
                 }
             }
 
@@ -397,9 +454,19 @@ pub fn ExplorePage() -> Element {
                         }
                     }
                 }
-                if filtered_flocks.is_empty() && !*loading.read() {
-                    p { style: "color: {Theme::MUTED}; text-align: center; padding: 40px 0;",
-                        "{no_found}"
+                if filtered_flocks.is_empty() && !*flocks_loading.read() {
+                    if *flocks_loaded.read() && flocks_error.read().is_none() {
+                        p { style: "color: {Theme::MUTED}; text-align: center; padding: 40px 0;",
+                            "{no_found}"
+                        }
+                    }
+                }
+                if !filtered_flocks.is_empty() && *flocks_loading.read() {
+                    div { style: "display: flex; justify-content: center; padding: 14px 0 6px;",
+                        span { style: "display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: {Theme::MUTED};",
+                            span { style: "display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(90, 158, 63, 0.3); border-top-color: {Theme::ACCENT}; border-radius: 50%; animation: spin 0.8s linear infinite;" }
+                            "{loading_text}"
+                        }
                     }
                 }
             } else {
@@ -435,7 +502,7 @@ pub fn ExplorePage() -> Element {
                     }
                 }
 
-                if !*loading.read() && visible_skills.is_empty() && error.read().is_none() {
+                if !*skills_loading.read() && visible_skills.is_empty() && skills_error.read().is_none() {
                     p { style: "color: {Theme::MUTED}; text-align: center; padding: 40px 0;",
                         "{no_found}"
                     }

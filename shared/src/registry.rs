@@ -14,7 +14,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 
-use crate::config::get_config_dir;
+use crate::config::{SecurityLevel, get_config_dir};
 
 // ---------------------------------------------------------------------------
 // Security summary (matches server's SecuritySummary and registry JSON schema)
@@ -888,6 +888,121 @@ pub fn skill_matches_skipped(sign: &str, skipped: &[String]) -> bool {
     false
 }
 
+#[derive(Debug, Clone)]
+struct SkillInstallRef {
+    fetch_ref: String,
+    display_ref: String,
+}
+
+fn configured_security_level() -> SecurityLevel {
+    crate::config::read_global_config()
+        .ok()
+        .flatten()
+        .map(|cfg| cfg.security_level)
+        .unwrap_or_default()
+}
+
+fn format_security_state(status: Option<&str>, verdict: Option<&str>) -> String {
+    match (status, verdict) {
+        (Some(status), Some(verdict)) if !verdict.is_empty() => {
+            format!("status={status}, verdict={verdict}")
+        }
+        (Some(status), _) => format!("status={status}"),
+        (_, Some(verdict)) if !verdict.is_empty() => format!("verdict={verdict}"),
+        _ => "status=unverified".to_string(),
+    }
+}
+
+fn resolve_skill_install_ref(
+    skill: &RegistrySkill,
+    git_ref: &GitRef,
+    commit_hash: Option<&str>,
+) -> Result<SkillInstallRef> {
+    let level = configured_security_level();
+    let status = skill.security.status.as_deref().filter(|s| !s.is_empty());
+    let verdict = skill.security.verdict.as_deref().filter(|v| !v.is_empty());
+
+    if !level.allows(status, verdict) {
+        bail!(
+            "skill '{}' is blocked by Security Level '{}' ({})",
+            skill.slug,
+            level.as_str(),
+            format_security_state(status, verdict)
+        );
+    }
+
+    if let Some(commit) = skill
+        .security
+        .scanned_commit
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        return Ok(SkillInstallRef {
+            fetch_ref: commit.to_string(),
+            display_ref: format!("scanned commit {commit}"),
+        });
+    }
+
+    if level == SecurityLevel::Verified {
+        bail!(
+            "skill '{}' has no scanned commit - it has not been security-verified and cannot be installed",
+            skill.slug
+        );
+    }
+
+    if let Some(commit) = commit_hash.filter(|value| !value.trim().is_empty()) {
+        return Ok(SkillInstallRef {
+            fetch_ref: commit.to_string(),
+            display_ref: format!("repo commit {commit}"),
+        });
+    }
+
+    let ref_value = git_ref.value.trim();
+    if ref_value.is_empty() {
+        bail!(
+            "skill '{}' has no scanned commit and no source ref to install",
+            skill.slug
+        );
+    }
+
+    Ok(SkillInstallRef {
+        fetch_ref: ref_value.to_string(),
+        display_ref: format!("source {} {}", git_ref.r#type, ref_value),
+    })
+}
+
+fn fetch_repo_ref(repo_dir: &Path, git_url: &str, install_ref: &SkillInstallRef) -> Result<()> {
+    let fetch_ok = Command::new("git")
+        .args(["fetch", "--depth", "1", "origin", &install_ref.fetch_ref])
+        .current_dir(repo_dir)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false);
+    if !fetch_ok {
+        bail!(
+            "failed to fetch {} from {}",
+            install_ref.display_ref,
+            git_url
+        );
+    }
+
+    let checkout_ok = Command::new("git")
+        .args(["checkout", "FETCH_HEAD"])
+        .current_dir(repo_dir)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false);
+    if !checkout_ok {
+        bail!("failed to checkout {}", install_ref.display_ref);
+    }
+
+    Ok(())
+}
+
 /// Install a skill by cloning/updating its source git repository.
 ///
 /// 1. If the repo doesn't exist locally, `git clone --depth 1`
@@ -902,28 +1017,23 @@ pub fn install_skill_from_registry(sign: &str) -> Result<PathBuf> {
 
     let source = get_repo_source_for_skill(slug)?
         .with_context(|| format!("no repo source found for skill '{slug}'"))?;
-    let scanned_commit = skill.security.scanned_commit.clone();
-    let (git_url, _git_ref, source_path) = match &source {
-        RegistrySource::Git { url, r#ref, .. } => {
+    let (git_url, git_ref, source_path, commit_hash) = match &source {
+        RegistrySource::Git {
+            url,
+            r#ref,
+            commit_hash,
+            ..
+        } => {
             let sp = if !skill.path.is_empty() {
                 skill.path.clone()
             } else {
                 format!("skills/{slug}")
             };
-            (url.clone(), r#ref.clone(), sp)
+            (url.clone(), r#ref.clone(), sp, commit_hash.clone())
         }
         _ => bail!("skill '{slug}' has no git source"),
     };
-
-    // Only install code that has been security-scanned. If no scanned_commit
-    // is available the skill has never been verified — refuse to install.
-    let pinned_ref = match &scanned_commit {
-        Some(commit) => commit.clone(),
-        None => bail!(
-            "skill '{slug}' has no scanned commit — \
-             it has not been security-verified and cannot be installed"
-        ),
-    };
+    let install_ref = resolve_skill_install_ref(&skill, &git_ref, commit_hash.as_deref())?;
 
     let base = repos_dir()?;
     fs::create_dir_all(&base)?;
@@ -934,29 +1044,7 @@ pub fn install_skill_from_registry(sign: &str) -> Result<PathBuf> {
     if repo_dir.exists() {
         // Existing repo: fetch the exact scanned commit and checkout
         sparse_checkout_add(&repo_dir, &[source_path.as_str()])?;
-
-        let fetch_ok = std::process::Command::new("git")
-            .args(["fetch", "--depth", "1", "origin", &pinned_ref])
-            .current_dir(&repo_dir)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if !fetch_ok {
-            bail!("failed to fetch scanned commit {pinned_ref} from {git_url}");
-        }
-        let checkout_ok = std::process::Command::new("git")
-            .args(["checkout", &pinned_ref])
-            .current_dir(&repo_dir)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if !checkout_ok {
-            bail!("failed to checkout scanned commit {pinned_ref}");
-        }
+        fetch_repo_ref(&repo_dir, &git_url, &install_ref)?;
     } else {
         // Fresh init + fetch of the exact scanned commit (never pulls HEAD)
         fs::create_dir_all(&repo_dir)?;
@@ -989,27 +1077,11 @@ pub fn install_skill_from_registry(sign: &str) -> Result<PathBuf> {
             .current_dir(&repo_dir)
             .status();
 
-        // Fetch only the scanned commit — never the branch HEAD.
-        let fetch_ok = std::process::Command::new("git")
-            .args(["fetch", "--depth", "1", "origin", &pinned_ref])
-            .current_dir(&repo_dir)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if !fetch_ok {
+        if let Err(err) = fetch_repo_ref(&repo_dir, &git_url, &install_ref) {
             // Clean up the empty repo dir on failure
             let _ = fs::remove_dir_all(&repo_dir);
-            bail!("failed to fetch scanned commit {pinned_ref} from {git_url}");
+            return Err(err);
         }
-
-        let _ = std::process::Command::new("git")
-            .args(["checkout", "FETCH_HEAD"])
-            .current_dir(&repo_dir)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
     }
 
     // Mark as installed in SQLite + JSON
@@ -1078,8 +1150,8 @@ pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>>
         slug: String,
         repo_sign: String,
         git_url: String,
-        git_ref: GitRef,
         source_path: String,
+        install_ref: SkillInstallRef,
     }
     let mut skill_infos = Vec::new();
     for slug in slugs {
@@ -1102,18 +1174,31 @@ pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>>
         };
         let source = get_repo_source_for_skill(slug)?;
         match &source {
-            Some(RegistrySource::Git { url, r#ref, .. }) => {
+            Some(RegistrySource::Git {
+                url,
+                r#ref,
+                commit_hash,
+                ..
+            }) => {
                 let source_path = if !skill.path.is_empty() {
                     skill.path.clone()
                 } else {
                     format!("skills/{slug}")
                 };
+                let install_ref =
+                    match resolve_skill_install_ref(&skill, r#ref, commit_hash.as_deref()) {
+                        Ok(install_ref) => install_ref,
+                        Err(err) => {
+                            eprintln!("  \x1b[33m!\x1b[0m {slug}: {err}");
+                            continue;
+                        }
+                    };
                 skill_infos.push(SkillInfo {
                     slug: slug.clone(),
                     repo_sign: skill_repo_sign,
                     git_url: url.clone(),
-                    git_ref: r#ref.clone(),
                     source_path,
+                    install_ref,
                 });
             }
             _ => {
@@ -1122,11 +1207,11 @@ pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>>
         }
     }
 
-    // 2. Group by (git_url, git_ref.value) so we do one git operation per repo.
+    // 2. Group by repo URL and install ref so we do one git operation per exact target.
     let mut groups: BTreeMap<(String, String), Vec<&SkillInfo>> = BTreeMap::new();
     for info in &skill_infos {
         groups
-            .entry((info.git_url.clone(), info.git_ref.value.clone()))
+            .entry((info.git_url.clone(), info.install_ref.fetch_ref.clone()))
             .or_default()
             .push(info);
     }
@@ -1137,81 +1222,59 @@ pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>>
     let mut results = Vec::new();
 
     // 3. For each group, clone once (or pull once), sparse-checkout ALL paths at once.
-    for ((git_url, _ref_value), skills) in &groups {
+    for ((git_url, _fetch_ref), skills) in &groups {
         let repo_name = repo_dir_name(git_url);
         let repo_sign = base.join(&repo_name);
-        let git_ref = &skills[0].git_ref;
+        let install_ref = &skills[0].install_ref;
 
         let source_paths: Vec<&str> = skills.iter().map(|s| s.source_path.as_str()).collect();
 
         if repo_sign.exists() {
-            // Existing repo: add ALL skill paths in a single sparse-checkout command.
+            // Existing repo: add all skill paths, then fetch the exact target ref.
             sparse_checkout_add(&repo_sign, &source_paths)?;
-
-            let status = std::process::Command::new("git")
-                .args(["pull", "--ff-only"])
-                .current_dir(&repo_sign)
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::piped())
-                .status();
-            match status {
-                Ok(s) if s.success() => {}
-                _ => {
-                    let _ = std::process::Command::new("git")
-                        .args(["fetch", "--depth", "1", "origin", &git_ref.value])
-                        .current_dir(&repo_sign)
-                        .status();
-                    let _ = std::process::Command::new("git")
-                        .args(["checkout", &git_ref.value, "--"])
-                        .current_dir(&repo_sign)
-                        .status();
-                }
+            if let Err(err) = fetch_repo_ref(&repo_sign, git_url, install_ref) {
+                eprintln!("  \x1b[33m!\x1b[0m {repo_name}: {err}");
+                continue;
             }
         } else {
-            // Fresh shallow clone with sparse-checkout for all paths at once.
-            let mut args = vec![
-                "clone".to_string(),
-                "--depth".to_string(),
-                "1".to_string(),
-                "--no-checkout".to_string(),
-                "--filter=blob:none".to_string(),
-            ];
-            if git_ref.r#type == "branch" || git_ref.r#type == "tag" {
-                args.push("--branch".to_string());
-                args.push(git_ref.value.clone());
-            }
-            args.push(git_url.clone());
-            args.push(repo_sign.display().to_string());
+            fs::create_dir_all(&repo_sign)?;
 
-            let status = std::process::Command::new("git")
-                .args(&args)
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
+            let init_ok = Command::new("git")
+                .args(["init"])
+                .current_dir(&repo_sign)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
                 .status()
-                .with_context(|| format!("failed to run git clone for {git_url}"))?;
-
-            if !status.success() {
-                eprintln!("  \x1b[33m!\x1b[0m git clone failed for {git_url}");
+                .map(|status| status.success())
+                .unwrap_or(false);
+            if !init_ok {
+                eprintln!("  \x1b[33m!\x1b[0m git init failed for {git_url}");
+                let _ = fs::remove_dir_all(&repo_sign);
                 continue;
             }
 
-            let _ = std::process::Command::new("git")
+            let _ = Command::new("git")
+                .args(["remote", "add", "origin", git_url])
+                .current_dir(&repo_sign)
+                .status();
+
+            let _ = Command::new("git")
                 .args(["sparse-checkout", "init", "--cone"])
                 .current_dir(&repo_sign)
                 .status();
 
-            // Set ALL paths in a single sparse-checkout set command.
             let mut set_args: Vec<&str> = vec!["sparse-checkout", "set"];
             set_args.extend(source_paths.iter());
-            let _ = std::process::Command::new("git")
+            let _ = Command::new("git")
                 .args(&set_args)
                 .current_dir(&repo_sign)
                 .status();
 
-            let _ = std::process::Command::new("git")
-                .args(["checkout"])
-                .current_dir(&repo_sign)
-                .status();
+            if let Err(err) = fetch_repo_ref(&repo_sign, git_url, install_ref) {
+                eprintln!("  \x1b[33m!\x1b[0m {repo_name}: {err}");
+                let _ = fs::remove_dir_all(&repo_sign);
+                continue;
+            }
         }
 
         // 4. Mark all skills in this group as installed and collect results.
@@ -2351,6 +2414,55 @@ pub fn list_flocks() -> Result<Vec<RegistryFlock>> {
     Ok(flocks)
 }
 
+/// List flocks with sqlite pagination and optional search.
+pub fn list_flocks_page(
+    query: Option<&str>,
+    page: usize,
+    page_size: usize,
+) -> Result<(Vec<RegistryFlock>, usize)> {
+    let conn = open_cache()?;
+    let offset = page * page_size;
+    let (where_clause, search_params) = build_flock_search_clause(query);
+
+    let count_sql = format!("SELECT COUNT(*) FROM flocks {where_clause}");
+    let total: usize = {
+        let mut stmt = conn.prepare(&count_sql)?;
+        bind_search_params(&mut stmt, &search_params)?
+    };
+
+    let select_sql = format!(
+        "SELECT slug, data_json FROM flocks {where_clause} ORDER BY name ASC LIMIT ?{} OFFSET ?{}",
+        search_params.len() + 1,
+        search_params.len() + 2,
+    );
+    let mut stmt = conn.prepare(&select_sql)?;
+    let mut bound: Vec<Box<dyn rusqlite::types::ToSql>> = search_params
+        .into_iter()
+        .map(|value| Box::new(value) as Box<dyn rusqlite::types::ToSql>)
+        .collect();
+    bound.push(Box::new(page_size as i64));
+    bound.push(Box::new(offset as i64));
+
+    let refs: Vec<&dyn rusqlite::types::ToSql> =
+        bound.iter().map(|value| value.as_ref()).collect();
+    let rows = stmt.query_map(refs.as_slice(), |row| {
+        let slug: String = row.get(0)?;
+        let json: String = row.get(1)?;
+        Ok((slug, json))
+    })?;
+
+    let mut flocks = Vec::new();
+    for row in rows {
+        let (slug, json) = row?;
+        if let Ok(mut flock) = serde_json::from_str::<RegistryFlock>(&json) {
+            flock.slug = slug;
+            flocks.push(flock);
+        }
+    }
+
+    Ok((flocks, total))
+}
+
 /// Get a flock by its slug.
 pub fn get_flock_by_slug(slug: &str) -> Result<Option<RegistryFlock>> {
     let conn = open_cache()?;
@@ -2665,6 +2777,28 @@ fn build_search_clause(
 
     if installed_only {
         conditions.push("installed = 1".to_string());
+    }
+
+    let clause = if conditions.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", conditions.join(" AND "))
+    };
+
+    (clause, params)
+}
+
+fn build_flock_search_clause(query: Option<&str>) -> (String, Vec<String>) {
+    let mut conditions = Vec::new();
+    let mut params = Vec::new();
+
+    if let Some(q) = query.filter(|q| !q.trim().is_empty()) {
+        let like = format!("%{}%", q.trim().to_lowercase());
+        let idx = params.len() + 1;
+        conditions.push(format!(
+            "(LOWER(name) LIKE ?{idx} OR LOWER(slug) LIKE ?{idx} OR LOWER(description) LIKE ?{idx})"
+        ));
+        params.push(like);
     }
 
     let clause = if conditions.is_empty() {
