@@ -89,7 +89,7 @@ fn exe_location() -> String {
 #[command(
     name = "savhub",
     version = savhub_local::build_info::VERSION_LONG,
-    about = "Savhub CLI\n\nDocumentation: https://savhub.ai/docs/en/client",
+    about = "Savhub CLI\n\nDocumentation: https://savhub.ai/en/docs/client",
     after_help = exe_location(),
 )]
 struct Cli {
@@ -557,7 +557,7 @@ async fn main() -> Result<()> {
         Some(Command::Flock { command }) => cmd_flock(&opts, command)?,
         Some(Command::Pilot { command }) => cmd_pilot(command)?,
         Some(Command::Docs) => {
-            let url = "https://savhub.ai/docs/en/client";
+            let url = "https://savhub.ai/en/docs/client";
             println!("Documentation: {url}");
             #[cfg(target_os = "windows")]
             {

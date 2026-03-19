@@ -141,7 +141,7 @@ Environment variables:
 
 ## Documentation
 
-Full documentation is available at [savhub.ai/docs](https://savhub.ai/docs/en/client).
+Full documentation is available at [savhub.ai/docs](https://savhub.ai/en/docs/client).
 
 ## License
 

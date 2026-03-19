@@ -227,7 +227,9 @@ fn Shell() -> Element {
 
         // Registry sync strategy:
         // 1. Always render from SQLite immediately.
-        // 2. Only kick off a background sync when the SQLite cache is empty.
+        // 2. If the cache is empty, sync now in the background and refresh pages after it lands.
+        // 3. If the cache already has data, only sync when the remote head differs from the
+        //    synced commit recorded in registry.json, and do not force-refresh current pages.
         spawn(async move {
             let db_has_data = tokio::task::spawn_blocking(|| {
                 savhub_local::registry::skill_count().unwrap_or(0) > 0
@@ -235,7 +237,17 @@ fn Shell() -> Element {
             .await
             .unwrap_or(false);
 
-            if db_has_data {
+            let needs_sync = if db_has_data {
+                tokio::task::spawn_blocking(|| {
+                    savhub_local::registry::registry_has_remote_updates().unwrap_or(false)
+                })
+                .await
+                .unwrap_or(false)
+            } else {
+                true
+            };
+
+            if !needs_sync {
                 return;
             }
 
@@ -244,7 +256,10 @@ fn Shell() -> Element {
                 tokio::task::spawn_blocking(|| savhub_local::registry::ensure_registry_synced());
             let _ = tokio::time::timeout(std::time::Duration::from_secs(60), sync_task).await;
             state.registry_syncing.set(false);
-            state.config_version.with_mut(|v| *v += 1);
+
+            if !db_has_data {
+                state.config_version.with_mut(|v| *v += 1);
+            }
         });
     });
 
@@ -521,7 +536,7 @@ fn Sidebar() -> Element {
             // Docs (external link — styled like NavItem)
             {
                 let lang_code = (*state.lang.read()).code();
-                let docs_url = format!("https://savhub.ai/docs/{lang_code}/client");
+                let docs_url = format!("https://savhub.ai/{lang_code}/docs/client");
                 let docs_label = t.nav_docs;
                 let justify = if is_collapsed { "center" } else { "flex-start" };
                 let gap = if is_collapsed { "0" } else { "12px" };

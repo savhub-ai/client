@@ -7,6 +7,7 @@
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
@@ -1286,95 +1287,530 @@ pub fn write_registry_state(state: &RegistryState) -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RegistryDataPath {
+    Repo {
+        repo_id: String,
+    },
+    Flock {
+        repo_id: String,
+        flock_slug: String,
+    },
+    Skills {
+        repo_id: String,
+        flock_slug: String,
+    },
+}
+
+#[derive(Debug, Default)]
+struct IncrementalRegistryPlan {
+    repo_deletes: std::collections::BTreeSet<String>,
+    repo_upserts: std::collections::BTreeSet<String>,
+    flock_deletes: std::collections::BTreeSet<String>,
+    flock_upserts: std::collections::BTreeSet<String>,
+    skills_deletes: std::collections::BTreeSet<String>,
+    skills_upserts: std::collections::BTreeSet<String>,
+}
+
+fn effective_synced_commit() -> Result<Option<String>> {
+    let state = read_registry_state()?;
+    if !state.synced_commit.trim().is_empty() {
+        return Ok(Some(state.synced_commit));
+    }
+    cached_commit_sha()
+}
+
+fn git_output(args: &[&str], cwd: Option<&Path>) -> Result<String> {
+    let mut command = Command::new("git");
+    command.args(args);
+    if let Some(dir) = cwd {
+        command.current_dir(dir);
+    }
+    let output = command
+        .output()
+        .with_context(|| format!("failed to run git {}", args.join(" ")))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.is_empty() {
+            bail!("git {} failed", args.join(" "));
+        }
+        bail!("git {} failed: {stderr}", args.join(" "));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn git_ok(args: &[&str], cwd: Option<&Path>) -> Result<()> {
+    let _ = git_output(args, cwd)?;
+    Ok(())
+}
+
+fn ensure_registry_clone() -> Result<PathBuf> {
+    let repo_dir = registry_clone_dir()?;
+    if repo_dir.join(".git").exists() {
+        return Ok(repo_dir);
+    }
+
+    if let Some(parent) = repo_dir.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let git_url = format!("https://github.com/{DEFAULT_REGISTRY_REPO}.git");
+    let target = repo_dir.display().to_string();
+    git_ok(
+        &["clone", "--depth", "1", "--branch", "main", &git_url, &target],
+        None,
+    )?;
+    Ok(repo_dir)
+}
+
+fn remote_registry_head(repo_dir: Option<&Path>) -> Result<String> {
+    let output = if let Some(dir) = repo_dir.filter(|dir| dir.join(".git").exists()) {
+        git_output(&["ls-remote", "origin", "refs/heads/main"], Some(dir))?
+    } else {
+        let git_url = format!("https://github.com/{DEFAULT_REGISTRY_REPO}.git");
+        git_output(&["ls-remote", &git_url, "refs/heads/main"], None)?
+    };
+
+    let sha = output
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if sha.is_empty() {
+        bail!("failed to read remote registry head");
+    }
+    Ok(sha)
+}
+
+fn fetch_registry_main(repo_dir: &Path) -> Result<()> {
+    git_ok(&["fetch", "--depth", "1", "origin", "main"], Some(repo_dir))
+}
+
+fn checkout_registry_commit(repo_dir: &Path, commit_sha: &str) -> Result<()> {
+    git_ok(&["checkout", "--detach", commit_sha], Some(repo_dir))
+}
+
+fn registry_commit_exists(repo_dir: &Path, commit_sha: &str) -> bool {
+    if commit_sha.trim().is_empty() {
+        return false;
+    }
+    Command::new("git")
+        .args(["cat-file", "-e", &format!("{commit_sha}^{{commit}}")])
+        .current_dir(repo_dir)
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn parse_registry_data_path(rel_path: &str) -> Option<RegistryDataPath> {
+    let rel = rel_path.strip_prefix("data/")?;
+    if let Some(repo_id) = rel.strip_suffix("/repo.json") {
+        return Some(RegistryDataPath::Repo {
+            repo_id: repo_id.to_string(),
+        });
+    }
+
+    if let Some(stripped) = rel.strip_suffix("/flock.json") {
+        let (repo_id, flock_slug) = match stripped.rsplitn(2, '/').collect::<Vec<_>>().as_slice() {
+            [flock, repo] => (repo.to_string(), flock.to_string()),
+            _ => return None,
+        };
+        return Some(RegistryDataPath::Flock { repo_id, flock_slug });
+    }
+
+    if let Some(stripped) = rel.strip_suffix("/skills.json") {
+        let (repo_id, flock_slug) = match stripped.rsplitn(2, '/').collect::<Vec<_>>().as_slice() {
+            [flock, repo] => (repo.to_string(), flock.to_string()),
+            _ => return None,
+        };
+        return Some(RegistryDataPath::Skills { repo_id, flock_slug });
+    }
+
+    None
+}
+
+fn queue_registry_delete(plan: &mut IncrementalRegistryPlan, rel_path: &str) {
+    match parse_registry_data_path(rel_path) {
+        Some(RegistryDataPath::Repo { repo_id }) => {
+            plan.repo_deletes.insert(repo_id);
+        }
+        Some(RegistryDataPath::Flock { repo_id, flock_slug }) => {
+            plan.flock_deletes.insert(format!("{repo_id}/{flock_slug}"));
+            plan.skills_deletes.insert(format!("{repo_id}/{flock_slug}"));
+        }
+        Some(RegistryDataPath::Skills { repo_id, flock_slug }) => {
+            plan.skills_deletes.insert(format!("{repo_id}/{flock_slug}"));
+        }
+        None => {}
+    }
+}
+
+fn queue_registry_upsert(plan: &mut IncrementalRegistryPlan, rel_path: &str) {
+    match parse_registry_data_path(rel_path) {
+        Some(RegistryDataPath::Repo { .. }) => {
+            plan.repo_upserts.insert(rel_path.to_string());
+        }
+        Some(RegistryDataPath::Flock { .. }) => {
+            plan.flock_upserts.insert(rel_path.to_string());
+        }
+        Some(RegistryDataPath::Skills { .. }) => {
+            plan.skills_upserts.insert(rel_path.to_string());
+        }
+        None => {}
+    }
+}
+
+fn diff_registry_changes(
+    repo_dir: &Path,
+    from_commit: &str,
+    to_commit: &str,
+) -> Result<IncrementalRegistryPlan> {
+    let output = git_output(
+        &[
+            "diff",
+            "--name-status",
+            "--find-renames",
+            from_commit,
+            to_commit,
+            "--",
+            "data/",
+        ],
+        Some(repo_dir),
+    )?;
+
+    let mut plan = IncrementalRegistryPlan::default();
+    for line in output.lines() {
+        let mut parts = line.split('\t');
+        let status = parts.next().unwrap_or_default();
+        let status_kind = status.chars().next().unwrap_or_default();
+        match status_kind {
+            'A' | 'M' | 'T' => {
+                if let Some(path) = parts.next() {
+                    queue_registry_upsert(&mut plan, path);
+                }
+            }
+            'D' => {
+                if let Some(path) = parts.next() {
+                    queue_registry_delete(&mut plan, path);
+                }
+            }
+            'R' | 'C' => {
+                let old_path = parts.next();
+                let new_path = parts.next();
+                if let Some(path) = old_path {
+                    queue_registry_delete(&mut plan, path);
+                }
+                if let Some(path) = new_path {
+                    queue_registry_upsert(&mut plan, path);
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(plan)
+}
+
+fn load_repo_from_clone(repo_dir: &Path, rel_path: &str) -> Result<(String, RegistryRepo, String)> {
+    let RegistryDataPath::Repo { repo_id } = parse_registry_data_path(rel_path)
+        .with_context(|| format!("invalid repo path: {rel_path}"))?
+    else {
+        bail!("invalid repo path: {rel_path}");
+    };
+    let raw = fs::read_to_string(repo_dir.join(rel_path))
+        .with_context(|| format!("failed to read {}", repo_dir.join(rel_path).display()))?;
+    let parsed = serde_json::from_str::<RepoFile>(&raw)
+        .with_context(|| format!("invalid repo json: {rel_path}"))?;
+    Ok((repo_id, parsed.repo, raw))
+}
+
+fn load_flock_from_clone(
+    repo_dir: &Path,
+    rel_path: &str,
+) -> Result<(String, String, RegistryFlock, String)> {
+    let RegistryDataPath::Flock { repo_id, flock_slug } = parse_registry_data_path(rel_path)
+        .with_context(|| format!("invalid flock path: {rel_path}"))?
+    else {
+        bail!("invalid flock path: {rel_path}");
+    };
+    let raw = fs::read_to_string(repo_dir.join(rel_path))
+        .with_context(|| format!("failed to read {}", repo_dir.join(rel_path).display()))?;
+    let parsed = serde_json::from_str::<FlockFile>(&raw)
+        .with_context(|| format!("invalid flock json: {rel_path}"))?;
+    let flock_id = format!("{repo_id}/{flock_slug}");
+    let mut flock = parsed.flock;
+    if flock.repo.is_empty() {
+        flock.repo = repo_id;
+    }
+    Ok((flock_id, flock_slug, flock, raw))
+}
+
+fn load_skills_from_clone(repo_dir: &Path, rel_path: &str) -> Result<SkillsFile> {
+    let RegistryDataPath::Skills { repo_id, flock_slug } = parse_registry_data_path(rel_path)
+        .with_context(|| format!("invalid skills path: {rel_path}"))?
+    else {
+        bail!("invalid skills path: {rel_path}");
+    };
+    let raw = fs::read_to_string(repo_dir.join(rel_path))
+        .with_context(|| format!("failed to read {}", repo_dir.join(rel_path).display()))?;
+    let items = serde_json::from_str::<Vec<RegistrySkill>>(&raw)
+        .with_context(|| format!("invalid skills json: {rel_path}"))?;
+    Ok(SkillsFile {
+        repo_id,
+        flock_slug,
+        items,
+    })
+}
+
+fn upsert_repo_row(
+    tx: &rusqlite::Transaction<'_>,
+    id: &str,
+    repo: &RegistryRepo,
+    raw: &str,
+) -> Result<()> {
+    let sign = if repo.sign.is_empty() {
+        id.to_string()
+    } else {
+        repo.sign.clone()
+    };
+    let git_url = repo.git_url.as_deref().or_else(|| {
+        repo.source.as_ref().and_then(|s| match s {
+            RegistrySource::Git { url, .. } => Some(url.as_str()),
+            _ => None,
+        })
+    });
+    tx.execute(
+        "INSERT OR REPLACE INTO repos (id, sign, name, description, git_url, git_rev, git_branch, visibility, verified, data_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![
+            id,
+            sign,
+            repo.name,
+            repo.description,
+            git_url,
+            repo.git_rev,
+            repo.git_branch,
+            repo.visibility,
+            repo.verified.unwrap_or(false) as i32,
+            raw,
+        ],
+    )?;
+    Ok(())
+}
+
+fn upsert_flock_row(
+    tx: &rusqlite::Transaction<'_>,
+    id: &str,
+    slug: &str,
+    flock: &RegistryFlock,
+    raw: &str,
+) -> Result<()> {
+    let flock_sign = if flock.sign.is_empty() {
+        id.to_string()
+    } else {
+        flock.sign.clone()
+    };
+    tx.execute(
+        "INSERT OR REPLACE INTO flocks (id, sign, repo_id, slug, name, description, version, status, license, source_json, data_json, security_status, security_verdict)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        params![
+            id,
+            flock_sign,
+            flock.repo,
+            slug,
+            flock.name,
+            flock.description,
+            flock.version,
+            flock.status,
+            flock.license,
+            "",
+            raw,
+            flock.security.status.as_deref().unwrap_or(""),
+            flock.security.verdict.as_deref().unwrap_or(""),
+        ],
+    )?;
+    Ok(())
+}
+
+fn repo_source_json_for_repo(tx: &rusqlite::Transaction<'_>, repo_id: &str) -> Result<String> {
+    let data_json: String = tx.query_row(
+        "SELECT data_json FROM repos WHERE id = ?1 LIMIT 1",
+        params![repo_id],
+        |row| row.get(0),
+    )?;
+    let repo = serde_json::from_str::<RegistryRepo>(&data_json)
+        .with_context(|| format!("invalid repo data_json for {repo_id}"))?;
+    Ok(repo
+        .source
+        .as_ref()
+        .map(|source| serde_json::to_string(source).unwrap_or_default())
+        .unwrap_or_default())
+}
+
+fn replace_skills_for_flock(tx: &rusqlite::Transaction<'_>, sf: &SkillsFile) -> Result<usize> {
+    let flock_id = format!("{}/{}", sf.repo_id, sf.flock_slug);
+    tx.execute("DELETE FROM skills WHERE flock_id = ?1", params![flock_id])?;
+    let repo_source = repo_source_json_for_repo(tx, &sf.repo_id).unwrap_or_default();
+
+    let mut inserted = 0usize;
+    for skill in &sf.items {
+        let skill_id = format!("{}/{}/{}", sf.repo_id, sf.flock_slug, skill.slug);
+        let categories = serde_json::to_string(&skill.categories).unwrap_or_default();
+        let keywords = serde_json::to_string(&skill.keywords).unwrap_or_default();
+        let data = serde_json::to_string(&skill).unwrap_or_default();
+        tx.execute(
+            "INSERT OR REPLACE INTO skills (id, flock_id, repo_id, slug, name, path, summary, description, version, status, license, categories_json, keywords_json, source_json, entry_json, data_json, security_status, security_verdict)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+            params![
+                skill_id,
+                format!("{}/{}", sf.repo_id, sf.flock_slug),
+                sf.repo_id,
+                skill.slug,
+                skill.name,
+                skill.path,
+                skill.description.as_deref().unwrap_or(""),
+                skill.description.as_deref().unwrap_or(""),
+                skill.version,
+                skill.status,
+                skill.license,
+                categories,
+                keywords,
+                repo_source,
+                "",
+                data,
+                skill.security.status.as_deref().unwrap_or(""),
+                skill.security.verdict.as_deref().unwrap_or(""),
+            ],
+        )?;
+        inserted += 1;
+    }
+
+    Ok(inserted)
+}
+
+fn apply_incremental_registry_sync(
+    repo_dir: &Path,
+    plan: &IncrementalRegistryPlan,
+    commit_sha: &str,
+) -> Result<SyncStats> {
+    let conn = open_cache()?;
+    let tx = conn.unchecked_transaction()?;
+
+    for repo_id in &plan.repo_deletes {
+        tx.execute("DELETE FROM skills WHERE repo_id = ?1", params![repo_id])?;
+        tx.execute("DELETE FROM flocks WHERE repo_id = ?1", params![repo_id])?;
+        tx.execute("DELETE FROM repos WHERE id = ?1", params![repo_id])?;
+    }
+
+    for flock_id in &plan.flock_deletes {
+        tx.execute("DELETE FROM skills WHERE flock_id = ?1", params![flock_id])?;
+        tx.execute("DELETE FROM flocks WHERE id = ?1", params![flock_id])?;
+    }
+
+    for flock_id in &plan.skills_deletes {
+        tx.execute("DELETE FROM skills WHERE flock_id = ?1", params![flock_id])?;
+    }
+
+    let mut repo_count = 0usize;
+    for rel_path in &plan.repo_upserts {
+        let (id, repo, raw) = load_repo_from_clone(repo_dir, rel_path)?;
+        upsert_repo_row(&tx, &id, &repo, &raw)?;
+        repo_count += 1;
+    }
+
+    let mut flock_count = 0usize;
+    for rel_path in &plan.flock_upserts {
+        let (id, slug, flock, raw) = load_flock_from_clone(repo_dir, rel_path)?;
+        upsert_flock_row(&tx, &id, &slug, &flock, &raw)?;
+        flock_count += 1;
+    }
+
+    let mut skill_count = 0usize;
+    for rel_path in &plan.skills_upserts {
+        let skills = load_skills_from_clone(repo_dir, rel_path)?;
+        skill_count += replace_skills_for_flock(&tx, &skills)?;
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+    tx.execute(
+        "INSERT OR REPLACE INTO sync_state (key, value) VALUES ('commit_sha', ?1)",
+        params![commit_sha],
+    )?;
+    tx.execute(
+        "INSERT OR REPLACE INTO sync_state (key, value) VALUES ('synced_at', ?1)",
+        params![now],
+    )?;
+    tx.commit()?;
+
+    Ok(SyncStats {
+        repos: repo_count,
+        flocks: flock_count,
+        skills: skill_count,
+        commit_sha: commit_sha.to_string(),
+    })
+}
+
+/// Check whether the remote registry head differs from the currently synced sqlite commit.
+pub fn registry_has_remote_updates() -> Result<bool> {
+    let local_commit = effective_synced_commit()?;
+    let repo_dir = registry_clone_dir().ok();
+    let remote_commit = remote_registry_head(repo_dir.as_deref())?;
+    Ok(local_commit.as_deref() != Some(remote_commit.as_str()))
+}
+
 /// Ensure the local registry clone is up-to-date and synced to SQLite.
 ///
-/// 1. Clone or pull the registry repo
-/// 2. Read HEAD commit SHA
-/// 3. Compare with `registry.json` — skip sync if already up-to-date
-/// 4. If out of date (or registry.json missing), sync to SQLite and update registry.json
+/// 1. Compare the remote registry head with the last synced commit in `registry.json`
+/// 2. If unchanged, skip the sqlite sync entirely
+/// 3. If changed, fetch the remote head and sync only the changed registry files
+/// 4. Fall back to a full sqlite rebuild only when an incremental diff cannot be applied
 ///
 /// Returns `Ok(true)` if a sync was performed, `Ok(false)` if already current.
 pub fn ensure_registry_synced() -> Result<bool> {
-    let head_sha = clone_or_pull_registry()?;
-    let state = read_registry_state()?;
+    let repo_dir = ensure_registry_clone()?;
+    let synced_commit = effective_synced_commit()?.unwrap_or_default();
+    let db_has_data = skill_count().unwrap_or(0) > 0;
+    let remote_head = remote_registry_head(Some(&repo_dir))?;
 
-    if !state.synced_commit.is_empty() && state.synced_commit == head_sha {
+    if db_has_data && !synced_commit.is_empty() && synced_commit == remote_head {
         let _ = sync_installed_from_json();
-        return Ok(false); // Already synced
+        return Ok(false);
     }
 
-    sync_from_local_clone()?;
+    fetch_registry_main(&repo_dir)?;
+
+    let performed = if !db_has_data || synced_commit.is_empty() {
+        checkout_registry_commit(&repo_dir, &remote_head)?;
+        let _ = sync_from_local_clone()?;
+        true
+    } else if !registry_commit_exists(&repo_dir, &synced_commit) {
+        checkout_registry_commit(&repo_dir, &remote_head)?;
+        let _ = sync_from_local_clone()?;
+        true
+    } else {
+        let plan = diff_registry_changes(&repo_dir, &synced_commit, &remote_head)?;
+        checkout_registry_commit(&repo_dir, &remote_head)?;
+        let _ = apply_incremental_registry_sync(&repo_dir, &plan, &remote_head)
+            .or_else(|_| sync_from_local_clone())?;
+        true
+    };
 
     write_registry_state(&RegistryState {
-        synced_commit: head_sha,
+        synced_commit: remote_head,
     })?;
 
-    // Restore installed state from installed_skills.json
     let _ = sync_installed_from_json();
-
-    Ok(true)
+    Ok(performed)
 }
 
-/// Clone or pull the registry repo. Returns the current HEAD commit SHA.
+/// Ensure the local registry clone exists and fetch the latest main branch.
+/// Returns the current remote main commit SHA after fetch.
 pub fn clone_or_pull_registry() -> Result<String> {
-    let repo_dir = registry_clone_dir()?;
-    let git_url = format!("https://github.com/{DEFAULT_REGISTRY_REPO}.git");
-
-    if repo_dir.join(".git").exists() {
-        // Pull updates
-        let status = std::process::Command::new("git")
-            .args(["pull", "--ff-only"])
-            .current_dir(&repo_dir)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .status();
-        if let Ok(s) = status {
-            if !s.success() {
-                // Pull failed, try fetch+reset
-                let _ = std::process::Command::new("git")
-                    .args(["fetch", "origin", "main"])
-                    .current_dir(&repo_dir)
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .status();
-                let _ = std::process::Command::new("git")
-                    .args(["reset", "--hard", "origin/main"])
-                    .current_dir(&repo_dir)
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .status();
-            }
-        }
-    } else {
-        // Fresh clone
-        if let Some(parent) = repo_dir.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let status = std::process::Command::new("git")
-            .args([
-                "clone",
-                "--depth",
-                "1",
-                &git_url,
-                &repo_dir.display().to_string(),
-            ])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .status()
-            .context("failed to run git clone")?;
-        if !status.success() {
-            bail!("git clone failed for {git_url}");
-        }
-    }
-
-    // Read HEAD commit SHA
-    let output = std::process::Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .current_dir(&repo_dir)
-        .output()
-        .context("failed to read git HEAD")?;
-    let sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok(sha)
+    let repo_dir = ensure_registry_clone()?;
+    fetch_registry_main(&repo_dir)?;
+    let remote_head = remote_registry_head(Some(&repo_dir))?;
+    checkout_registry_commit(&repo_dir, &remote_head)?;
+    Ok(remote_head)
 }
 
 /// Synchronise the local SQLite cache from the local registry clone.
