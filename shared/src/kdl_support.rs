@@ -1,10 +1,12 @@
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
 /// Parse a KDL string into a deserializable type.
 pub fn parse_kdl<T: DeserializeOwned>(content: &str) -> Result<T, String> {
-    let doc: kdl::KdlDocument = content.parse().map_err(|e| format!("KDL parse error: {e}"))?;
+    let doc: kdl::KdlDocument = content
+        .parse()
+        .map_err(|e| format!("KDL parse error: {e}"))?;
     let json_value = kdl_document_to_json(&doc);
     serde_json::from_value(json_value).map_err(|e| format!("deserialization error: {e}"))
 }
@@ -44,14 +46,28 @@ fn kdl_document_to_json(doc: &kdl::KdlDocument) -> Value {
 
 fn kdl_node_to_json(node: &kdl::KdlNode) -> Value {
     let has_children = node.children().map_or(false, |c| !c.nodes().is_empty());
-    let args: Vec<_> = node.entries().iter().filter(|e| e.name().is_none()).collect();
-    let props: Vec<_> = node.entries().iter().filter(|e| e.name().is_some()).collect();
+    let args: Vec<_> = node
+        .entries()
+        .iter()
+        .filter(|e| e.name().is_none())
+        .collect();
+    let props: Vec<_> = node
+        .entries()
+        .iter()
+        .filter(|e| e.name().is_some())
+        .collect();
 
     if has_children {
         let children_doc = node.children().unwrap();
         let all_dash = children_doc.nodes().iter().all(|n| n.name().value() == "-");
         if all_dash && !children_doc.nodes().is_empty() {
-            return Value::Array(children_doc.nodes().iter().map(|n| dash_to_json(n)).collect());
+            return Value::Array(
+                children_doc
+                    .nodes()
+                    .iter()
+                    .map(|n| dash_to_json(n))
+                    .collect(),
+            );
         }
         let mut obj = match kdl_document_to_json(children_doc) {
             Value::Object(m) => m,
@@ -85,8 +101,16 @@ fn kdl_node_to_json(node: &kdl::KdlNode) -> Value {
 }
 
 fn dash_to_json(node: &kdl::KdlNode) -> Value {
-    let args: Vec<_> = node.entries().iter().filter(|e| e.name().is_none()).collect();
-    let props: Vec<_> = node.entries().iter().filter(|e| e.name().is_some()).collect();
+    let args: Vec<_> = node
+        .entries()
+        .iter()
+        .filter(|e| e.name().is_none())
+        .collect();
+    let props: Vec<_> = node
+        .entries()
+        .iter()
+        .filter(|e| e.name().is_some())
+        .collect();
     let has_children = node.children().map_or(false, |c| !c.nodes().is_empty());
     if has_children {
         let mut obj = match kdl_document_to_json(node.children().unwrap()) {
@@ -124,9 +148,9 @@ fn kdl_val(value: &kdl::KdlValue) -> Value {
         | kdl::KdlValue::Base8(i)
         | kdl::KdlValue::Base10(i)
         | kdl::KdlValue::Base16(i) => Value::Number((*i).into()),
-        kdl::KdlValue::Float(f) => {
-            serde_json::Number::from_f64(*f).map(Value::Number).unwrap_or(Value::Null)
-        }
+        kdl::KdlValue::Float(f) => serde_json::Number::from_f64(*f)
+            .map(Value::Number)
+            .unwrap_or(Value::Null),
         kdl::KdlValue::Bool(b) => Value::Bool(*b),
         kdl::KdlValue::Null => Value::Null,
     }
@@ -194,10 +218,7 @@ fn json_value_to_dash_node(value: &Value) -> kdl::KdlNode {
             });
             if all_scalar {
                 for (key, val) in map {
-                    node.push(kdl::KdlEntry::new_prop(
-                        key.clone(),
-                        json_to_kdl_value(val),
-                    ));
+                    node.push(kdl::KdlEntry::new_prop(key.clone(), json_to_kdl_value(val)));
                 }
             } else {
                 let mut children = kdl::KdlDocument::new();

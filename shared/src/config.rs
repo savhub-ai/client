@@ -172,8 +172,7 @@ pub fn write_global_config(config: &GlobalConfig) -> Result<()> {
             .with_context(|| format!("failed to create config directory {}", parent.display()))?;
     }
     let payload = if crate::kdl_support::is_kdl_path(&path) {
-        crate::kdl_support::to_kdl_string(config)
-            .map_err(|e| anyhow::anyhow!(e))?
+        crate::kdl_support::to_kdl_string(config).map_err(|e| anyhow::anyhow!(e))?
     } else {
         toml::to_string_pretty(config).with_context(|| "failed to serialize config as TOML")?
     };

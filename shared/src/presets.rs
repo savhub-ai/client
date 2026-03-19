@@ -495,8 +495,7 @@ fn write_project_config_inner(
     }
 
     let payload = if crate::kdl_support::is_kdl_path(&path) {
-        crate::kdl_support::to_kdl_string(&normalized)
-            .map_err(|e| anyhow::anyhow!(e))?
+        crate::kdl_support::to_kdl_string(&normalized).map_err(|e| anyhow::anyhow!(e))?
     } else {
         toml::to_string_pretty(&normalized)?
     };
@@ -550,8 +549,7 @@ fn write_project_lockfile_inner(
 
     let config_path = project_config_path(workdir);
     let payload = if crate::kdl_support::is_kdl_path(&config_path) {
-        crate::kdl_support::to_kdl_string(&normalized)
-            .map_err(|e| anyhow::anyhow!(e))?
+        crate::kdl_support::to_kdl_string(&normalized).map_err(|e| anyhow::anyhow!(e))?
     } else {
         toml::to_string_pretty(&normalized)?
     };
