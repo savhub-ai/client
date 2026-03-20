@@ -230,8 +230,8 @@ jobs:
                 <ComponentRef Id="DesktopShortcut" />
               </Feature>
               <CustomAction Id="InstallPilotSkill" Directory="INSTALLDIR"
-                            ExeCommand="[INSTALLDIR]savhub.exe pilot install"
-                            Execute="deferred" Impersonate="yes" Return="ignore" />
+                            ExeCommand="&quot;[INSTALLDIR]savhub.exe&quot; pilot install"
+                            Execute="immediate" Return="ignore" />
               <InstallExecuteSequence>
                 <Custom Action="InstallPilotSkill" After="InstallFinalize" Condition="NOT Installed OR REINSTALL" />
               </InstallExecuteSequence>
