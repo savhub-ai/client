@@ -9,12 +9,12 @@ use crate::state::AppState;
 use crate::theme::Theme;
 use crate::{i18n, skills};
 
-const INSTALLED_SKILLS_PAGE_SIZE: usize = 10;
+const FETCHED_SKILLS_PAGE_SIZE: usize = 10;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct LockEntry {
     version: String,
-    installed_at: i64,
+    fetched_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,18 +24,18 @@ struct Lockfile {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct InstalledSkill {
+struct FetchedSkill {
     slug: String,
     version: String,
-    installed_at: String,
+    fetched_at: String,
     path: PathBuf,
 }
 
 #[component]
-pub fn InstalledPage() -> Element {
+pub fn FetchedPage() -> Element {
     let state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
-    let mut skill_list: Signal<Vec<InstalledSkill>> = use_signal(Vec::new);
+    let mut skill_list: Signal<Vec<FetchedSkill>> = use_signal(Vec::new);
     let mut skill_page = use_signal(|| 0usize);
     let mut loaded = use_signal(|| false);
 
@@ -52,17 +52,17 @@ pub fn InstalledPage() -> Element {
                 let lock_path = workdir_bg.join(".savhub").join("lock.json");
                 let raw = std::fs::read_to_string(&lock_path).ok()?;
                 let lock: Lockfile = serde_json::from_str(&raw).ok()?;
-                let list: Vec<InstalledSkill> = lock
+                let list: Vec<FetchedSkill> = lock
                     .skills
                     .iter()
                     .map(|(slug, entry)| {
-                        let ts = chrono::DateTime::from_timestamp(entry.installed_at, 0)
+                        let ts = chrono::DateTime::from_timestamp(entry.fetched_at, 0)
                             .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
                             .unwrap_or_else(|| "\u{2014}".to_string());
-                        InstalledSkill {
+                        FetchedSkill {
                             slug: slug.clone(),
                             version: entry.version.clone(),
-                            installed_at: ts,
+                            fetched_at: ts,
                             path: workdir_bg.join(slug),
                         }
                     })
@@ -114,19 +114,19 @@ pub fn InstalledPage() -> Element {
         });
     };
 
-    let title = t.installed_skills;
+    let title = t.fetched_skills;
     let update_all_label = t.update_all;
-    let empty_msg = t.no_skills_installed;
-    let empty_hint = t.no_skills_installed_hint;
-    let installed_items = skill_list.read().clone();
+    let empty_msg = t.no_skills_fetched;
+    let empty_hint = t.no_skills_fetched_hint;
+    let fetched_items = skill_list.read().clone();
     let current_page = pagination::clamp_page(
         *skill_page.read(),
-        installed_items.len(),
-        INSTALLED_SKILLS_PAGE_SIZE,
+        fetched_items.len(),
+        FETCHED_SKILLS_PAGE_SIZE,
     );
     let visible_skills =
-        pagination::slice_for_page(&installed_items, current_page, INSTALLED_SKILLS_PAGE_SIZE);
-    let total_pages = pagination::total_pages(installed_items.len(), INSTALLED_SKILLS_PAGE_SIZE);
+        pagination::slice_for_page(&fetched_items, current_page, FETCHED_SKILLS_PAGE_SIZE);
+    let total_pages = pagination::total_pages(fetched_items.len(), FETCHED_SKILLS_PAGE_SIZE);
 
     rsx! {
         div { style: "display: flex; flex-direction: column; height: 100%;",
@@ -142,7 +142,7 @@ pub fn InstalledPage() -> Element {
                         onclick: move |_| skill_list.with_mut(|_| {}),
                         "\u{21BB}"
                     }
-                    if !installed_items.is_empty() {
+                    if !fetched_items.is_empty() {
                         button {
                             style: "padding: 7px 16px; background: linear-gradient(135deg, {Theme::ACCENT} 0%, #7bc25a 100%); color: white; border: none; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;",
                             onclick: update_all,
@@ -161,7 +161,7 @@ pub fn InstalledPage() -> Element {
                 }
             }
 
-            if installed_items.is_empty() {
+            if fetched_items.is_empty() {
                 div { style: "text-align: center; padding: 60px 20px; color: {Theme::MUTED};",
                     p { style: "font-size: 16px; margin-bottom: 8px;", "{empty_msg}" }
                     p { style: "font-size: 13px;", "{empty_hint}" }
@@ -169,7 +169,7 @@ pub fn InstalledPage() -> Element {
             } else {
                 div { style: "display: flex; flex-direction: column; gap: 8px;",
                     for skill in visible_skills.iter() {
-                        InstalledRow {
+                        FetchedRow {
                             skill: skill.clone(),
                             skill_list: skill_list,
                         }
@@ -190,7 +190,7 @@ pub fn InstalledPage() -> Element {
 }
 
 #[component]
-fn InstalledRow(skill: InstalledSkill, mut skill_list: Signal<Vec<InstalledSkill>>) -> Element {
+fn FetchedRow(skill: FetchedSkill, mut skill_list: Signal<Vec<FetchedSkill>>) -> Element {
     let state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
     let slug = skill.slug.clone();
@@ -216,8 +216,8 @@ fn InstalledRow(skill: InstalledSkill, mut skill_list: Signal<Vec<InstalledSkill
         skill_list.with_mut(|items| items.retain(|entry| entry.slug != slug));
     };
 
-    let installed_prefix = t.installed_at_prefix;
-    let uninstall_label = t.uninstall;
+    let fetched_prefix = t.fetched_at_prefix;
+    let prune_label = t.prune;
 
     rsx! {
         div { style: "background: {Theme::PANEL}; border: 1px solid {Theme::LINE}; border-radius: 8px; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between;",
@@ -227,7 +227,7 @@ fn InstalledRow(skill: InstalledSkill, mut skill_list: Signal<Vec<InstalledSkill
                         "{skill.slug}"
                     }
                     p { style: "font-size: 12px; color: {Theme::MUTED};",
-                        "{installed_prefix} {skill.installed_at}"
+                        "{fetched_prefix} {skill.fetched_at}"
                     }
                 }
                 span { style: "font-size: 12px; padding: 2px 8px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border-radius: 10px;",
@@ -237,7 +237,7 @@ fn InstalledRow(skill: InstalledSkill, mut skill_list: Signal<Vec<InstalledSkill
             button {
                 style: "padding: 4px 12px; font-size: 12px; background: rgba(139, 30, 30, 0.08); color: {Theme::DANGER}; border: 1px solid rgba(139, 30, 30, 0.2); border-radius: 4px; cursor: pointer;",
                 onclick: do_uninstall,
-                "{uninstall_label}"
+                "{prune_label}"
             }
         }
     }

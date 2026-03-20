@@ -70,8 +70,8 @@ fn DetailContent(detail: SkillDetailResponse, slug: String) -> Element {
     let t = i18n::texts(*state.lang.read());
     let mut starred = use_signal(|| detail.starred);
     let mut star_count = use_signal(|| detail.skill.stats.stars);
-    let mut installing = use_signal(|| false);
-    let mut install_result = use_signal(|| Option::<Result<(), String>>::None);
+    let mut fetching = use_signal(|| false);
+    let mut fetch_result = use_signal(|| Option::<Result<(), String>>::None);
     let mut versions_page = use_signal(|| 0usize);
     let mut files_page = use_signal(|| 0usize);
 
@@ -106,13 +106,13 @@ fn DetailContent(detail: SkillDetailResponse, slug: String) -> Element {
         });
     };
 
-    let slug_install = slug.clone();
-    let do_install = move |_: Event<MouseData>| {
+    let slug_fetch = slug.clone();
+    let do_fetch = move |_: Event<MouseData>| {
         let client = state.api_client();
-        let slug = slug_install.clone();
+        let slug = slug_fetch.clone();
         let workdir = state.workdir.read().clone();
         spawn(async move {
-            installing.set(true);
+            fetching.set(true);
             match client
                 .get_json::<savhub_shared::ResolveResponse>(&format!(
                     "/skills/{slug}/resolve?tag=latest"
@@ -130,11 +130,10 @@ fn DetailContent(detail: SkillDetailResponse, slug: String) -> Element {
                             Ok(bytes) => {
                                 let skill_dir = workdir.join(&slug);
                                 if let Err(e) = skills::extract_zip(&bytes, &skill_dir) {
-                                    install_result.set(Some(Err(e)));
+                                    fetch_result.set(Some(Err(e)));
                                 } else {
                                     skills::update_lockfile(&workdir, &slug, &ver);
-                                    install_result.set(Some(Ok(())));
-                                    // Fire-and-forget install tracking
+                                    fetch_result.set(Some(Ok(())));
                                     let track_slug = slug.clone();
                                     let track_client = state.api_client();
                                     tokio::spawn(async move {
@@ -147,22 +146,22 @@ fn DetailContent(detail: SkillDetailResponse, slug: String) -> Element {
                                     });
                                 }
                             }
-                            Err(e) => install_result.set(Some(Err(e))),
+                            Err(e) => fetch_result.set(Some(Err(e))),
                         }
                     } else {
                         let t = i18n::texts(*state.lang.read());
-                        install_result.set(Some(Err(t.no_version.to_string())));
+                        fetch_result.set(Some(Err(t.no_version.to_string())));
                     }
                 }
-                Err(e) => install_result.set(Some(Err(e))),
+                Err(e) => fetch_result.set(Some(Err(e))),
             }
-            installing.set(false);
+            fetching.set(false);
         });
     };
 
-    let installing_text = t.installing;
-    let installed_text = t.installed;
-    let install_text = t.install;
+    let fetching_text = t.fetching;
+    let fetched_text = t.fetched;
+    let fetch_text = t.fetch;
     let latest_label = t.latest_version;
     let stats_label = t.statistics;
     let downloads_label = t.downloads;
@@ -212,20 +211,20 @@ fn DetailContent(detail: SkillDetailResponse, slug: String) -> Element {
                         onclick: toggle_star,
                         if *starred.read() { "\u{2605} {star_count}" } else { "\u{2606} {star_count}" }
                     }
-                    if *installing.read() {
-                        span { style: "font-size: 13px; color: {Theme::ACCENT}; padding: 8px 14px;", "{installing_text}" }
-                    } else if let Some(Ok(())) = install_result.read().as_ref() {
-                        span { style: "font-size: 13px; color: {Theme::SUCCESS}; padding: 8px 14px;", "{installed_text}" }
+                    if *fetching.read() {
+                        span { style: "font-size: 13px; color: {Theme::ACCENT}; padding: 8px 14px;", "{fetching_text}" }
+                    } else if let Some(Ok(())) = fetch_result.read().as_ref() {
+                        span { style: "font-size: 13px; color: {Theme::SUCCESS}; padding: 8px 14px;", "{fetched_text}" }
                     } else {
                         button {
                             style: "padding: 8px 16px; background: linear-gradient(135deg, {Theme::ACCENT} 0%, #7bc25a 100%); color: white; border: none; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;",
-                            onclick: do_install,
-                            "{install_text}"
+                            onclick: do_fetch,
+                            "{fetch_text}"
                         }
                     }
                 }
             }
-            if let Some(Err(e)) = install_result.read().as_ref() {
+            if let Some(Err(e)) = fetch_result.read().as_ref() {
                 div { style: "padding: 10px 14px; background: rgba(139,30,30,0.08); border-radius: 6px; margin-bottom: 16px; font-size: 13px; color: {Theme::DANGER};",
                     "{e}"
                 }

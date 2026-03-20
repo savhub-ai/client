@@ -124,7 +124,7 @@ pub fn DashboardPage() -> Element {
     let title = t.dashboard_title;
     let registry_label = t.registry_status;
     let account_label = t.dashboard_account;
-    let skills_label = t.installed_skills;
+    let skills_label = t.fetched_skills;
     let recent_projects_label = t.dashboard_recent_projects;
     let no_recent_projects_label = t.dashboard_no_recent_projects;
     let recent_added_label = t.dashboard_recent_added;

@@ -18,7 +18,7 @@ use dioxus::prelude::*;
 use pages::dashboard::DashboardPage;
 use pages::detail::DetailPage;
 use pages::explore::ExplorePage;
-use pages::installed::InstalledPage;
+use pages::installed::FetchedPage;
 use pages::profiles::ProjectsPage;
 use pages::selectors::SelectorsPage;
 use pages::settings::SettingsPage;
@@ -168,7 +168,7 @@ fn FlockDetail(slug: String) -> Element {
 
 #[component]
 fn Installed() -> Element {
-    rsx! { InstalledPage {} }
+    rsx! { FetchedPage {} }
 }
 
 #[component]

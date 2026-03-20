@@ -1,6 +1,6 @@
 # savhub-pilot
 
-You are an AI assistant with access to the **savhub** skill management system. You can create, edit, and manage **selectors** — rules that automatically detect project types and install the right AI skills.
+You are an AI assistant with access to the **savhub** skill management system. You can create, edit, and manage **selectors** — rules that automatically detect project types and fetch the right AI skills.
 
 ## Config Locations
 
@@ -12,7 +12,7 @@ You are an AI assistant with access to the **savhub** skill management system. Y
 
 ## Selectors
 
-Selectors are project type detection rules. When a user runs `savhub apply`, selectors scan the project directory and automatically install matching skills/flocks.
+Selectors are project type detection rules. When a user runs `savhub apply`, selectors scan the project directory and automatically fetch matching skills/flocks.
 
 ### Selector JSON Schema
 
@@ -37,7 +37,7 @@ Selectors are project type detection rules. When a user runs `savhub apply`, sel
 
 - **skill**: A single AI skill (e.g. `salvo-auth`). Referenced by **slug** (short name) in the `skills` array.
 - **flock**: A collection of skills grouped together (e.g. `github.com/salvo-rs/salvo-skills/salvo-skills`). Referenced by **sign** (full path) in the `flocks` array.
-- **repo**: A git repository containing one or more flocks (e.g. `github.com/org/repo`). Referenced by **sign** (domain/owner/repo) in the `repos` array. When a repo is added, ALL flocks from that repo are installed.
+- **repo**: A git repository containing one or more flocks (e.g. `github.com/org/repo`). Referenced by **sign** (domain/owner/repo) in the `repos` array. When a repo is added, ALL flocks from that repo are fetched.
 
 ### Rule Types
 
@@ -135,7 +135,7 @@ $ savhub registry search salvo-auth
 
 ## How to Create a Selector
 
-When the user describes a project type and what to install, follow these steps:
+When the user describes a project type and what to fetch, follow these steps:
 
 1. **Read** `~/.savhub/selectors.json` to see existing selectors
 2. **Design** rules based on the project description:
@@ -166,7 +166,7 @@ Step 2 — Create selector:
 {
   "sign": "det-salvo",
   "name": "Salvo Web Framework",
-  "description": "Detects Rust projects using Salvo and installs Salvo skills.",
+  "description": "Detects Rust projects using Salvo and fetches Salvo skills.",
   "folder_scope": ".",
   "rules": [
     { "kind": "file_exists", "path": "Cargo.toml" },
@@ -195,7 +195,7 @@ Step 2 — Create selector:
 {
   "sign": "det-makepad",
   "name": "Makepad Project",
-  "description": "Detects Makepad projects and installs all Makepad skills.",
+  "description": "Detects Makepad projects and fetches all Makepad skills.",
   "folder_scope": ".",
   "rules": [
     { "kind": "file_exists", "path": "Cargo.toml" },
@@ -224,7 +224,7 @@ Step 2 — Create selector:
 {
   "sign": "det-fastapi",
   "name": "FastAPI Project",
-  "description": "Detects FastAPI projects and installs auth skill.",
+  "description": "Detects FastAPI projects and fetches auth skill.",
   "folder_scope": ".",
   "rules": [
     { "kind": "file_exists", "path": "pyproject.toml" },
@@ -325,5 +325,5 @@ This will:
 1. Sync the registry
 2. Re-evaluate all selectors against the current project
 3. Show which selectors matched
-4. Install the corresponding skills
-5. Write `savhub.lock` with installed versions
+4. Fetch the corresponding skills
+5. Write `savhub.lock` with fetched versions

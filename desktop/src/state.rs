@@ -77,7 +77,7 @@ pub struct AppState {
     /// Registry API version compatibility status.
     pub registry_compat: Signal<ApiCompatibility>,
     pub agents: Signal<Vec<String>>,
-    /// Minimum security level for skill/flock installation.
+    /// Minimum security level for fetching skills/flocks.
     pub security_level: Signal<SecurityLevel>,
     /// Incremented when an external config change is detected via the signal file.
     pub config_version: Signal<u64>,

@@ -28,7 +28,7 @@ pub fn extract_zip(bytes: &[u8], target: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Update the lockfile with the installed skill version.
+/// Update the lockfile with the fetched skill version.
 pub fn update_lockfile(workdir: &Path, slug: &str, version: &str) {
     let lock_dir = workdir.join(".savhub");
     let _ = std::fs::create_dir_all(&lock_dir);
@@ -44,7 +44,7 @@ pub fn update_lockfile(workdir: &Path, slug: &str, version: &str) {
             slug.to_string(),
             serde_json::json!({
                 "version": version,
-                "installedAt": chrono::Utc::now().timestamp()
+                "fetched_at": chrono::Utc::now().timestamp()
             }),
         );
     }
@@ -55,8 +55,8 @@ pub fn update_lockfile(workdir: &Path, slug: &str, version: &str) {
     );
 }
 
-/// Read installed skill versions from the desktop lockfile.
-pub fn read_installed_skill_versions(workdir: &Path) -> BTreeMap<String, String> {
+/// Read fetched skill versions from the desktop lockfile.
+pub fn read_fetched_skill_versions(workdir: &Path) -> BTreeMap<String, String> {
     let lock_path = workdir.join(".savhub").join("lock.json");
     std::fs::read_to_string(&lock_path)
         .ok()
@@ -69,7 +69,7 @@ pub fn read_installed_skill_versions(workdir: &Path) -> BTreeMap<String, String>
                     let version = value
                         .get("version")
                         .and_then(|v| v.as_str())
-                        .unwrap_or("installed")
+                        .unwrap_or("fetched")
                         .to_string();
                     (slug, version)
                 })
@@ -78,8 +78,8 @@ pub fn read_installed_skill_versions(workdir: &Path) -> BTreeMap<String, String>
         .unwrap_or_default()
 }
 
-/// Remove an installed skill folder and update the desktop lockfile.
-pub fn uninstall_skill(workdir: &Path, slug: &str) -> Result<(), String> {
+/// Remove a fetched skill folder and update the desktop lockfile.
+pub fn prune_skill(workdir: &Path, slug: &str) -> Result<(), String> {
     let skill_dir = workdir.join(slug);
     match std::fs::remove_dir_all(&skill_dir) {
         Ok(()) => {}

@@ -65,7 +65,7 @@ pub struct ProjectAddedSkill {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
     #[serde(default)]
-    pub installed_at: i64,
+    pub fetched_at: i64,
 }
 
 /// How skills are organized in the project `skills/` directory.
@@ -82,13 +82,13 @@ pub enum SkillLayout {
 /// Skills section in savhub.toml.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProjectSkillsConfig {
-    /// Directory layout for installed skills.
+    /// Directory layout for fetched skills.
     #[serde(default, skip_serializing_if = "is_default_layout")]
     pub layout: SkillLayout,
     /// User-manually-added skills.
     #[serde(default, alias = "added")]
     pub manual_added: Vec<ProjectAddedSkill>,
-    /// Skill signs/slugs that should never be auto-installed.
+    /// Skill signs/slugs that should never be auto-fetched.
     #[serde(default, alias = "skipped")]
     pub manual_skipped: Vec<String>,
 }
@@ -102,7 +102,7 @@ pub struct ProjectFlocksConfig {
     /// User-manually-added flocks.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub manual_added: Vec<String>,
-    /// User-manually-skipped flocks (never install).
+    /// User-manually-skipped flocks (never fetch).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub manual_skipped: Vec<String>,
 }
@@ -143,7 +143,7 @@ pub struct ProjectLockedSkill {
     /// Skill version if available.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
-    /// Git commit hash of the installed revision.
+    /// Git commit hash of the fetched revision.
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "git_commit")]
     pub commit_hash: Option<String>,
 }
@@ -363,7 +363,7 @@ fn normalize_added_skills(skills: &[ProjectAddedSkill]) -> Vec<ProjectAddedSkill
             if existing_empty || existing_latest {
                 existing.version = skill.version.clone();
             }
-            existing.installed_at = existing.installed_at.max(skill.installed_at);
+            existing.fetched_at = existing.fetched_at.max(skill.fetched_at);
             continue;
         }
         normalized.push(ProjectAddedSkill {
@@ -372,7 +372,7 @@ fn normalize_added_skills(skills: &[ProjectAddedSkill]) -> Vec<ProjectAddedSkill
             slug: effective_slug,
             local: skill.local.clone(),
             version: skill.version.clone(),
-            installed_at: skill.installed_at,
+            fetched_at: skill.fetched_at,
         });
     }
     normalized.sort_by(|left, right| left.path.cmp(&right.path));
@@ -418,7 +418,7 @@ fn lockfile_to_project_added_skills(lockfile: &Lockfile) -> Vec<ProjectAddedSkil
             slug: slug.clone(),
             local: None,
             version: Some(entry.version.clone()),
-            installed_at: entry.installed_at,
+            fetched_at: entry.fetched_at,
         })
         .collect()
 }
@@ -430,7 +430,7 @@ fn project_added_skills_to_lockfile(skills: &[ProjectAddedSkill]) -> Lockfile {
             skill.path,
             LockEntry {
                 version: skill.version.unwrap_or_else(|| "latest".to_string()),
-                installed_at: skill.installed_at,
+                fetched_at: skill.fetched_at,
             },
         );
     }
@@ -576,7 +576,7 @@ fn upsert_project_added_skill(workdir: &Path, skill: ProjectAddedSkill) -> Resul
         .find(|existing| existing.path == skill.path)
     {
         existing.version = skill.version;
-        existing.installed_at = skill.installed_at;
+        existing.fetched_at = skill.fetched_at;
     } else {
         config.skills.manual_added.push(skill);
     }
@@ -656,7 +656,7 @@ pub fn enable_repo_skill_in_project(
         version_info.git_commit = repo_git_commit(&repo_skill.repo_root);
     }
 
-    let installed_at = std::time::SystemTime::now()
+    let fetched_at = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_secs() as i64)
         .unwrap_or(0);
@@ -669,7 +669,7 @@ pub fn enable_repo_skill_in_project(
             repo_commit: version_info.git_commit.clone(),
             slug: slug.clone(),
             skill_version: version_info.version.clone(),
-            installed_at,
+            fetched_at,
         },
     )?;
 
@@ -681,7 +681,7 @@ pub fn enable_repo_skill_in_project(
             slug: slug.clone(),
             local: None,
             version: version_info.version.clone(),
-            installed_at,
+            fetched_at,
         },
     )?;
 
@@ -792,10 +792,10 @@ fn collect_skill_folders(workdir: &Path) -> Vec<SkillFolder> {
         }
     }
 
-    // 3. Repo-installed skills (from installed_skills.json)
-    if let Ok(installed) = crate::registry::read_installed_skills_file() {
-        for entry in installed {
-            if let Some(path) = crate::registry::installed_skill_local_path(&entry) {
+    // 3. Repo-fetched skills (from installed_skills.json)
+    if let Ok(fetched) = crate::registry::read_fetched_skills_file() {
+        for entry in fetched {
+            if let Some(path) = crate::registry::fetched_skill_local_path(&entry) {
                 if path.is_dir() {
                     if let Some(skill) = skill_folder_from_path(&path) {
                         if !all_folders.iter().any(|e| e.slug == skill.slug) {

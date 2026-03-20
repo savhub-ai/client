@@ -264,7 +264,7 @@ fn ProjectDetail(project_path: String, mut version: Signal<u32>) -> Element {
         div { style: "background: {Theme::PANEL}; border: 1px solid {Theme::LINE}; border-radius: 8px; padding: 16px; margin-bottom: 16px;",
             div { style: "display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px;",
                 h3 { style: "font-size: 13px; color: {Theme::MUTED};",
-                    "{t.project_installed_skills} ({effective_skills.len()})"
+                    "{t.project_enabled_skills} ({effective_skills.len()})"
                 }
                 button {
                     style: "padding: 6px 12px; background: linear-gradient(135deg, {Theme::ACCENT} 0%, #7bc25a 100%); color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;",
@@ -339,7 +339,7 @@ fn ProjectDetail(project_path: String, mut version: Signal<u32>) -> Element {
                 skills: repo_skills,
                 enabled_skill_slugs: enabled_skill_slugs.into_iter().collect(),
                 add_label: t.project_inject_skill,
-                enabled_label: t.installed,
+                enabled_label: t.fetched,
                 empty_label: t.project_local_skills_empty,
                 title: t.project_local_skills_title,
                 close_label: t.close,
@@ -787,7 +787,7 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                             .cloned()
                             .collect();
 
-                        if let Ok(results) = savhub_local::registry::install_skills_batch(&filtered)
+                        if let Ok(results) = savhub_local::registry::fetch_skills_batch(&filtered)
                         {
                             let agents = savhub_local::clients::resolve_clients(&checked_bg);
                             for info in &results {

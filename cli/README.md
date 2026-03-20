@@ -89,32 +89,32 @@ savhub inspect my-skill --file SKILL.md  # View file content
 savhub inspect my-skill --json       # JSON output
 ```
 
-### `savhub install` — Install a skill
+### `savhub fetch` — Fetch a skill
 
-Clones the skill's source git repository (shallow, depth 1) into `~/.savhub/repos/` and marks the skill as installed.
+Clones the skill's source git repository (shallow, depth 1) into `~/.savhub/repos/` and marks the skill as fetched.
 
 ```bash
-savhub install my-skill
-savhub install my-skill --version 1.2.0
-savhub install my-skill --force
+savhub fetch my-skill
+savhub fetch my-skill --version 1.2.0
+savhub fetch my-skill --force
 ```
 
 ### `savhub update` — Update skills
 
 ```bash
 savhub update my-skill       # Update one skill
-savhub update --all          # Update all installed
+savhub update --all          # Update all fetched
 savhub update -g             # Update global skills and sync to AI clients
 ```
 
-### `savhub uninstall` — Remove a skill
+### `savhub prune` — Remove a skill
 
 ```bash
-savhub uninstall my-skill
-savhub uninstall my-skill --yes  # Skip confirmation
+savhub prune my-skill
+savhub prune my-skill --yes  # Skip confirmation
 ```
 
-### `savhub list` — List installed skills
+### `savhub list` — List fetched skills
 
 ```bash
 savhub list
@@ -185,6 +185,6 @@ savhub mcp serve                 # Start MCP server
 | `projects.json` | `~/.savhub/` | Known project directories |
 | `profiles.json` | `~/.savhub/` | Preset definitions |
 | `selectors.json` | `~/.savhub/` | Selector rules |
-| `installed_skills.json` | `~/.savhub/` | Installed skill tracking |
+| `installed_skills.json` | `~/.savhub/` | Fetched skill tracking |
 | `savhub.toml` | `<project>/` | Project presets and skills |
 | `savhub.lock` | `<project>/` | Locked skill versions |

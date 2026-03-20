@@ -216,7 +216,7 @@ jobs:
                 </Component>
               </StandardDirectory>
               <Icon Id="SavhubIcon" SourceFile="$desktopAbs" />
-              <Feature Id="MainFeature" Title="Savhub" Description="Savhub CLI and Desktop application." Level="1">
+              <Feature Id="MainFeature" Title="Savhub" Description="Savhub CLI and Desktop application." Level="1" ConfigurableDirectory="INSTALLDIR">
                 <ComponentRef Id="SavhubCLI" />
                 <ComponentRef Id="SavhubDesktop" />
               </Feature>

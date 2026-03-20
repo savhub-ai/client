@@ -53,10 +53,10 @@ Authenticates via GitHub OAuth so you can publish, star, and manage skills.
 | `savhub` | Detect project & apply skills (default) |
 | `savhub apply` | Same as above, with extra flags (`--dry-run`, `--yes`, `--agents`, etc.) |
 | `savhub search <query>` | Search skills in the registry |
-| `savhub install <skill>` | Install a skill by cloning its source repo |
-| `savhub update` | Update installed skills |
-| `savhub uninstall <skill>` | Remove a skill |
-| `savhub list` | List installed skills in the current project |
+| `savhub fetch <skill>` | Fetch a skill by cloning its source repo |
+| `savhub update` | Update fetched skills |
+| `savhub prune <skill>` | Remove a skill |
+| `savhub list` | List fetched skills in the current project |
 | `savhub explore` | Browse skills from the registry API |
 | `savhub inspect <skill>` | View detailed skill info |
 | `savhub login` | Login via GitHub OAuth |
@@ -80,7 +80,7 @@ Flocks are curated collections of skills grouped by topic or framework.
 ```bash
 savhub flock list             # List available flocks
 savhub flock show <slug>      # Show flock details and skills
-savhub flock install <slug>   # Install all skills from a flock
+savhub flock fetch <slug>     # Fetch all skills from a flock
 ```
 
 ### Registry Cache

@@ -13,7 +13,7 @@ use zip::ZipArchive;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LockEntry {
     pub version: String,
-    pub installed_at: i64,
+    pub fetched_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,8 +36,8 @@ pub struct SkillOrigin {
     pub version: u8,
     pub registry: String,
     pub slug: String,
-    pub installed_version: String,
-    pub installed_at: i64,
+    pub fetched_version: String,
+    pub fetched_at: i64,
 }
 
 #[derive(Debug, Clone)]

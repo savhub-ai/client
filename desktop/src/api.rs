@@ -310,7 +310,7 @@ pub async fn fetch_remote_flock_detail(
         .await
 }
 
-pub async fn install_remote_skill(
+pub async fn fetch_remote_skill(
     client: &ApiClient,
     workdir: &Path,
     slug: &str,

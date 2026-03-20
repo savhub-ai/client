@@ -136,7 +136,7 @@ pub struct SelectorDefinition {
     #[serde(default)]
     pub flocks: Vec<String>,
     /// Repository URLs. When this selector matches, all flocks and skills
-    /// from these repos will be installed. URLs are normalized to canonical form.
+    /// from these repos will be fetched. URLs are normalized to canonical form.
     #[serde(default)]
     pub repos: Vec<String>,
     /// Priority (higher value = higher priority). When multiple selectors

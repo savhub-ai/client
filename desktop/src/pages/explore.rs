@@ -66,7 +66,7 @@ impl From<FlockSummary> for DisplayFlock {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SkillFilter {
     All,
-    Installed,
+    Fetched,
 }
 
 fn load_skills_page(
@@ -79,18 +79,18 @@ fn load_skills_page(
     mut error: Signal<Option<String>>,
     mut skill_list: Signal<Vec<DisplaySkill>>,
     mut skills_has_next: Signal<bool>,
-    mut installed_skill_total: Signal<usize>,
+    mut fetched_skill_total: Signal<usize>,
 ) {
     spawn(async move {
         loading.set(true);
         error.set(None);
 
-        let installed_versions = tokio::task::spawn_blocking(move || {
-            crate::skills::read_installed_skill_versions(&workdir)
+        let fetched_versions = tokio::task::spawn_blocking(move || {
+            crate::skills::read_fetched_skill_versions(&workdir)
         })
         .await
         .unwrap_or_default();
-        installed_skill_total.set(installed_versions.len());
+        fetched_skill_total.set(fetched_versions.len());
 
         let result: Result<(Vec<DisplaySkill>, bool), String> = match filter {
             SkillFilter::All => {
@@ -109,24 +109,24 @@ fn load_skills_page(
                     Err(err) => Err(err),
                 }
             }
-            SkillFilter::Installed => {
-                let mut installed_items = Vec::new();
-                let mut installed_slugs: Vec<String> = installed_versions.into_keys().collect();
-                installed_slugs.sort_unstable();
+            SkillFilter::Fetched => {
+                let mut fetched_items = Vec::new();
+                let mut fetched_slugs: Vec<String> = fetched_versions.into_keys().collect();
+                fetched_slugs.sort_unstable();
 
-                for slug in installed_slugs {
+                for slug in fetched_slugs {
                     match client
                         .get_json::<SkillDetailResponse>(&format!("/skills/{slug}"))
                         .await
                     {
-                        Ok(resp) => installed_items.push(DisplaySkill::from(resp.skill)),
-                        Err(err) => eprintln!("failed to load installed skill '{slug}': {err}"),
+                        Ok(resp) => fetched_items.push(DisplaySkill::from(resp.skill)),
+                        Err(err) => eprintln!("failed to load fetched skill '{slug}': {err}"),
                     }
                 }
 
                 let needle = query.trim().to_lowercase();
                 if !needle.is_empty() {
-                    installed_items.retain(|item| {
+                    fetched_items.retain(|item| {
                         item.slug.to_lowercase().contains(&needle)
                             || item.name.to_lowercase().contains(&needle)
                             || item
@@ -145,8 +145,8 @@ fn load_skills_page(
                 }
 
                 let start = page_index.saturating_mul(EXPLORE_PAGE_SIZE);
-                let total_filtered = installed_items.len();
-                let page_items = installed_items
+                let total_filtered = fetched_items.len();
+                let page_items = fetched_items
                     .into_iter()
                     .skip(start)
                     .take(EXPLORE_PAGE_SIZE)
@@ -226,8 +226,8 @@ pub fn ExplorePage() -> Element {
     let mut query = use_signal(String::new);
     let mut applied_query = use_signal(String::new);
     let skill_list: Signal<Vec<DisplaySkill>> = use_signal(Vec::new);
-    let installed_skill_total = use_signal(|| 0usize);
-    let mut installed_versions: Signal<BTreeMap<String, String>> = use_signal(BTreeMap::new);
+    let fetched_skill_total = use_signal(|| 0usize);
+    let mut fetched_versions: Signal<BTreeMap<String, String>> = use_signal(BTreeMap::new);
     let mut active_filter = use_signal(|| SkillFilter::All);
     let mut active_view = use_signal(|| ViewMode::Cards);
     let mut current_page = use_signal(|| 0usize);
@@ -248,12 +248,12 @@ pub fn ExplorePage() -> Element {
         let _ = *state.config_version.read();
         let workdir = state.workdir.read().clone();
         spawn(async move {
-            let installed = tokio::task::spawn_blocking(move || {
-                crate::skills::read_installed_skill_versions(&workdir)
+            let versions = tokio::task::spawn_blocking(move || {
+                crate::skills::read_fetched_skill_versions(&workdir)
             })
             .await
             .unwrap_or_default();
-            installed_versions.set(installed);
+            fetched_versions.set(versions);
         });
     });
 
@@ -276,7 +276,7 @@ pub fn ExplorePage() -> Element {
             skills_error,
             skill_list,
             skills_has_next,
-            installed_skill_total,
+            fetched_skill_total,
         );
     });
 
@@ -321,7 +321,7 @@ pub fn ExplorePage() -> Element {
     let placeholder = t.search_placeholder;
     let search_label = t.search;
     let all_label = t.filter_all;
-    let installed_label = t.installed;
+    let fetched_label = t.fetched;
     let loading_text = t.loading;
     let no_found = t.no_skills_found;
     let no_flocks_found = t.no_flocks_found;
@@ -340,9 +340,9 @@ pub fn ExplorePage() -> Element {
     let filter_items = [
         (SkillFilter::All, all_label, Option::<usize>::None),
         (
-            SkillFilter::Installed,
-            installed_label,
-            Some(*installed_skill_total.read()),
+            SkillFilter::Fetched,
+            fetched_label,
+            Some(*fetched_skill_total.read()),
         ),
     ];
 
@@ -512,7 +512,7 @@ pub fn ExplorePage() -> Element {
                         for skill in visible_skills.iter() {
                             SkillListRow {
                                 skill: skill.clone(),
-                                installed_versions: installed_versions,
+                                fetched_versions: fetched_versions,
                             }
                         }
                     }
@@ -521,7 +521,7 @@ pub fn ExplorePage() -> Element {
                         for skill in visible_skills.iter() {
                             SkillCard {
                                 skill: skill.clone(),
-                                installed_versions: installed_versions,
+                                fetched_versions: fetched_versions,
                             }
                         }
                     }
@@ -550,44 +550,44 @@ pub fn ExplorePage() -> Element {
 #[component]
 fn SkillListRow(
     skill: DisplaySkill,
-    mut installed_versions: Signal<BTreeMap<String, String>>,
+    mut fetched_versions: Signal<BTreeMap<String, String>>,
 ) -> Element {
     let state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
     let mut working = use_signal(|| false);
     let mut action_error = use_signal(|| Option::<String>::None);
     let slug = skill.slug.clone();
-    let is_installed = installed_versions.read().contains_key(&skill.slug);
+    let is_fetched = fetched_versions.read().contains_key(&skill.slug);
 
     let do_action = move |e: Event<MouseData>| {
         e.stop_propagation();
         let slug = slug.clone();
-        let uninstall = is_installed;
+        let should_prune = is_fetched;
         let client = state.api_client();
         let workdir = state.workdir.read().clone();
         spawn(async move {
             working.set(true);
             action_error.set(None);
-            let result = if uninstall {
+            let result = if should_prune {
                 let workdir = workdir.clone();
                 let slug = slug.clone();
-                tokio::task::spawn_blocking(move || crate::skills::uninstall_skill(&workdir, &slug))
+                tokio::task::spawn_blocking(move || crate::skills::prune_skill(&workdir, &slug))
                     .await
                     .map_err(|e| e.to_string())
                     .and_then(|r| r.map(|_| String::new()))
             } else {
-                api::install_remote_skill(&client, &workdir, &slug).await
+                api::fetch_remote_skill(&client, &workdir, &slug).await
             };
             match result {
                 Ok(version) => {
-                    installed_versions.with_mut(|entries| {
-                        if uninstall {
+                    fetched_versions.with_mut(|entries| {
+                        if should_prune {
                             entries.remove(&slug);
                         } else {
                             entries.insert(slug.clone(), version);
                         }
                     });
-                    if !uninstall {
+                    if !should_prune {
                         let track_slug = slug.clone();
                         let track_client = state.api_client();
                         tokio::spawn(async move {
@@ -640,19 +640,19 @@ fn SkillListRow(
                     if *working.read() {
                         span { style: "display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: {Theme::ACCENT}; font-weight: 600;",
                             span { style: "display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(90, 158, 63, 0.3); border-top-color: {Theme::ACCENT}; border-radius: 50%; animation: spin 0.8s linear infinite;" }
-                            "{t.installing}"
+                            "{t.fetching}"
                         }
-                    } else if is_installed {
+                    } else if is_fetched {
                         button {
                             style: "padding: 5px 12px; font-size: 12px; background: rgba(139, 30, 30, 0.08); color: {Theme::DANGER}; border: 1px solid rgba(139, 30, 30, 0.2); border-radius: 999px; cursor: pointer; font-weight: 600; white-space: nowrap;",
                             onclick: do_action,
-                            "{t.uninstall}"
+                            "{t.prune}"
                         }
                     } else {
                         button {
                             style: "padding: 5px 12px; font-size: 12px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border: none; border-radius: 999px; cursor: pointer; font-weight: 600; white-space: nowrap;",
                             onclick: do_action,
-                            "{t.install}"
+                            "{t.fetch}"
                         }
                     }
                     if let Some(err) = action_error.read().as_ref() {
@@ -666,44 +666,44 @@ fn SkillListRow(
 #[component]
 fn SkillCard(
     skill: DisplaySkill,
-    mut installed_versions: Signal<BTreeMap<String, String>>,
+    mut fetched_versions: Signal<BTreeMap<String, String>>,
 ) -> Element {
     let state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
     let mut working = use_signal(|| false);
     let mut action_error = use_signal(|| Option::<String>::None);
     let slug = skill.slug.clone();
-    let is_installed = installed_versions.read().contains_key(&skill.slug);
+    let is_fetched = fetched_versions.read().contains_key(&skill.slug);
 
     let do_action = move |e: Event<MouseData>| {
         e.stop_propagation();
         let slug = slug.clone();
-        let uninstall = is_installed;
+        let should_prune = is_fetched;
         let client = state.api_client();
         let workdir = state.workdir.read().clone();
         spawn(async move {
             working.set(true);
             action_error.set(None);
-            let result = if uninstall {
+            let result = if should_prune {
                 let workdir = workdir.clone();
                 let slug = slug.clone();
-                tokio::task::spawn_blocking(move || crate::skills::uninstall_skill(&workdir, &slug))
+                tokio::task::spawn_blocking(move || crate::skills::prune_skill(&workdir, &slug))
                     .await
                     .map_err(|e| e.to_string())
                     .and_then(|r| r.map(|_| String::new()))
             } else {
-                api::install_remote_skill(&client, &workdir, &slug).await
+                api::fetch_remote_skill(&client, &workdir, &slug).await
             };
             match result {
                 Ok(version) => {
-                    installed_versions.with_mut(|entries| {
-                        if uninstall {
+                    fetched_versions.with_mut(|entries| {
+                        if should_prune {
                             entries.remove(&slug);
                         } else {
                             entries.insert(slug.clone(), version);
                         }
                     });
-                    if !uninstall {
+                    if !should_prune {
                         let track_slug = slug.clone();
                         let track_client = state.api_client();
                         tokio::spawn(async move {
@@ -754,19 +754,19 @@ fn SkillCard(
                     if *working.read() {
                         span { style: "display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: {Theme::ACCENT}; font-weight: 600;",
                             span { style: "display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(90, 158, 63, 0.3); border-top-color: {Theme::ACCENT}; border-radius: 50%; animation: spin 0.8s linear infinite;" }
-                            "{t.installing}"
+                            "{t.fetching}"
                         }
-                    } else if is_installed {
+                    } else if is_fetched {
                         button {
                             style: "padding: 4px 12px; font-size: 12px; background: rgba(139, 30, 30, 0.08); color: {Theme::DANGER}; border: 1px solid rgba(139, 30, 30, 0.2); border-radius: 4px; cursor: pointer; font-weight: 500;",
                             onclick: do_action,
-                            "{t.uninstall}"
+                            "{t.prune}"
                         }
                     } else {
                         button {
                             style: "padding: 4px 12px; font-size: 12px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;",
                             onclick: do_action,
-                            "{t.install}"
+                            "{t.fetch}"
                         }
                     }
                 }

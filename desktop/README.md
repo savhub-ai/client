@@ -4,7 +4,7 @@ Desktop client for the Savhub AI Skills registry. Built with [Dioxus](https://di
 
 ## Overview
 
-Savhub Desktop provides a visual interface for managing AI skills across projects and AI clients (Claude Code, Cursor, Windsurf, VS Code, Continue). It connects to the Savhub registry to browse, install, and update skills, and integrates with the MCP (Model Context Protocol) server to expose skills to AI clients.
+Savhub Desktop provides a visual interface for managing AI skills across projects and AI clients (Claude Code, Cursor, Windsurf, VS Code, Continue). It connects to the Savhub registry to browse, fetch, and update skills, and integrates with the MCP (Model Context Protocol) server to expose skills to AI clients.
 
 ## Architecture
 
@@ -32,14 +32,14 @@ The desktop app is a single Rust binary (`savhub-desktop`) that renders with Dio
 The app uses a sidebar layout with the following pages:
 
 ### Dashboard (`/`)
-- Shows registry connection status (with API version), logged-in user, and installed skill count.
+- Shows registry connection status (with API version), logged-in user, and fetched skill count.
 - Registry API compatibility banner — if the registry API version is incompatible with this client, a non-dismissible warning appears at the top.
 - Recent projects list with timestamps.
 - Detected AI clients on the system.
 
 ### Skills (`/explore`)
 - Search and browse skills from the Savhub registry.
-- One-click install to the current project.
+- One-click fetch to the current project.
 
 ### Selectors (`/selectors`)
 
@@ -114,11 +114,11 @@ Current dialogs:
 
 Skills are the core unit in Savhub. Each skill is a folder containing a `SKILL.md` manifest and related files (prompts, resources, tools for AI).
 
-**Installation flow:**
-1. User finds a skill on the Skills page and clicks Install.
+**Fetch flow:**
+1. User finds a skill on the Skills page and clicks Fetch.
 2. The app downloads a ZIP bundle from the registry API.
 3. The bundle is extracted to the global skills directory.
-4. An entry is added to the project's config tracking the installed version.
+4. An entry is added to the project's config tracking the fetched version.
 5. An `origin.json` is written inside the skill folder with registry metadata.
 
 ## Presets

@@ -2,7 +2,7 @@
 //!
 //! Local SQLite registry cache and sync state have been removed. Registry data
 //! is fetched directly from the configured server. The only local state kept
-//! here is lightweight installed-skill metadata in JSON under `~/.savhub/`.
+//! here is lightweight fetched-skill metadata in JSON under `~/.savhub/`.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -351,9 +351,9 @@ pub struct SyncInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InstalledSkillEntry {
+pub struct FetchedSkillEntry {
     pub slug: String,
-    pub installed_at: String,
+    pub fetched_at: String,
     #[serde(default)]
     pub repo: String,
     #[serde(default)]
@@ -363,18 +363,18 @@ pub struct InstalledSkillEntry {
 }
 
 #[derive(Debug, Clone)]
-pub struct InstalledSkillInfo {
+pub struct FetchedSkillInfo {
     pub slug: String,
     pub repo_sign: String,
     pub skill_path: String,
     pub local_path: PathBuf,
 }
 
-fn installed_skills_path() -> Result<PathBuf> {
-    Ok(get_config_dir()?.join("installed_skills.json"))
+fn fetched_skills_path() -> Result<PathBuf> {
+    Ok(get_config_dir()?.join("fetched_skills.json"))
 }
 
-fn install_cache_root() -> Result<PathBuf> {
+fn fetch_cache_root() -> Result<PathBuf> {
     Ok(get_config_dir()?.join("skills-cache"))
 }
 
@@ -383,7 +383,7 @@ fn repos_dir() -> Result<PathBuf> {
 }
 
 fn skill_cache_dir(slug: &str) -> Result<PathBuf> {
-    Ok(install_cache_root()?.join(slug.trim()))
+    Ok(fetch_cache_root()?.join(slug.trim()))
 }
 
 fn normalize_skill_repo_path(value: &str) -> String {
@@ -394,16 +394,16 @@ fn normalize_skill_repo_path(value: &str) -> String {
         .to_string()
 }
 
-pub fn read_installed_skills_file() -> Result<Vec<InstalledSkillEntry>> {
-    let path = installed_skills_path()?;
+pub fn read_fetched_skills_file() -> Result<Vec<FetchedSkillEntry>> {
+    let path = fetched_skills_path()?;
     let Ok(raw) = fs::read_to_string(path) else {
         return Ok(Vec::new());
     };
-    Ok(serde_json::from_str::<Vec<InstalledSkillEntry>>(&raw).unwrap_or_default())
+    Ok(serde_json::from_str::<Vec<FetchedSkillEntry>>(&raw).unwrap_or_default())
 }
 
-fn write_installed_skills_file(entries: &[InstalledSkillEntry]) -> Result<()> {
-    let path = installed_skills_path()?;
+fn write_fetched_skills_file(entries: &[FetchedSkillEntry]) -> Result<()> {
+    let path = fetched_skills_path()?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -414,12 +414,12 @@ fn write_installed_skills_file(entries: &[InstalledSkillEntry]) -> Result<()> {
     Ok(())
 }
 
-fn upsert_installed_entry(entries: &mut Vec<InstalledSkillEntry>, entry: InstalledSkillEntry) {
+fn upsert_fetched_entry(entries: &mut Vec<FetchedSkillEntry>, entry: FetchedSkillEntry) {
     if let Some(existing) = entries
         .iter_mut()
         .find(|current| current.slug == entry.slug)
     {
-        existing.installed_at = entry.installed_at;
+        existing.fetched_at = entry.fetched_at;
         if !entry.repo.is_empty() {
             existing.repo = entry.repo;
         }
@@ -434,7 +434,7 @@ fn upsert_installed_entry(entries: &mut Vec<InstalledSkillEntry>, entry: Install
     }
 }
 
-pub fn installed_skill_local_path(entry: &InstalledSkillEntry) -> Option<PathBuf> {
+pub fn fetched_skill_local_path(entry: &FetchedSkillEntry) -> Option<PathBuf> {
     if let Some(local_path) = entry
         .local_path
         .as_deref()
@@ -754,9 +754,9 @@ pub fn list_repo_flock_signs(repo_sign: &str) -> Result<Vec<String>> {
         .collect())
 }
 
-pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>> {
+pub fn fetch_skills_batch(slugs: &[String]) -> Result<Vec<FetchedSkillInfo>> {
     let client = RegistryApiClient::new()?;
-    fs::create_dir_all(install_cache_root()?)?;
+    fs::create_dir_all(fetch_cache_root()?)?;
 
     let mut seen = BTreeSet::new();
     let mut requested = Vec::new();
@@ -767,7 +767,7 @@ pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>>
         }
     }
 
-    let mut installed_entries = read_installed_skills_file().unwrap_or_default();
+    let mut fetched_entries = read_fetched_skills_file().unwrap_or_default();
     let mut results = Vec::new();
 
     for slug in requested {
@@ -807,22 +807,22 @@ pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>>
                 repo_commit: None,
                 slug: slug.clone(),
                 skill_version: Some(version),
-                installed_at: Utc::now().timestamp_millis(),
+                fetched_at: Utc::now().timestamp_millis(),
             },
         );
 
-        upsert_installed_entry(
-            &mut installed_entries,
-            InstalledSkillEntry {
+        upsert_fetched_entry(
+            &mut fetched_entries,
+            FetchedSkillEntry {
                 slug: slug.clone(),
-                installed_at: Utc::now().to_rfc3339(),
+                fetched_at: Utc::now().to_rfc3339(),
                 repo: descriptor.repo_sign.clone(),
                 path: normalize_skill_repo_path(&descriptor.skill_path),
                 local_path: Some(local_path.display().to_string()),
             },
         );
 
-        results.push(InstalledSkillInfo {
+        results.push(FetchedSkillInfo {
             slug,
             repo_sign: descriptor.repo_sign,
             skill_path: descriptor.skill_path,
@@ -830,16 +830,16 @@ pub fn install_skills_batch(slugs: &[String]) -> Result<Vec<InstalledSkillInfo>>
         });
     }
 
-    write_installed_skills_file(&installed_entries)?;
+    write_fetched_skills_file(&fetched_entries)?;
     Ok(results)
 }
 
 #[allow(dead_code)]
-pub fn install_skill_from_registry(sign: &str) -> Result<PathBuf> {
+pub fn fetch_skill_from_registry(sign: &str) -> Result<PathBuf> {
     let slug = sign.rsplit('/').next().unwrap_or(sign).to_string();
-    install_skills_batch(&[slug])?
+    fetch_skills_batch(&[slug])?
         .into_iter()
         .next()
         .map(|item| item.local_path)
-        .ok_or_else(|| anyhow!("skill '{sign}' could not be installed"))
+        .ok_or_else(|| anyhow!("skill '{sign}' could not be fetched"))
 }

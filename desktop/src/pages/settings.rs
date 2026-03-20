@@ -380,15 +380,15 @@ fn GeneralPane() -> Element {
                     "Security Level"
                 }
                 p { style: "font-size: 12px; color: {Theme::MUTED}; margin-bottom: 8px;",
-                    "Minimum security level required when installing skills and flocks."
+                    "Minimum security level required when fetching skills and flocks."
                 }
                 {
                     use savhub_local::config::SecurityLevel;
                     let current_sec = *state.security_level.read();
                     let levels = [
-                        (SecurityLevel::Verified, "Verified Only", "Only install skills that passed all security scans (recommended)"),
+                        (SecurityLevel::Verified, "Verified Only", "Only fetch skills that passed all security scans (recommended)"),
                         (SecurityLevel::Flagged, "Allow Flagged", "Also allow skills with suspicious patterns detected"),
-                        (SecurityLevel::Any, "Allow All", "Install any skill regardless of security status, including unverified"),
+                        (SecurityLevel::Any, "Allow All", "Fetch any skill regardless of security status, including unverified"),
                     ];
                     rsx! {
                         div { style: "display: flex; flex-direction: column; gap: 6px;",

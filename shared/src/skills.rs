@@ -19,7 +19,7 @@ use crate::utils::{sanitize_slug, title_case};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LockEntry {
     pub version: String,
-    pub installed_at: i64,
+    pub fetched_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,8 +42,8 @@ pub struct SkillOrigin {
     pub version: u8,
     pub registry: String,
     pub slug: String,
-    pub installed_version: String,
-    pub installed_at: i64,
+    pub fetched_version: String,
+    pub fetched_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,7 +56,7 @@ pub struct RepoSkillOrigin {
     pub slug: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skill_version: Option<String>,
-    pub installed_at: i64,
+    pub fetched_at: i64,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -206,7 +206,7 @@ pub fn read_skill_version_info(skill_folder: &Path) -> Result<SkillVersionInfo> 
 
     if info.version.is_none() {
         if let Some(origin) = read_skill_origin(skill_folder)? {
-            let version = origin.installed_version.trim();
+            let version = origin.fetched_version.trim();
             if !version.is_empty() {
                 info.version = Some(version.to_string());
             }

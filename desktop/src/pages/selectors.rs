@@ -580,7 +580,7 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
         let workdir = state.workdir.read().clone();
         spawn(async move {
             let slugs = tokio::task::spawn_blocking(move || {
-                crate::skills::read_installed_skill_versions(&workdir)
+                crate::skills::read_fetched_skill_versions(&workdir)
                     .into_keys()
                     .collect::<Vec<_>>()
             })
@@ -971,7 +971,7 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
                             }
                         }
                         if installed_skills.is_empty() {
-                            p { style: "font-size: 12px; color: {Theme::MUTED}; margin-top: 4px;", "No installed skills." }
+                            p { style: "font-size: 12px; color: {Theme::MUTED}; margin-top: 4px;", "No fetched skills." }
                         }
                     }
                     // Error

@@ -5,16 +5,16 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Deserializer, Serialize};
 
-/// Minimum security level required for installing skills/flocks.
+/// Minimum security level required for fetching skills/flocks.
 ///
 /// Maps to the server's `SecurityStatus` enum:
-/// - `verified` — Only install skills that passed all security scans
+/// - `verified` — Only fetch skills that passed all security scans
 /// - `flagged`  — Also allow skills flagged as suspicious
 /// - `any`      — Allow all skills regardless of security status (including unverified)
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SecurityLevel {
-    /// Only install skills with status = "verified" and verdict = "clean".
+    /// Only fetch skills with status = "verified" and verdict = "clean".
     #[default]
     Verified,
     /// Also allow skills with status = "flagged" (suspicious patterns detected).
@@ -74,7 +74,7 @@ pub struct GlobalConfig {
     pub workdir: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub agents: Vec<String>,
-    /// Minimum security level for skill/flock installation.
+    /// Minimum security level for fetching skills/flocks.
     #[serde(default, skip_serializing_if = "is_default_security_level")]
     pub security_level: SecurityLevel,
 }

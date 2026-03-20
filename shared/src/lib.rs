@@ -2,7 +2,6 @@ pub mod build_info;
 pub mod clients;
 pub mod config;
 pub mod kdl_support;
-pub mod mcp_config;
 pub mod pilot;
 pub mod presets;
 pub mod registry;

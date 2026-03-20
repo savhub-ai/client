@@ -121,13 +121,13 @@ enum Command {
     Enable(EnableArgs),
     /// Disable a skill in the current project
     Disable(DisableArgs),
-    /// Install a skill by cloning its source repo
-    Install(InstallArgs),
-    /// Update installed skill(s)
+    /// Fetch a skill by cloning its source repo
+    Fetch(FetchArgs),
+    /// Update fetched skill(s)
     Update(UpdateArgs),
-    /// Uninstall a skill
-    Uninstall(UninstallArgs),
-    /// List installed skills in the current project
+    /// Prune a skill
+    Prune(PruneArgs),
+    /// List fetched skills in the current project
     List,
     /// Browse skills from the registry API
     Explore(ExploreArgs),
@@ -255,8 +255,8 @@ enum FlockCommand {
     List,
     /// Show details of a flock and its skills
     Show(FlockShowArgs),
-    /// Install all skills from a flock
-    Install(FlockInstallArgs),
+    /// Fetch all skills from a flock
+    Fetch(FlockFetchArgs),
 }
 
 #[derive(Debug, Args)]
@@ -266,7 +266,7 @@ struct FlockShowArgs {
 }
 
 #[derive(Debug, Args)]
-struct FlockInstallArgs {
+struct FlockFetchArgs {
     /// Flock slug
     slug: String,
     /// Skip confirmation prompt
@@ -359,7 +359,7 @@ struct DisableArgs {
 }
 
 #[derive(Debug, Args)]
-struct InstallArgs {
+struct FetchArgs {
     slug: String,
     #[arg(long)]
     version: Option<String>,
@@ -381,7 +381,7 @@ struct UpdateArgs {
 }
 
 #[derive(Debug, Args)]
-struct UninstallArgs {
+struct PruneArgs {
     slug: String,
     #[arg(long, action = ArgAction::SetTrue)]
     yes: bool,
@@ -534,9 +534,9 @@ async fn main() -> Result<()> {
         Some(Command::Search(args)) => cmd_search(&opts, args).await?,
         Some(Command::Enable(args)) => cmd_enable(&opts, args)?,
         Some(Command::Disable(args)) => cmd_disable(&opts, args)?,
-        Some(Command::Install(args)) => cmd_install(&opts, args).await?,
+        Some(Command::Fetch(args)) => cmd_fetch(&opts, args).await?,
         Some(Command::Update(args)) => cmd_update(&opts, args).await?,
-        Some(Command::Uninstall(args)) => cmd_uninstall(&opts, args)?,
+        Some(Command::Prune(args)) => cmd_prune(&opts, args)?,
         Some(Command::List) => cmd_list(&opts)?,
         Some(Command::Explore(args)) => cmd_explore(&opts, args).await?,
         Some(Command::Inspect(args)) => cmd_inspect(&opts, args).await?,
@@ -1020,7 +1020,7 @@ fn cmd_disable(opts: &GlobalOpts, args: DisableArgs) -> Result<()> {
     }
 }
 
-async fn cmd_install(opts: &GlobalOpts, args: InstallArgs) -> Result<()> {
+async fn cmd_fetch(opts: &GlobalOpts, args: FetchArgs) -> Result<()> {
     let slug = normalize_slug(&args.slug)?;
     let target = opts.dir.join(&slug);
     if target.exists() {
@@ -1057,8 +1057,8 @@ async fn cmd_install(opts: &GlobalOpts, args: InstallArgs) -> Result<()> {
             version: 1,
             registry: opts.registry.clone(),
             slug: slug.clone(),
-            installed_version: version.clone(),
-            installed_at: now,
+            fetched_version: version.clone(),
+            fetched_at: now,
         },
     )?;
     let mut lockfile = read_project_added_skills(&opts.workdir)?;
@@ -1066,11 +1066,11 @@ async fn cmd_install(opts: &GlobalOpts, args: InstallArgs) -> Result<()> {
         slug.clone(),
         ProjectLockEntry {
             version: version.clone(),
-            installed_at: now,
+            fetched_at: now,
         },
     );
     write_project_added_skills(&opts.workdir, &lockfile)?;
-    println!("Installed {slug}@{version} -> {}", target.display());
+    println!("Fetched {slug}@{version} -> {}", target.display());
     Ok(())
 }
 
@@ -1096,7 +1096,7 @@ async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
         lockfile.skills.keys().cloned().collect::<Vec<_>>()
     };
     if slugs.is_empty() {
-        println!("No installed skills.");
+        println!("No fetched skills.");
         return Ok(());
     }
 
@@ -1150,10 +1150,10 @@ async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
                 slug.clone(),
                 ProjectLockEntry {
                     version: latest.clone(),
-                    installed_at: lockfile
+                    fetched_at: lockfile
                         .skills
                         .get(&slug)
-                        .map(|entry| entry.installed_at)
+                        .map(|entry| entry.fetched_at)
                         .unwrap_or(now),
                 },
             );
@@ -1197,15 +1197,15 @@ async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
                     .as_ref()
                     .map(|origin| origin.slug.clone())
                     .unwrap_or_else(|| slug.clone()),
-                installed_version: latest.clone(),
-                installed_at: now,
+                fetched_version: latest.clone(),
+                fetched_at: now,
             },
         )?;
         lockfile.skills.insert(
             slug.clone(),
             ProjectLockEntry {
                 version: latest.clone(),
-                installed_at: now,
+                fetched_at: now,
             },
         );
         println!("{slug}: updated -> {latest}");
@@ -1234,7 +1234,7 @@ async fn cmd_update_global(opts: &GlobalOpts, args: &UpdateArgs) -> Result<()> {
     };
 
     if slugs.is_empty() {
-        println!("No global skills installed. Install skills first with `savhub install <slug>`.");
+        println!("No global skills fetched. Fetch skills first with `savhub fetch <slug>`.");
     } else {
         let client = optional_client(opts)?;
         let now = now_millis();
@@ -1286,7 +1286,7 @@ async fn cmd_update_global(opts: &GlobalOpts, args: &UpdateArgs) -> Result<()> {
                 slug.clone(),
                 LockEntry {
                     version: latest.clone(),
-                    installed_at: now,
+                    fetched_at: now,
                 },
             );
             println!("{slug}: updated -> {latest}");
@@ -1317,26 +1317,26 @@ async fn cmd_update_global(opts: &GlobalOpts, args: &UpdateArgs) -> Result<()> {
     Ok(())
 }
 
-fn cmd_uninstall(opts: &GlobalOpts, args: UninstallArgs) -> Result<()> {
+fn cmd_prune(opts: &GlobalOpts, args: PruneArgs) -> Result<()> {
     let slug = normalize_slug(&args.slug)?;
     if !args.yes {
         ensure_confirmed(
             opts.input_allowed,
-            &format!("Uninstall {slug}?"),
+            &format!("Prune {slug}?"),
             "pass --yes when input is disabled",
         )?;
     }
     if !disable_project_skill(&opts.workdir, &slug)? {
-        bail!("{slug} is not installed");
+        bail!("{slug} is not fetched");
     }
-    println!("Uninstalled {slug}");
+    println!("Pruned {slug}");
     Ok(())
 }
 
 fn cmd_list(opts: &GlobalOpts) -> Result<()> {
     let lockfile = read_project_added_skills(&opts.workdir)?;
     if lockfile.skills.is_empty() {
-        println!("No installed skills.");
+        println!("No fetched skills.");
         return Ok(());
     }
     for (slug, entry) in lockfile.skills {
@@ -2797,7 +2797,7 @@ fn cmd_flock(_opts: &GlobalOpts, command: FlockCommand) -> Result<()> {
                 }
             }
         }
-        FlockCommand::Install(args) => {
+        FlockCommand::Fetch(args) => {
             let flock = registry::get_flock_by_slug(&args.slug)?;
             let Some(flock) = flock else {
                 println!("Flock \"{}\" not found.", args.slug);
@@ -2809,14 +2809,14 @@ fn cmd_flock(_opts: &GlobalOpts, command: FlockCommand) -> Result<()> {
                 return Ok(());
             }
             println!("Flock: {} ({})", flock.name, flock.slug);
-            println!("Skills to install:");
+            println!("Skills to fetch:");
             for slug in &skill_slugs {
                 println!("  [+] {slug}");
             }
             if !args.yes {
                 let proceed = Confirm::new()
                     .with_prompt(format!(
-                        "Install {} skill(s) from flock \"{}\"?",
+                        "Fetch {} skill(s) from flock \"{}\"?",
                         skill_slugs.len(),
                         flock.slug
                     ))
@@ -2839,7 +2839,7 @@ fn cmd_flock(_opts: &GlobalOpts, command: FlockCommand) -> Result<()> {
                         slug.clone(),
                         ProjectLockEntry {
                             version: "latest".to_string(),
-                            installed_at: now,
+                            fetched_at: now,
                         },
                     );
                     added += 1;
@@ -2960,7 +2960,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             "No selectors matched this project. All skills previously applied by savhub will be removed."
         );
 
-        // Read savhub.lock for installed skills
+        // Read savhub.lock for fetched skills
         let lockfile = savhub_local::presets::read_project_lockfile(workdir)?;
 
         if !lockfile.skills.is_empty() {
@@ -3012,7 +3012,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         )?;
 
         if lockfile.skills.is_empty() {
-            println!("No installed skills to remove.");
+            println!("No fetched skills to remove.");
         } else {
             println!(
                 "\n\x1b[32mDone.\x1b[0m {} skill(s) removed.",
@@ -3359,7 +3359,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
                         slug: s.rsplit('/').next().unwrap_or(s).to_string(),
                         local: None,
                         version: None,
-                        installed_at: 0,
+                        fetched_at: 0,
                     });
             }
         }
@@ -3400,10 +3400,10 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         }
     }
 
-    // ── Apply: batch-install skills via registry (one git op per repo) ──
+    // ── Apply: batch-fetch skills via registry (one git op per repo) ──
     use savhub_local::skills::copy_skill_folder;
 
-    let mut installed_count = 0usize;
+    let mut fetched_count = 0usize;
 
     // Filter AI clients (respecting --agents/--skip-agents)
     let all_clients = savhub_local::clients::detect_clients();
@@ -3425,9 +3425,9 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         .collect();
 
     if !to_add.is_empty() {
-        eprintln!("Installing {} skill(s)...", to_add.len());
+        eprintln!("Fetching {} skill(s)...", to_add.len());
     }
-    let batch_results = registry::install_skills_batch(&to_add)?;
+    let batch_results = registry::fetch_skills_batch(&to_add)?;
 
     // Build lock entries: start from current, remove deleted, add new
     let mut lock = current_lock.clone();
@@ -3477,7 +3477,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
                     commit_hash: vi.git_commit,
                 });
             }
-            installed_count += 1;
+            fetched_count += 1;
         }
     }
 
@@ -3508,9 +3508,9 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     }
 
     let removed_count = to_remove.len();
-    if installed_count > 0 || removed_count > 0 {
+    if fetched_count > 0 || removed_count > 0 {
         println!(
-            "\n\x1b[32mDone.\x1b[0m +{installed_count} -{removed_count} skill(s), {} selector(s) matched.",
+            "\n\x1b[32mDone.\x1b[0m +{fetched_count} -{removed_count} skill(s), {} selector(s) matched.",
             result.matched.len()
         );
     } else {

@@ -17,7 +17,7 @@ pub fn FlockDetailPage(slug: String) -> Element {
     let mut loaded = use_signal(|| false);
     let mut working = use_signal(|| false);
     let mut action_error = use_signal(|| Option::<String>::None);
-    let mut installed: Signal<BTreeMap<String, String>> = use_signal(BTreeMap::new);
+    let mut fetched: Signal<BTreeMap<String, String>> = use_signal(BTreeMap::new);
 
     let flock_id = slug.clone();
     use_effect(move || {
@@ -29,12 +29,12 @@ pub fn FlockDetailPage(slug: String) -> Element {
         let workdir = state.workdir.read().clone();
         let flock_id = flock_id.clone();
         spawn(async move {
-            let installed_map = tokio::task::spawn_blocking(move || {
-                crate::skills::read_installed_skill_versions(&workdir)
+            let fetched_map = tokio::task::spawn_blocking(move || {
+                crate::skills::read_fetched_skill_versions(&workdir)
             })
             .await
             .unwrap_or_default();
-            installed.set(installed_map);
+            fetched.set(fetched_map);
 
             match api::fetch_remote_flock_detail(&client, &flock_id).await {
                 Ok(resp) => detail.set(Some(resp)),
@@ -69,48 +69,48 @@ pub fn FlockDetailPage(slug: String) -> Element {
         .iter()
         .map(|skill| skill.slug.clone())
         .collect();
-    let all_installed = !skill_slugs.is_empty() && {
-        let installed_map = installed.read();
+    let all_fetched = !skill_slugs.is_empty() && {
+        let fetched_map = fetched.read();
         skill_slugs
             .iter()
-            .all(|skill_slug| installed_map.contains_key(skill_slug))
+            .all(|skill_slug| fetched_map.contains_key(skill_slug))
     };
 
     let all_skills = payload.skills.clone();
     let do_all = move |_: MouseEvent| {
         let skills = all_skills.clone();
-        let uninstall = all_installed;
+        let should_prune = all_fetched;
         let client = state.api_client();
         let workdir = state.workdir.read().clone();
         spawn(async move {
             working.set(true);
             action_error.set(None);
             for skill in &skills {
-                let result = if uninstall {
+                let result = if should_prune {
                     let slug = skill.slug.clone();
                     let workdir = workdir.clone();
                     tokio::task::spawn_blocking(move || {
-                        crate::skills::uninstall_skill(&workdir, &slug)
+                        crate::skills::prune_skill(&workdir, &slug)
                     })
                     .await
                     .map_err(|e| e.to_string())
                     .and_then(|r| r)
                 } else {
-                    api::install_remote_skill(&client, &workdir, &skill.slug)
+                    api::fetch_remote_skill(&client, &workdir, &skill.slug)
                         .await
                         .map(|_| ())
                 };
 
                 match result {
                     Ok(()) => {
-                        installed.with_mut(|map| {
-                            if uninstall {
+                        fetched.with_mut(|map| {
+                            if should_prune {
                                 map.remove(skill.slug.as_str());
                             } else {
-                                map.insert(skill.slug.clone(), "installed".to_string());
+                                map.insert(skill.slug.clone(), "fetched".to_string());
                             }
                         });
-                        if !uninstall {
+                        if !should_prune {
                             let track_slug = skill.slug.clone();
                             let track_client = state.api_client();
                             tokio::spawn(async move {
@@ -169,19 +169,19 @@ pub fn FlockDetailPage(slug: String) -> Element {
                     if *working.read() {
                         span { style: "display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: {Theme::ACCENT}; font-weight: 600;",
                             span { style: "display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(90, 158, 63, 0.3); border-top-color: {Theme::ACCENT}; border-radius: 50%; animation: spin 0.8s linear infinite;" }
-                            "{t.installing}"
+                            "{t.fetching}"
                         }
-                    } else if all_installed {
+                    } else if all_fetched {
                         button {
                             style: "padding: 7px 18px; font-size: 13px; background: rgba(139, 30, 30, 0.08); color: {Theme::DANGER}; border: 1px solid rgba(139, 30, 30, 0.2); border-radius: 8px; cursor: pointer; font-weight: 700;",
                             onclick: do_all,
-                            "{t.flock_uninstall_all}"
+                            "{t.flock_prune_all}"
                         }
                     } else {
                         button {
                             style: "padding: 7px 18px; font-size: 13px; background: {Theme::ACCENT}; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 700;",
                             onclick: do_all,
-                            "{t.flock_install_all}"
+                            "{t.flock_fetch_all}"
                         }
                     }
                     if let Some(err) = action_error.read().as_ref() {
@@ -195,7 +195,7 @@ pub fn FlockDetailPage(slug: String) -> Element {
                     for skill in skills.iter() {
                         FlockSkillRow {
                             skill: skill.clone(),
-                            installed: installed,
+                            fetched: fetched,
                         }
                     }
                 }
@@ -212,46 +212,46 @@ pub fn FlockDetailPage(slug: String) -> Element {
 #[component]
 fn FlockSkillRow(
     skill: ImportedSkillRecord,
-    mut installed: Signal<BTreeMap<String, String>>,
+    mut fetched: Signal<BTreeMap<String, String>>,
 ) -> Element {
     let state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
     let mut working = use_signal(|| false);
     let mut error_msg: Signal<Option<String>> = use_signal(|| Option::<String>::None);
     let skill_slug = skill.slug.clone();
-    let is_installed = installed.read().contains_key(&skill_slug);
+    let is_fetched = fetched.read().contains_key(&skill_slug);
 
     let do_action = move |e: Event<MouseData>| {
         e.stop_propagation();
-        let uninstall = is_installed;
+        let should_prune = is_fetched;
         let skill_slug = skill_slug.clone();
         let client = state.api_client();
         let workdir = state.workdir.read().clone();
         spawn(async move {
             working.set(true);
             error_msg.set(None);
-            let result = if uninstall {
+            let result = if should_prune {
                 let workdir = workdir.clone();
                 let slug = skill_slug.clone();
-                tokio::task::spawn_blocking(move || crate::skills::uninstall_skill(&workdir, &slug))
+                tokio::task::spawn_blocking(move || crate::skills::prune_skill(&workdir, &slug))
                     .await
                     .map_err(|e| e.to_string())
                     .and_then(|r| r)
             } else {
-                api::install_remote_skill(&client, &workdir, &skill_slug)
+                api::fetch_remote_skill(&client, &workdir, &skill_slug)
                     .await
                     .map(|_| ())
             };
             match result {
                 Ok(()) => {
-                    installed.with_mut(|map| {
-                        if uninstall {
+                    fetched.with_mut(|map| {
+                        if should_prune {
                             map.remove(&skill_slug);
                         } else {
-                            map.insert(skill_slug.clone(), "installed".to_string());
+                            map.insert(skill_slug.clone(), "fetched".to_string());
                         }
                     });
-                    if !uninstall {
+                    if !should_prune {
                         let track_slug = skill_slug.clone();
                         let track_client = state.api_client();
                         tokio::spawn(async move {
@@ -299,19 +299,19 @@ fn FlockSkillRow(
                 if *working.read() {
                     span { style: "display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: {Theme::ACCENT}; font-weight: 600;",
                         span { style: "display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(90, 158, 63, 0.3); border-top-color: {Theme::ACCENT}; border-radius: 50%; animation: spin 0.8s linear infinite;" }
-                        "{t.installing}"
+                        "{t.fetching}"
                     }
-                } else if is_installed {
+                } else if is_fetched {
                     button {
                         style: "padding: 5px 12px; font-size: 12px; background: rgba(139, 30, 30, 0.08); color: {Theme::DANGER}; border: 1px solid rgba(139, 30, 30, 0.2); border-radius: 999px; cursor: pointer; font-weight: 600; white-space: nowrap;",
                         onclick: do_action,
-                        "{t.uninstall}"
+                        "{t.prune}"
                     }
                 } else {
                     button {
                         style: "padding: 5px 12px; font-size: 12px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border: none; border-radius: 999px; cursor: pointer; font-weight: 600; white-space: nowrap;",
                         onclick: do_action,
-                        "{t.install}"
+                        "{t.fetch}"
                     }
                 }
                 if let Some(err) = error_msg.read().as_ref() {
