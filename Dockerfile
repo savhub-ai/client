@@ -17,14 +17,13 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY server/ server/
 COPY shared/ shared/
-COPY web/ web/
-# Stub out non-server members so workspace resolves
-COPY cli/Cargo.toml cli/Cargo.toml
-RUN mkdir -p cli/src && echo "fn main() {}" > cli/src/main.rs
-COPY desktop/Cargo.toml desktop/Cargo.toml
-RUN mkdir -p desktop/src && echo "fn main() {}" > desktop/src/main.rs
-COPY local/Cargo.toml local/Cargo.toml
-RUN mkdir -p local/src && echo "" > local/src/lib.rs
+# Stub out client members so workspace resolves
+COPY client/cli/Cargo.toml client/cli/Cargo.toml
+RUN mkdir -p client/cli/src && echo "fn main() {}" > client/cli/src/main.rs
+COPY client/desktop/Cargo.toml client/desktop/Cargo.toml
+RUN mkdir -p client/desktop/src && echo "fn main() {}" > client/desktop/src/main.rs
+COPY client/local/Cargo.toml client/local/Cargo.toml
+RUN mkdir -p client/local/src && echo "" > client/local/src/lib.rs
 
 # Build the frontend WASM bundle with persistent Cargo caches
 # Disable debug symbols so wasm-opt does not crash on DWARF data from cached artifacts.
@@ -32,7 +31,7 @@ RUN mkdir -p local/src && echo "" > local/src/lib.rs
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     rm -rf /app/target/wasm32-unknown-unknown/release/deps/savhub_frontend* \
-    && cd web && dx build --release --debug-symbols false \
+    && cd server/frontend && dx build --release --debug-symbols false \
     && mkdir -p /app/dist \
     && cp -r /app/target/dx/savhub-frontend/release/web/public /app/dist/public
 
@@ -50,14 +49,12 @@ COPY docs/ docs/
 COPY server/ server/
 COPY shared/ shared/
 # Stub out non-server members so workspace resolves
-COPY web/Cargo.toml web/Cargo.toml
-RUN mkdir -p web/src && echo "fn main() {}" > web/src/main.rs
-COPY cli/Cargo.toml cli/Cargo.toml
-RUN mkdir -p cli/src && echo "fn main() {}" > cli/src/main.rs
-COPY desktop/Cargo.toml desktop/Cargo.toml
-RUN mkdir -p desktop/src && echo "fn main() {}" > desktop/src/main.rs
-COPY local/Cargo.toml local/Cargo.toml
-RUN mkdir -p local/src && echo "" > local/src/lib.rs
+COPY client/cli/Cargo.toml client/cli/Cargo.toml
+RUN mkdir -p client/cli/src && echo "fn main() {}" > client/cli/src/main.rs
+COPY client/desktop/Cargo.toml client/desktop/Cargo.toml
+RUN mkdir -p client/desktop/src && echo "fn main() {}" > client/desktop/src/main.rs
+COPY client/local/Cargo.toml client/local/Cargo.toml
+RUN mkdir -p client/local/src && echo "" > client/local/src/lib.rs
 
 # Build the backend binary with persistent Cargo caches
 RUN --mount=type=cache,target=/usr/local/cargo/registry \

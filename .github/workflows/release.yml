@@ -235,7 +235,7 @@ jobs:
 
           $cliAbs = (Resolve-Path $cliBin).Path
           $desktopAbs = (Resolve-Path $desktopBin).Path
-          $iconAbs = (Resolve-Path (Join-Path $pwd "desktop/assets/savhub.ico")).Path
+          $iconAbs = (Resolve-Path (Join-Path $pwd "client/desktop/assets/savhub.ico")).Path
 
           $licenseTxt = Join-Path $pwd "LICENSE"
           $licenseRtf = Join-Path $pwd "LICENSE.rtf"

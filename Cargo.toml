@@ -1,5 +1,5 @@
 [workspace]
-members = ["server", "web", "shared", "cli", "desktop", "local"]
+members = ["server/backend", "server/frontend", "shared", "client/cli", "client/desktop", "client/local"]
 resolver = "2"
 
 [workspace.package]
@@ -10,7 +10,7 @@ rust-version = "1.94"
 
 [workspace.dependencies]
 savhub-shared = { version = "0.1.0", path = "shared" }
-savhub-local = { path = "local" }
+savhub-local = { path = "client/local" }
 
 # -- Shared across server & client --
 anyhow = "1.0.102"

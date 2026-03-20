@@ -6,14 +6,14 @@ Savhub is an open registry and package manager for AI skills (`SKILL.md`). Skill
 
 ## Components
 
-| Crate | Binary | Description |
-|---|---|---|
-| `server` | `savhub-backend` | Backend API server (Salvo + Diesel + PostgreSQL) |
-| `web` | *(WASM)* | Web frontend (Dioxus) |
-| `shared` | *(library)* | Shared types between server and clients |
-| `local` | *(library)* | Client-side logic: selectors, registry cache, client detection |
-| `cli` | `savhub` | Command-line interface |
-| `desktop` | `savhub-desktop` | Desktop GUI (Dioxus native) |
+| Crate | Path | Binary | Description |
+|---|---|---|---|
+| `savhub-backend` | `server/backend` | `savhub-backend` | Backend API server (Salvo + Diesel + PostgreSQL) |
+| `savhub-frontend` | `server/frontend` | *(WASM)* | Web frontend (Dioxus) |
+| `savhub-shared` | `shared` | *(library)* | Shared types between server and clients |
+| `savhub-local` | `client/local` | *(library)* | Client-side logic: selectors, registry cache, client detection |
+| `savhub` | `client/cli` | `savhub` | Command-line interface |
+| `savhub-desktop` | `client/desktop` | `savhub-desktop` | Desktop GUI (Dioxus native) |
 
 ## Stack
 
@@ -215,7 +215,7 @@ cp .env.example .env
 cargo run -p savhub-backend
 
 # 4. Run frontend (separate terminal)
-cd web && dx serve --platform web --port 5007
+cd server/frontend && dx serve --platform web --port 5007
 ```
 
 Open http://127.0.0.1:5007

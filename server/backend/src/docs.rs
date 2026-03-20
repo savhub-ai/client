@@ -11,11 +11,11 @@ use novel_shared::SidebarItem;
 use shared::{DocPageResponse, DocSidebarGroup, DocSidebarLink, DocTocItem};
 
 #[derive(Embed)]
-#[folder = "../docs/en/"]
+#[folder = "../../docs/en/"]
 struct DocsEn;
 
 #[derive(Embed)]
-#[folder = "../docs/zh/"]
+#[folder = "../../docs/zh/"]
 struct DocsZh;
 
 struct DocSites {

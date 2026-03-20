@@ -6,8 +6,8 @@ use anyhow::{Context, Result};
 use crate::config::get_config_dir;
 
 /// The embedded skill markdowns shipped with the binary.
-const CONFIG_SKILL_CONTENT: &str = include_str!("../../skills/savhub-config/SKILL.md");
-const CLI_SKILL_CONTENT: &str = include_str!("../../skills/savhub-cli/SKILL.md");
+const CONFIG_SKILL_CONTENT: &str = include_str!("../../../skills/savhub-config/SKILL.md");
+const CLI_SKILL_CONTENT: &str = include_str!("../../../skills/savhub-cli/SKILL.md");
 
 // ---------------------------------------------------------------------------
 // Agent skill directories

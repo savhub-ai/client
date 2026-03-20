@@ -20,11 +20,11 @@ backend:
 
 # Run frontend dev server
 frontend:
-    cd web; dx serve --platform web --port 5007
+    cd server/frontend; dx serve --platform web --port 5007
 
 # Build frontend (release)
 frontend-build:
-    cd web; dx build --release
+    cd server/frontend; dx build --release
 
 # Run desktop app (debug)
 desktop:

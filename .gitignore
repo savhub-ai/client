@@ -1,6 +1,6 @@
 /target
-/web/dist
-/web/.dioxus
+/server/frontend/dist
+/server/frontend/.dioxus
 *.log
 .tmp*
 space

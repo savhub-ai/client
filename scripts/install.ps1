@@ -1,6 +1,6 @@
 # Savhub CLI installer for Windows.
 # Usage:
-#   irm https://raw.githubusercontent.com/savhub-ai/client/main/scripts/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/savhub-ai/savhub/main/scripts/install.ps1 | iex
 #   .\install.ps1 -Version v0.2.0
 #   .\install.ps1 -InstallDir C:\custom\path
 

@@ -15,6 +15,6 @@ fn main() {
     println!("cargo:rustc-env=SAVHUB_GIT_HASH={git_hash}");
 
     // Re-run if git HEAD changes
-    println!("cargo:rerun-if-changed=../.git/HEAD");
-    println!("cargo:rerun-if-changed=../.git/refs/heads/");
+    println!("cargo:rerun-if-changed=../../.git/HEAD");
+    println!("cargo:rerun-if-changed=../../.git/refs/heads/");
 }
