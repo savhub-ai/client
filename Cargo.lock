@@ -4508,7 +4508,7 @@ dependencies = [
 
 [[package]]
 name = "savhub"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4532,7 +4532,7 @@ dependencies = [
 
 [[package]]
 name = "savhub-desktop"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "arboard",
  "chrono",
@@ -4555,7 +4555,7 @@ dependencies = [
 
 [[package]]
 name = "savhub-local"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "anyhow",
  "chrono",
