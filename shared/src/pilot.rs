@@ -5,18 +5,22 @@ use anyhow::{Context, Result};
 
 use crate::config::get_config_dir;
 
-/// The embedded skill markdown shipped with the binary.
-const SKILL_CONTENT: &str = include_str!("../../skills/savhub-pilot/SKILL.md");
+/// The embedded skill markdowns shipped with the binary.
+const CONFIG_SKILL_CONTENT: &str = include_str!("../../skills/savhub-config/SKILL.md");
+const CLI_SKILL_CONTENT: &str = include_str!("../../skills/savhub-cli/SKILL.md");
 
 // ---------------------------------------------------------------------------
 // Agent skill directories
 // ---------------------------------------------------------------------------
 
-/// Return the skill installation directory for a given agent name.
-///
-/// - `claude-code` → `~/.claude/skills/savhub-pilot/`
-/// - everything else → `~/.agents/<name>/skills/savhub-pilot/`
-fn agent_skill_dir(agent: &str) -> Result<PathBuf> {
+/// Skill names bundled with the pilot installer.
+const BUNDLED_SKILLS: &[(&str, &str)] = &[
+    ("savhub-config", CONFIG_SKILL_CONTENT),
+    ("savhub-cli", CLI_SKILL_CONTENT),
+];
+
+/// Return the skill installation directory for a given agent and skill name.
+fn agent_skill_dir(agent: &str, skill_name: &str) -> Result<PathBuf> {
     let home = directories::UserDirs::new()
         .map(|u| u.home_dir().to_path_buf())
         .context("cannot determine home directory")?;
@@ -25,77 +29,86 @@ fn agent_skill_dir(agent: &str) -> Result<PathBuf> {
         "claude-code" => home.join(".claude"),
         other => home.join(".agents").join(other),
     };
-    Ok(base.join("skills").join("savhub-pilot"))
+    Ok(base.join("skills").join(skill_name))
 }
 
 // ---------------------------------------------------------------------------
 // Install / Uninstall
 // ---------------------------------------------------------------------------
 
-/// Return the shared skill directory: `~/.agents/skills/savhub-pilot/`
-fn shared_skill_dir() -> Result<PathBuf> {
+/// Return the shared skill directory: `~/.agents/skills/<skill_name>/`
+fn shared_skill_dir(skill_name: &str) -> Result<PathBuf> {
     let home = directories::UserDirs::new()
         .map(|u| u.home_dir().to_path_buf())
         .context("cannot determine home directory")?;
-    Ok(home.join(".agents").join("skills").join("savhub-pilot"))
+    Ok(home.join(".agents").join("skills").join(skill_name))
 }
 
 /// Write the skill file into a directory, creating it if needed.
-fn write_skill_to(dir: &PathBuf) -> Result<()> {
+fn write_skill_to(dir: &PathBuf, content: &str) -> Result<()> {
     fs::create_dir_all(dir).with_context(|| format!("failed to create {}", dir.display()))?;
     let dest = dir.join("SKILL.md");
-    fs::write(&dest, SKILL_CONTENT)
+    fs::write(&dest, content)
         .with_context(|| format!("failed to write {}", dest.display()))?;
     Ok(())
 }
 
-/// Install the savhub-pilot skill for the given agents.
+/// Install bundled skills (savhub-config + savhub-cli) for the given agents.
 ///
 /// Always installs to:
-/// - `~/.agents/skills/savhub-pilot/` (shared, for any agent)
-/// - Agent-specific directories (e.g. `~/.claude/skills/savhub-pilot/`)
+/// - `~/.agents/skills/<skill>/` (shared, for any agent)
+/// - Agent-specific directories (e.g. `~/.claude/skills/<skill>/`)
 ///
-/// Returns `(shared_dir, Vec<(agent_name, dir)>)`.
+/// Returns `(shared_dir, Vec<(agent_name, dir)>)` for the primary skill (savhub-config).
 pub fn install(agents: &[String]) -> Result<(PathBuf, Vec<(String, PathBuf)>)> {
-    // Always install to the shared ~/.agents/skills/ directory
-    let shared = shared_skill_dir()?;
-    write_skill_to(&shared)?;
+    let mut primary_shared = None;
+    let mut primary_agent_dirs = Vec::new();
 
-    let mut agent_dirs = Vec::new();
-    for agent in agents {
-        let dir = agent_skill_dir(agent)?;
-        // Skip if it resolves to the same as the shared dir
-        if dir == shared {
-            continue;
+    for &(skill_name, content) in BUNDLED_SKILLS {
+        let shared = shared_skill_dir(skill_name)?;
+        write_skill_to(&shared, content)?;
+
+        if primary_shared.is_none() {
+            primary_shared = Some(shared.clone());
         }
-        write_skill_to(&dir)?;
-        agent_dirs.push((agent.clone(), dir));
+
+        for agent in agents {
+            let dir = agent_skill_dir(agent, skill_name)?;
+            if dir == shared {
+                continue;
+            }
+            write_skill_to(&dir, content)?;
+            if skill_name == "savhub-config" {
+                primary_agent_dirs.push((agent.clone(), dir));
+            }
+        }
     }
 
-    Ok((shared, agent_dirs))
+    Ok((primary_shared.unwrap(), primary_agent_dirs))
 }
 
-/// Uninstall the savhub-pilot skill from shared and agent-specific directories.
+/// Uninstall bundled skills from shared and agent-specific directories.
 ///
 /// Returns the list of directories that were removed.
 pub fn uninstall(agents: &[String]) -> Result<Vec<PathBuf>> {
     let mut removed = Vec::new();
 
-    // Remove from shared ~/.agents/skills/
-    if let Ok(shared) = shared_skill_dir() {
-        if shared.exists() {
-            fs::remove_dir_all(&shared)
-                .with_context(|| format!("failed to remove {}", shared.display()))?;
-            removed.push(shared);
+    for &(skill_name, _) in BUNDLED_SKILLS {
+        if let Ok(shared) = shared_skill_dir(skill_name) {
+            if shared.exists() {
+                fs::remove_dir_all(&shared)
+                    .with_context(|| format!("failed to remove {}", shared.display()))?;
+                removed.push(shared);
+            }
         }
-    }
 
-    for agent in agents {
-        let dir = agent_skill_dir(agent)?;
-        if dir.exists() {
-            fs::remove_dir_all(&dir)
-                .with_context(|| format!("failed to remove {}", dir.display()))?;
-            removed.push(dir);
+        for agent in agents {
+            let dir = agent_skill_dir(agent, skill_name)?;
+            if dir.exists() {
+                fs::remove_dir_all(&dir)
+                    .with_context(|| format!("failed to remove {}", dir.display()))?;
+                removed.push(dir);
+            }
         }
     }
 
@@ -108,23 +121,26 @@ pub fn uninstall(agents: &[String]) -> Result<Vec<PathBuf>> {
 pub fn status(agents: &[String]) -> Result<Vec<(String, Option<PathBuf>)>> {
     let mut result = Vec::new();
 
-    // Check shared ~/.agents/skills/
-    if let Ok(shared) = shared_skill_dir() {
-        let skill_file = shared.join("SKILL.md");
-        if skill_file.exists() {
-            result.push(("shared".to_string(), Some(shared)));
-        } else {
-            result.push(("shared".to_string(), None));
+    for &(skill_name, _) in BUNDLED_SKILLS {
+        if let Ok(shared) = shared_skill_dir(skill_name) {
+            let skill_file = shared.join("SKILL.md");
+            let label = format!("shared/{skill_name}");
+            if skill_file.exists() {
+                result.push((label, Some(shared)));
+            } else {
+                result.push((label, None));
+            }
         }
-    }
 
-    for agent in agents {
-        let dir = agent_skill_dir(agent)?;
-        let skill_file = dir.join("SKILL.md");
-        if skill_file.exists() {
-            result.push((agent.clone(), Some(dir)));
-        } else {
-            result.push((agent.clone(), None));
+        for agent in agents {
+            let dir = agent_skill_dir(agent, skill_name)?;
+            let skill_file = dir.join("SKILL.md");
+            let label = format!("{agent}/{skill_name}");
+            if skill_file.exists() {
+                result.push((label, Some(dir)));
+            } else {
+                result.push((label, None));
+            }
         }
     }
     Ok(result)

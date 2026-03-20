@@ -123,8 +123,8 @@ function Install-Savhub {
         # Create Desktop shortcut
         Add-DesktopShortcut
 
-        # Install savhub-pilot skill into AI agent directories
-        Write-Host "Installing savhub-pilot skill..."
+        # Install bundled skills into AI agent directories
+        Write-Host "Installing savhub skills..."
         $savhubExe = Join-Path $InstallDir "savhub.exe"
         try { & $savhubExe pilot install 2>$null } catch {}
 

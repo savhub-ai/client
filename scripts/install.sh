@@ -120,8 +120,8 @@ main() {
     # Add to PATH if not already present
     add_to_path
 
-    # Install savhub-pilot skill into AI agent directories
-    echo "Installing savhub-pilot skill..."
+    # Install bundled skills into AI agent directories
+    echo "Installing savhub skills..."
     "${INSTALL_DIR}/savhub" pilot install 2>/dev/null || true
 
     echo ""

@@ -166,7 +166,7 @@ enum Command {
         #[command(subcommand)]
         command: FlockCommand,
     },
-    /// Manage the savhub-pilot AI skill (install/uninstall/status)
+    /// Manage bundled AI skills (install/uninstall/status)
     Pilot {
         #[command(subcommand)]
         command: PilotCommand,
@@ -276,9 +276,9 @@ struct FlockFetchArgs {
 
 #[derive(Debug, Subcommand)]
 enum PilotCommand {
-    /// Install the savhub-pilot skill into AI agent skill directories
+    /// Install bundled skills into AI agent skill directories
     Install(PilotAgentArgs),
-    /// Uninstall the savhub-pilot skill from AI agent skill directories
+    /// Uninstall bundled skills from AI agent skill directories
     Uninstall(PilotAgentArgs),
     /// Show installation status for each configured agent
     Status(PilotAgentArgs),
@@ -2885,7 +2885,7 @@ fn cmd_pilot(command: PilotCommand) -> Result<()> {
         PilotCommand::Install(args) => {
             let agents = resolve_agents(&args)?;
             let (shared, agent_dirs) = pilot::install(&agents)?;
-            println!("Installed savhub-pilot skill:\n");
+            println!("Installed savhub skills (savhub-config, savhub-cli):\n");
             println!("  shared:");
             println!("    {}", shared.join("SKILL.md").display());
             for (agent, dir) in &agent_dirs {

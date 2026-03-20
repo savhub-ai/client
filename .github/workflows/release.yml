@@ -311,7 +311,7 @@ jobs:
           cat > "${PKG_ROOT}/DEBIAN/postinst" <<'POSTINST'
           #!/bin/sh
           set -e
-          # Install savhub-pilot skill for the installing user
+          # Install bundled skills for the installing user
           if [ -n "${SUDO_USER:-}" ]; then
             su - "$SUDO_USER" -c '/usr/local/bin/savhub pilot install 2>/dev/null || true'
           else
@@ -366,7 +366,7 @@ jobs:
           mkdir -p "${SCRIPTS_DIR}"
           cat > "${SCRIPTS_DIR}/postinstall" <<'POSTINST'
           #!/bin/sh
-          # Install savhub-pilot skill for the installing user
+          # Install bundled skills for the installing user
           REAL_USER="${USER:-$(whoami)}"
           if [ -n "${SUDO_USER:-}" ]; then
             REAL_USER="$SUDO_USER"
