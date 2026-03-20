@@ -119,17 +119,36 @@ pub fn ProjectsPage() -> Element {
                                                 "{path_str}"
                                             }
                                         }
-                                        button {
-                                            style: "background: none; border: none; color: {Theme::MUTED}; font-size: 14px; cursor: pointer; padding: 2px 4px; line-height: 1; flex-shrink: 0;",
-                                            onclick: move |evt| {
-                                                evt.stop_propagation();
-                                                let _ = remove_project(&path_for_remove);
-                                                if selected_project.read().as_deref() == Some(path_for_remove.as_str()) {
-                                                    selected_project.set(None);
+                                        {
+                                            let path_for_open = project.path.clone();
+                                            rsx! {
+                                                button {
+                                                    style: "background: none; border: none; color: {Theme::MUTED}; font-size: 13px; cursor: pointer; padding: 2px 4px; line-height: 1; flex-shrink: 0;",
+                                                    title: "Open in explorer",
+                                                    onclick: move |evt| {
+                                                        evt.stop_propagation();
+                                                        #[cfg(target_os = "windows")]
+                                                        let _ = std::process::Command::new("explorer").arg(&path_for_open).spawn();
+                                                        #[cfg(target_os = "macos")]
+                                                        let _ = std::process::Command::new("open").arg(&path_for_open).spawn();
+                                                        #[cfg(target_os = "linux")]
+                                                        let _ = std::process::Command::new("xdg-open").arg(&path_for_open).spawn();
+                                                    },
+                                                    "\u{1F4C2}"
                                                 }
-                                                version.with_mut(|v| *v += 1);
-                                            },
-                                            "\u{00D7}"
+                                                button {
+                                                    style: "background: none; border: none; color: {Theme::MUTED}; font-size: 14px; cursor: pointer; padding: 2px 4px; line-height: 1; flex-shrink: 0;",
+                                                    onclick: move |evt| {
+                                                        evt.stop_propagation();
+                                                        let _ = remove_project(&path_for_remove);
+                                                        if selected_project.read().as_deref() == Some(path_for_remove.as_str()) {
+                                                            selected_project.set(None);
+                                                        }
+                                                        version.with_mut(|v| *v += 1);
+                                                    },
+                                                    "\u{00D7}"
+                                                }
+                                            }
                                         }
                                     }
                                 }

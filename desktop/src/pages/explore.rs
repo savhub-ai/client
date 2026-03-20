@@ -459,7 +459,7 @@ pub fn ExplorePage() -> Element {
                 };
                 rsx! {
                     if show_primary_loading {
-                        p { style: "color: {Theme::MUTED}; padding: 20px 0;", "{loading_text}" }
+                        p { style: "color: {Theme::MUTED}; padding: 20px 0; text-align: center; width: 100%;", "{loading_text}" }
                     }
                     if let Some(err) = current_error.as_ref() {
                         div { style: "padding: 12px 16px; background: rgba(139, 30, 30, 0.08); border: 1px solid rgba(139, 30, 30, 0.2); border-radius: 6px; color: {Theme::DANGER}; margin-bottom: 16px;",

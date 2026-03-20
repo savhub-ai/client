@@ -58,7 +58,7 @@ pub fn FlockDetailPage(slug: String) -> Element {
         }
 
         return rsx! {
-            div { style: "padding: 32px; color: {Theme::MUTED};",
+            div { style: "display: flex; justify-content: center; align-items: center; padding: 32px; color: {Theme::MUTED}; width: 100%; min-height: 200px;",
                 "{t.loading}"
             }
         };

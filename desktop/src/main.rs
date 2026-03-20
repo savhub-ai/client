@@ -18,7 +18,7 @@ use dioxus::prelude::*;
 use pages::dashboard::DashboardPage;
 use pages::detail::DetailPage;
 use pages::explore::ExplorePage;
-use pages::installed::FetchedPage;
+use pages::fetched::FetchedPage;
 use pages::profiles::ProjectsPage;
 use pages::selectors::SelectorsPage;
 use pages::settings::SettingsPage;

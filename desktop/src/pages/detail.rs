@@ -58,7 +58,7 @@ pub fn DetailPage(slug: String) -> Element {
             if let Some(d) = detail.read().as_ref() {
                 DetailContent { detail: d.clone(), slug: slug.clone() }
             } else if error.read().is_none() {
-                p { style: "color: {Theme::MUTED}; padding: 40px 0;", "{loading_text}" }
+                p { style: "color: {Theme::MUTED}; padding: 40px 0; text-align: center; width: 100%;", "{loading_text}" }
             }
         }
     }
