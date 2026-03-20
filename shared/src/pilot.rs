@@ -48,8 +48,7 @@ fn shared_skill_dir(skill_name: &str) -> Result<PathBuf> {
 fn write_skill_to(dir: &PathBuf, content: &str) -> Result<()> {
     fs::create_dir_all(dir).with_context(|| format!("failed to create {}", dir.display()))?;
     let dest = dir.join("SKILL.md");
-    fs::write(&dest, content)
-        .with_context(|| format!("failed to write {}", dest.display()))?;
+    fs::write(&dest, content).with_context(|| format!("failed to write {}", dest.display()))?;
     Ok(())
 }
 
