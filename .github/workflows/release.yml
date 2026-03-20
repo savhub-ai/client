@@ -233,7 +233,7 @@ jobs:
                             ExeCommand="[INSTALLDIR]savhub.exe pilot install"
                             Execute="deferred" Impersonate="yes" Return="ignore" />
               <InstallExecuteSequence>
-                <Custom Action="InstallPilotSkill" After="InstallFinalize">NOT Installed OR REINSTALL</Custom>
+                <Custom Action="InstallPilotSkill" After="InstallFinalize" Condition="NOT Installed OR REINSTALL" />
               </InstallExecuteSequence>
             </Package>
           </Wix>
