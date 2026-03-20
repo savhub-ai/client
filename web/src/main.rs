@@ -1,6 +1,7 @@
 mod api;
 mod app;
 mod i18n;
+pub mod icons;
 
 #[cfg(target_arch = "wasm32")]
 fn main() {

@@ -152,7 +152,7 @@ fn ToastOverlay() -> Element {
                             button {
                                 class: "toast-close",
                                 onclick: move |_| toast.dismiss(id),
-                                "\u{00d7}"
+                                crate::icons::IconX { size: 14 }
                             }
                         }
                     }
@@ -540,7 +540,7 @@ fn AppShell() -> Element {
                             admin_mode.set(next);
                             save_storage(ADMIN_MODE_STORAGE_KEY, if next { "true" } else { "false" });
                         },
-                        span { dangerous_inner_html: r#"<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M8 4.754a3.246 3.246 0 100 6.492 3.246 3.246 0 000-6.492zM5.754 8a2.246 2.246 0 114.492 0 2.246 2.246 0 01-4.492 0z"/><path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 01-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 01-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 01.52 1.255l-.16.292c-.892 1.64.902 3.434 2.541 2.54l.292-.159a.873.873 0 011.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 011.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 01.52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 01-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 01-1.255-.52l-.094-.319zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 002.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 001.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 00-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 00-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 00-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 001.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 003.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 002.692-1.115l.094-.319z"/></svg>"# }
+                        crate::icons::IconSettings { size: 14 }
                         "Admin"
                     }
                 }
@@ -1156,7 +1156,10 @@ fn FlockListRow(flock: FlockSummary) -> Element {
                 }
                 span { class: "meta-text", "{flock.skill_count} {t.flock_skills_count}" }
                 if flock.stats_stars > 0 {
-                    span { class: "meta-text", "\u{2605} {flock.stats_stars}" }
+                    span { class: "meta-text", style: "display: inline-flex; align-items: center; gap: 3px;",
+                        crate::icons::IconStar { size: 12, filled: true }
+                        "{flock.stats_stars}"
+                    }
                 }
                 span { class: "relative-time", "{updated}" }
             }
@@ -1494,7 +1497,11 @@ fn InstallBlock(label: &'static str, command: String) -> Element {
                             copied.set(false);
                         });
                     },
-                    if copied() { "\u{2714}" } else { "\u{2398}" }
+                    if copied() {
+                        crate::icons::IconCheck { size: 14, color: "#4ade80" }
+                    } else {
+                        crate::icons::IconClipboard { size: 14 }
+                    }
                 }
             }
             pre { class: "install-code",
@@ -2332,9 +2339,9 @@ fn render_copy_sign(sign: &str) -> Element {
             span { class: "copy-sign-value", "{value}" }
             span { class: "copy-sign-btn",
                 if *copied.read() {
-                    span { dangerous_inner_html: "<svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#4ade80\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"20 6 9 17 4 12\"/></svg>" }
+                    crate::icons::IconCheck { size: 14, color: "#4ade80" }
                 } else {
-                    span { dangerous_inner_html: "<svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"9\" y=\"9\" width=\"13\" height=\"13\" rx=\"2\" ry=\"2\"/><path d=\"M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1\"/></svg>" }
+                    crate::icons::IconClipboard { size: 14 }
                 }
             }
         }
@@ -2367,9 +2374,9 @@ fn render_copy_icon(sign: &str) -> Element {
                 });
             },
             if *copied.read() {
-                span { dangerous_inner_html: "<svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#4ade80\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"20 6 9 17 4 12\"/></svg>" }
+                crate::icons::IconCheck { size: 14, color: "#4ade80" }
             } else {
-                span { dangerous_inner_html: "<svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"9\" y=\"9\" width=\"13\" height=\"13\" rx=\"2\" ry=\"2\"/><path d=\"M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1\"/></svg>" }
+                crate::icons::IconClipboard { size: 14 }
             }
         }
     }
@@ -3212,7 +3219,9 @@ fn IndexPage(lang: String) -> Element {
             document::Title { "{t.index_title}" }
             section { class: "section",
                 div { class: "auth-prompt",
-                    div { class: "auth-icon", "\u{1F512}" }
+                    div { class: "auth-icon",
+                        crate::icons::IconLock { size: 28 }
+                    }
                     h2 { "{t.index_title}" }
                     p { "{t.login_before_index}" }
                     a { class: "btn-github", href: "{login_href}",

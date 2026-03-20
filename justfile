@@ -58,6 +58,11 @@ lint:
 test:
     cargo test --workspace
 
+# Build the CLI and copy it to ~/bin for local testing
+dist-dev:
+    cargo build -p savhub
+    $binDir = Join-Path $env:USERPROFILE "bin"; New-Item -ItemType Directory -Force -Path $binDir | Out-Null; $src = Join-Path "{{justfile_directory()}}" "target\debug\savhub.exe"; Copy-Item $src (Join-Path $binDir "savhub.exe") -Force; Write-Host "Copied to $binDir\savhub.exe"
+
 # Build entire workspace
 build:
     cargo build --workspace
