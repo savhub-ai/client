@@ -1,8 +1,7 @@
 //! Registry access backed by the Savhub REST API.
 //!
-//! Local SQLite registry cache and sync state have been removed. Registry data
-//! is fetched directly from the configured server. The only local state kept
-//! here is lightweight fetched-skill metadata in JSON under `~/.savhub/`.
+//!  Registry data is fetched directly from the configured server. The only local state kept
+//! here is lightweight installed-skill metadata in JSON under `~/.savhub/`.
 
 use std::collections::BTreeSet;
 use std::fs;

@@ -787,8 +787,7 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                             .cloned()
                             .collect();
 
-                        if let Ok(results) = savhub_local::registry::fetch_skills_batch(&filtered)
-                        {
+                        if let Ok(results) = savhub_local::registry::fetch_skills_batch(&filtered) {
                             let agents = savhub_local::clients::resolve_clients(&checked_bg);
                             for info in &results {
                                 for client in &agents {

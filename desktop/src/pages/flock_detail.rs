@@ -89,12 +89,10 @@ pub fn FlockDetailPage(slug: String) -> Element {
                 let result = if should_prune {
                     let slug = skill.slug.clone();
                     let workdir = workdir.clone();
-                    tokio::task::spawn_blocking(move || {
-                        crate::skills::prune_skill(&workdir, &slug)
-                    })
-                    .await
-                    .map_err(|e| e.to_string())
-                    .and_then(|r| r)
+                    tokio::task::spawn_blocking(move || crate::skills::prune_skill(&workdir, &slug))
+                        .await
+                        .map_err(|e| e.to_string())
+                        .and_then(|r| r)
                 } else {
                     api::fetch_remote_skill(&client, &workdir, &skill.slug)
                         .await
