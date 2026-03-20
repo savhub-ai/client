@@ -50,12 +50,15 @@ pub fn PaginationControls(
         if enabled {
             format!(
                 "display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: {bg}; color: {color}; border: 1px solid {line}; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; line-height: 1; padding: 0;",
-                bg = Theme::PANEL, color = Theme::ACCENT_STRONG, line = Theme::LINE
+                bg = Theme::PANEL,
+                color = Theme::ACCENT_STRONG,
+                line = Theme::LINE
             )
         } else {
             format!(
                 "display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: rgba(0,0,0,0.03); color: {color}; border: 1px solid {line}; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: not-allowed; opacity: 0.4; line-height: 1; padding: 0;",
-                color = Theme::MUTED, line = Theme::LINE
+                color = Theme::MUTED,
+                line = Theme::LINE
             )
         }
     };

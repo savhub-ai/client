@@ -2606,7 +2606,6 @@ async fn cmd_registry(_opts: &GlobalOpts, command: RegistryCommand) -> Result<()
     Ok(())
 }
 
-
 // ---------------------------------------------------------------------------
 // selector subcommands
 // ---------------------------------------------------------------------------
@@ -3355,7 +3354,8 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     // ── Update selector match counts ──
     {
         let unmatched_names: Vec<String> = unmatched.iter().map(|u| u.name.clone()).collect();
-        let _ = savhub_local::selectors::update_match_counts(&matched_selector_names, &unmatched_names);
+        let _ =
+            savhub_local::selectors::update_match_counts(&matched_selector_names, &unmatched_names);
     }
 
     // ── Remove skills that are no longer in desired set (grouped by repo) ──

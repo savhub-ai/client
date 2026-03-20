@@ -660,7 +660,6 @@ fn resolve_latest_version(client: &RegistryApiClient, slug: &str) -> Result<Stri
         .ok_or_else(|| anyhow!("skill '{slug}' has no downloadable version"))
 }
 
-
 pub fn list_skills(
     query: Option<&str>,
     _status_filter: Option<&str>,
