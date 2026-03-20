@@ -44,8 +44,6 @@ savhub selector test             # Run selectors against current dir (no changes
 Registry metadata is fetched live from the configured Savhub REST API.
 
 ```bash
-savhub registry sync                         # Force sync from GitHub
-savhub registry info                         # Show cache status
 savhub registry search "rust web"            # Search skills
 savhub registry search "frontend" --limit 50
 savhub registry list                         # List with pagination

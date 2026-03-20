@@ -1,7 +1,5 @@
 use dioxus::prelude::*;
 
-use crate::i18n;
-use crate::state::AppState;
 use crate::theme::Theme;
 
 pub fn total_pages(total_items: usize, page_size: usize) -> usize {
@@ -43,61 +41,41 @@ pub fn PaginationControls(
     on_prev: EventHandler<MouseEvent>,
     on_next: EventHandler<MouseEvent>,
 ) -> Element {
-    let state = use_context::<AppState>();
-    let t = i18n::texts(*state.lang.read());
-
     if !has_prev && !has_next && total_pages.unwrap_or(0) <= 1 {
         return rsx! {};
     }
 
-    let prev_label = t.pagination_previous;
-    let next_label = t.pagination_next;
-    let indicator = t.fmt_page_indicator(current_page + 1, total_pages);
-    let prev_style = if has_prev {
-        format!(
-            "padding: 6px 12px; background: {bg}; color: {color}; border: 1px solid {line}; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;",
-            bg = Theme::PANEL,
-            color = Theme::ACCENT_STRONG,
-            line = Theme::LINE
-        )
-    } else {
-        format!(
-            "padding: 6px 12px; background: rgba(0,0,0,0.03); color: {color}; border: 1px solid {line}; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: not-allowed; opacity: 0.55;",
-            color = Theme::MUTED,
-            line = Theme::LINE
-        )
-    };
-    let next_style = if has_next {
-        format!(
-            "padding: 6px 12px; background: {bg}; color: {color}; border: 1px solid {line}; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;",
-            bg = Theme::PANEL,
-            color = Theme::ACCENT_STRONG,
-            line = Theme::LINE
-        )
-    } else {
-        format!(
-            "padding: 6px 12px; background: rgba(0,0,0,0.03); color: {color}; border: 1px solid {line}; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: not-allowed; opacity: 0.55;",
-            color = Theme::MUTED,
-            line = Theme::LINE
-        )
+    let page_display = current_page + 1;
+    let nav_btn = |enabled: bool| -> String {
+        if enabled {
+            format!(
+                "display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: {bg}; color: {color}; border: 1px solid {line}; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; line-height: 1; padding: 0;",
+                bg = Theme::PANEL, color = Theme::ACCENT_STRONG, line = Theme::LINE
+            )
+        } else {
+            format!(
+                "display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: rgba(0,0,0,0.03); color: {color}; border: 1px solid {line}; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: not-allowed; opacity: 0.4; line-height: 1; padding: 0;",
+                color = Theme::MUTED, line = Theme::LINE
+            )
+        }
     };
 
     rsx! {
-        div { style: "display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 12px;",
-            span { style: "font-size: 12px; color: {Theme::MUTED};",
-                "{indicator}"
-            }
+        div { style: "display: inline-flex; align-items: center; gap: 6px;",
             button {
-                style: "{prev_style}",
+                style: "{nav_btn(has_prev)}",
                 disabled: !has_prev,
                 onclick: move |evt| on_prev.call(evt),
-                "{prev_label}"
+                "\u{2039}"
+            }
+            span { style: "font-size: 12px; color: {Theme::MUTED}; min-width: 16px; text-align: center;",
+                "{page_display}"
             }
             button {
-                style: "{next_style}",
+                style: "{nav_btn(has_next)}",
                 disabled: !has_next,
                 onclick: move |evt| on_next.call(evt),
-                "{next_label}"
+                "\u{203A}"
             }
         }
     }

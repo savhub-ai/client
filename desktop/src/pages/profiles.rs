@@ -25,7 +25,6 @@ pub fn ProjectsPage() -> Element {
     let t = i18n::texts(*state.lang.read());
     let mut version = use_signal(|| 0u32);
     let mut selected_project = use_signal(|| Option::<String>::None);
-    let mut add_path_input = use_signal(String::new);
     let mut projects_page = use_signal(|| 0usize);
 
     let _ = *version.read();
@@ -42,15 +41,14 @@ pub fn ProjectsPage() -> Element {
     let projects_total_pages = pagination::total_pages(projects_items.len(), PROJECTS_PAGE_SIZE);
     let title = t.projects_title;
 
-    let do_add_project = move |_| {
-        let path = add_path_input.read().trim().to_string();
-        if path.is_empty() {
-            return;
+    let do_browse_project = move |_| {
+        let dialog = rfd::FileDialog::new().pick_folder();
+        if let Some(folder) = dialog {
+            let path = folder.display().to_string();
+            let _ = add_project(&path);
+            selected_project.set(Some(path));
+            version.with_mut(|v| *v += 1);
         }
-        let _ = add_project(&path);
-        selected_project.set(Some(path));
-        add_path_input.set(String::new());
-        version.with_mut(|v| *v += 1);
     };
 
     let sel = selected_project.read().clone();
@@ -58,33 +56,15 @@ pub fn ProjectsPage() -> Element {
     rsx! {
         div { style: "display: flex; height: 100%;",
             div { style: "width: 280px; background: rgba(238, 246, 232, 0.5); border-right: 1px solid {Theme::LINE}; display: flex; flex-direction: column; overflow: hidden;",
-                div { style: "padding: 20px 16px 12px;",
-                    h2 { style: "font-size: 18px; font-weight: 700; color: {Theme::TEXT}; margin-bottom: 12px;",
+                div { style: "display: flex; align-items: center; justify-content: space-between; padding: 20px 16px 12px;",
+                    h2 { style: "font-size: 18px; font-weight: 700; color: {Theme::TEXT};",
                         "{title}"
                     }
-                    div { style: "display: flex; gap: 6px;",
-                        input {
-                            style: "flex: 1; padding: 6px 10px; border: 1px solid {Theme::LINE}; border-radius: 6px; font-size: 12px; background: {Theme::BG_ELEVATED}; color: {Theme::TEXT}; outline: none;",
-                            placeholder: "{t.projects_path_placeholder}",
-                            value: "{add_path_input}",
-                            oninput: move |e| add_path_input.set(e.value()),
-                            onkeypress: move |e| {
-                                if e.key() == Key::Enter {
-                                    let path = add_path_input.read().trim().to_string();
-                                    if !path.is_empty() {
-                                        let _ = add_project(&path);
-                                        selected_project.set(Some(path));
-                                        add_path_input.set(String::new());
-                                        version.with_mut(|v| *v += 1);
-                                    }
-                                }
-                            },
-                        }
-                        button {
-                            style: "padding: 6px 10px; background: linear-gradient(135deg, {Theme::ACCENT} 0%, #7bc25a 100%); color: white; border: none; border-radius: 6px; font-size: 11px; font-weight: 500; cursor: pointer; white-space: nowrap;",
-                            onclick: do_add_project,
-                            "+"
-                        }
+                    button {
+                        style: "background: none; border: none; font-size: 18px; cursor: pointer; padding: 4px 6px; line-height: 1; color: {Theme::ACCENT_STRONG};",
+                        title: "{t.projects_add}",
+                        onclick: do_browse_project,
+                        "\u{1F4C2}"
                     }
                 }
 

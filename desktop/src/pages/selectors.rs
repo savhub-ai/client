@@ -13,7 +13,7 @@ use crate::i18n;
 use crate::state::AppState;
 use crate::theme::Theme;
 
-const SELECTORS_PAGE_SIZE: usize = 4;
+const SELECTORS_PAGE_SIZE: usize = 12;
 
 // ---------------------------------------------------------------------------
 // Form state
@@ -164,6 +164,7 @@ impl SelectorForm {
             repos: self.repos.iter().cloned().collect(),
             priority: self.priority,
             enabled: self.enabled,
+            match_count: 0,
         }
     }
 }
@@ -187,10 +188,17 @@ pub fn SelectorsPage() -> Element {
     let mut search = use_signal(String::new);
     let mut detail_selector = use_signal(|| Option::<SelectorDefinition>::None);
     let mut view_mode = use_signal(|| ViewMode::List);
+    let mut sort_mode = use_signal(|| 0u8); // 0=name, 1=priority, 2=match_count
 
     let _ = *version.read();
 
-    let all_selectors = read_selectors_store().unwrap_or_default().selectors;
+    let mut all_selectors = read_selectors_store().unwrap_or_default().selectors;
+    let current_sort = *sort_mode.read();
+    match current_sort {
+        1 => all_selectors.sort_by(|a, b| b.priority.cmp(&a.priority)),
+        2 => all_selectors.sort_by(|a, b| b.match_count.cmp(&a.match_count)),
+        _ => all_selectors.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
+    }
     let search_val = search.read().to_lowercase();
     let selectors: Vec<_> = if search_val.is_empty() {
         all_selectors
@@ -223,6 +231,18 @@ pub fn SelectorsPage() -> Element {
                         style: "width: 100%; padding: 6px 12px; border: 1px solid {Theme::LINE}; border-radius: 6px; font-size: 13px; background: {Theme::PANEL}; color: {Theme::TEXT}; outline: none;",
                         oninput: move |e: Event<FormData>| search.set(e.value().to_string()),
                     }
+                }
+                // Sort
+                select {
+                    style: "padding: 6px 8px; border: 1px solid {Theme::LINE}; border-radius: 8px; font-size: 12px; background: {Theme::PANEL}; color: {Theme::TEXT}; cursor: pointer; outline: none;",
+                    value: "{current_sort}",
+                    onchange: move |e: Event<FormData>| {
+                        sort_mode.set(e.value().parse::<u8>().unwrap_or(0));
+                        selectors_page.set(0);
+                    },
+                    option { value: "0", "Name" }
+                    option { value: "1", "Priority" }
+                    option { value: "2", "Usage" }
                 }
                 // Refresh
                 button {
@@ -268,39 +288,41 @@ pub fn SelectorsPage() -> Element {
                 } else {
                     { let is_cards = *view_mode.read() == ViewMode::Cards;
                     let container_style = if is_cards {
-                        "display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px;"
+                        "display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; flex: 1;"
                     } else {
-                        "display: flex; flex-direction: column; gap: 10px;"
+                        "display: flex; flex-direction: column; gap: 10px; flex: 1;"
                     };
                     rsx! {
-                    div { style: "{container_style}",
-                        for selector in visible.iter() {
-                            SelectorRow {
-                                key: "{selector.sign}",
-                                selector: selector.clone(),
-                                form_is_open: form_is_open,
-                                card_mode: is_cards,
-                                on_click: {
-                                    let selector = selector.clone();
-                                    move |_| detail_selector.set(Some(selector.clone()))
-                                },
-                                on_template: {
-                                    let selector = selector.clone();
-                                    move |_| { form_key += 1; form.set(Some(SelectorForm::from_selector(&selector, true))); }
-                                },
-                                on_edit: {
-                                    let selector = selector.clone();
-                                    move |_| { form_key += 1; form.set(Some(SelectorForm::from_selector(&selector, false))); }
-                                },
-                                on_delete: {
-                                    let id = selector.sign.clone();
-                                    move |_| { let _ = delete_selector(&id); version += 1; }
-                                },
-                                on_toggle: {
-                                    let id = selector.sign.clone();
-                                    let enabled = selector.enabled;
-                                    move |_| { let _ = set_selector_enabled(&id, !enabled); version += 1; }
-                                },
+                    div { style: "display: flex; flex-direction: column; flex: 1; min-height: 0;",
+                        div { style: "{container_style}",
+                            for selector in visible.iter() {
+                                SelectorRow {
+                                    key: "{selector.sign}",
+                                    selector: selector.clone(),
+                                    form_is_open: form_is_open,
+                                    card_mode: is_cards,
+                                    on_click: {
+                                        let selector = selector.clone();
+                                        move |_| detail_selector.set(Some(selector.clone()))
+                                    },
+                                    on_template: {
+                                        let selector = selector.clone();
+                                        move |_| { form_key += 1; form.set(Some(SelectorForm::from_selector(&selector, true))); }
+                                    },
+                                    on_edit: {
+                                        let selector = selector.clone();
+                                        move |_| { form_key += 1; form.set(Some(SelectorForm::from_selector(&selector, false))); }
+                                    },
+                                    on_delete: {
+                                        let id = selector.sign.clone();
+                                        move |_| { let _ = delete_selector(&id); version += 1; }
+                                    },
+                                    on_toggle: {
+                                        let id = selector.sign.clone();
+                                        let enabled = selector.enabled;
+                                        move |_| { let _ = set_selector_enabled(&id, !enabled); version += 1; }
+                                    },
+                                }
                             }
                         }
                         PaginationControls {
@@ -351,6 +373,7 @@ fn SelectorRow(
     let skills_count = selector.skills.len();
     let flocks_count = selector.flocks.len();
     let repos_count = selector.repos.len();
+    let match_count = selector.match_count;
     let is_enabled = selector.enabled;
     let opacity = if is_enabled { "1" } else { "0.5" };
     let toggle_label = if is_enabled {
@@ -377,6 +400,9 @@ fn SelectorRow(
                     span { style: "font-size: 10px; color: {Theme::MUTED};", "{rules_count}r \u{00B7} {skills_count}s \u{00B7} {flocks_count}f \u{00B7} {repos_count}rp" }
                     if selector.priority != 0 {
                         span { style: "font-size: 10px; color: {Theme::MUTED};", "P{selector.priority}" }
+                    }
+                    if match_count > 0 {
+                        span { style: "font-size: 10px; padding: 1px 6px; background: rgba(90, 158, 63, 0.12); color: {Theme::ACCENT_STRONG}; border-radius: 999px;", "\u{2713} {match_count}" }
                     }
                 }
                 div { style: "display: flex; gap: 4px;",
@@ -416,6 +442,9 @@ fn SelectorRow(
                     span { style: "font-size: 11px; color: {Theme::MUTED};", "{rules_count} rules \u{00B7} {skills_count} skills \u{00B7} {flocks_count} flocks \u{00B7} {repos_count} repos" }
                     if selector.priority != 0 {
                         span { style: "font-size: 11px; color: {Theme::MUTED};", "P{selector.priority}" }
+                    }
+                    if match_count > 0 {
+                        span { style: "font-size: 11px; padding: 1px 7px; background: rgba(90, 158, 63, 0.12); color: {Theme::ACCENT_STRONG}; border-radius: 999px;", "\u{2713} {match_count}" }
                     }
                 }
             }

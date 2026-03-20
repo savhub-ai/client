@@ -342,13 +342,6 @@ impl From<RegistrySkill> for SkillEntry {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct SyncInfo {
-    pub commit_sha: String,
-    pub synced_at: String,
-    pub skill_count: usize,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FetchedSkillEntry {
     pub slug: String,
@@ -667,17 +660,6 @@ fn resolve_latest_version(client: &RegistryApiClient, slug: &str) -> Result<Stri
         .ok_or_else(|| anyhow!("skill '{slug}' has no downloadable version"))
 }
 
-pub fn ensure_registry_synced() -> Result<bool> {
-    Ok(false)
-}
-
-pub fn cached_commit_sha() -> Result<Option<String>> {
-    Ok(None)
-}
-
-pub fn sync_info() -> Result<Option<SyncInfo>> {
-    Ok(None)
-}
 
 pub fn list_skills(
     query: Option<&str>,

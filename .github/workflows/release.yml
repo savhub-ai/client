@@ -151,6 +151,7 @@ jobs:
           # Use absolute paths for WiX source references
           $cliAbs = (Resolve-Path $cliBin).Path
           $desktopAbs = (Resolve-Path $desktopBin).Path
+          $iconAbs = (Resolve-Path (Join-Path $pwd "desktop/assets/savhub.ico")).Path
 
           # Convert the repository Apache 2.0 license into a simple RTF that WixUI can display.
           $licenseTxt = Join-Path $pwd "LICENSE"
@@ -215,7 +216,7 @@ jobs:
                             WorkingDirectory="INSTALLDIR" Icon="SavhubIcon" IconIndex="0" />
                 </Component>
               </StandardDirectory>
-              <Icon Id="SavhubIcon" SourceFile="$desktopAbs" />
+              <Icon Id="SavhubIcon" SourceFile="$iconAbs" />
               <Feature Id="MainFeature" Title="Savhub" Description="Savhub CLI and Desktop application." Level="1" ConfigurableDirectory="INSTALLDIR">
                 <ComponentRef Id="SavhubCLI" />
                 <ComponentRef Id="SavhubDesktop" />
@@ -230,10 +231,10 @@ jobs:
                 <ComponentRef Id="DesktopShortcut" />
               </Feature>
               <CustomAction Id="InstallPilotSkill" Directory="INSTALLDIR"
-                            ExeCommand="&quot;[INSTALLDIR]savhub.exe&quot; pilot install"
-                            Execute="immediate" Return="ignore" />
+                            ExeCommand="savhub.exe pilot install"
+                            Execute="deferred" Impersonate="yes" Return="ignore" />
               <InstallExecuteSequence>
-                <Custom Action="InstallPilotSkill" After="InstallFinalize" Condition="NOT Installed OR REINSTALL" />
+                <Custom Action="InstallPilotSkill" After="InstallFiles" Condition="NOT Installed OR REINSTALL" />
               </InstallExecuteSequence>
             </Package>
           </Wix>

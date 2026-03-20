@@ -218,10 +218,6 @@ struct SelectorShowArgs {
 
 #[derive(Debug, Subcommand)]
 enum RegistryCommand {
-    /// Check registry API connectivity
-    Sync,
-    /// Show registry source status
-    Info,
     /// Search registry skills
     Search(RegistrySearchArgs),
     /// List registry skills with pagination
@@ -2547,25 +2543,7 @@ async fn cmd_registry(_opts: &GlobalOpts, command: RegistryCommand) -> Result<()
     use savhub_local::registry;
 
     match command {
-        RegistryCommand::Sync => {
-            ensure_registry_cache()?;
-            println!("Registry API is available. No local cache is used.");
-        }
-        RegistryCommand::Info => match registry::sync_info()? {
-            Some(info) => {
-                println!("Registry source:");
-                println!("  Commit:  {}", info.commit_sha);
-                println!("  Synced:  {}", info.synced_at);
-                println!("  Skills:  {}", info.skill_count);
-            }
-            None => {
-                println!(
-                    "Registry data is fetched live from the configured API. No local cache is stored."
-                );
-            }
-        },
         RegistryCommand::Search(args) => {
-            ensure_registry_cache()?;
             let query = args.query.join(" ");
             let results = registry::search_skills(&query, args.limit)?;
             if results.is_empty() {
@@ -2584,7 +2562,6 @@ async fn cmd_registry(_opts: &GlobalOpts, command: RegistryCommand) -> Result<()
             println!("\n{} result(s)", results.len());
         }
         RegistryCommand::List(args) => {
-            ensure_registry_cache()?;
             let page = args.page.saturating_sub(1); // user-facing 1-based
             let (skills, total) = registry::list_skills(
                 args.query.as_deref(),
@@ -2629,10 +2606,6 @@ async fn cmd_registry(_opts: &GlobalOpts, command: RegistryCommand) -> Result<()
     Ok(())
 }
 
-fn ensure_registry_cache() -> Result<()> {
-    let _ = savhub_local::registry::list_skills(None, None, 0, 1)?;
-    Ok(())
-}
 
 // ---------------------------------------------------------------------------
 // selector subcommands
@@ -2947,9 +2920,6 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     clean(&mut args.skip_skills);
     clean(&mut args.add_flocks);
     clean(&mut args.skip_flocks);
-
-    eprintln!("Checking registry API...");
-    ensure_registry_cache()?;
 
     let workdir = &opts.workdir;
     eprintln!("Scanning project...");
@@ -3380,6 +3350,12 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         }
 
         savhub_local::presets::write_project_config_force(workdir, &cfg)?;
+    }
+
+    // ── Update selector match counts ──
+    {
+        let unmatched_names: Vec<String> = unmatched.iter().map(|u| u.name.clone()).collect();
+        let _ = savhub_local::selectors::update_match_counts(&matched_selector_names, &unmatched_names);
     }
 
     // ── Remove skills that are no longer in desired set (grouped by repo) ──

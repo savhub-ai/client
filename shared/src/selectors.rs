@@ -146,6 +146,9 @@ pub struct SelectorDefinition {
     /// Whether this selector is enabled. Only enabled selectors are evaluated.
     #[serde(default = "default_enabled")]
     pub enabled: bool,
+    /// How many times this selector has been matched by `savhub apply`.
+    #[serde(default)]
+    pub match_count: i64,
 }
 
 fn default_enabled() -> bool {
@@ -745,6 +748,27 @@ pub fn delete_selector(id: &str) -> Result<()> {
     write_selectors_store(&store)
 }
 
+/// Update match counts after `savhub apply`:
+/// - Increment for selectors that matched
+/// - Decrement for selectors that previously matched but no longer do
+pub fn update_match_counts(matched_names: &[String], unmatched_names: &[String]) -> Result<()> {
+    let mut store = read_selectors_store()?;
+    let mut changed = false;
+    for selector in &mut store.selectors {
+        if matched_names.iter().any(|n| n == &selector.name) {
+            selector.match_count += 1;
+            changed = true;
+        } else if unmatched_names.iter().any(|n| n == &selector.name) {
+            selector.match_count = (selector.match_count - 1).max(0);
+            changed = true;
+        }
+    }
+    if changed {
+        write_selectors_store(&store)?;
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Default selectors (seeded on first use)
 // ---------------------------------------------------------------------------
@@ -874,6 +898,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             repos: vec![],
             enabled: true,
             priority: 10,
+            match_count: 0,
         },
         SelectorDefinition {
             sign: "builtin-python-project".to_string(),
@@ -900,6 +925,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             repos: vec![],
             enabled: true,
             priority: 10,
+            match_count: 0,
         },
         SelectorDefinition {
             sign: "builtin-go-project".to_string(),
@@ -917,6 +943,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             repos: vec![],
             enabled: true,
             priority: 10,
+            match_count: 0,
         },
         SelectorDefinition {
             sign: "builtin-java-project".to_string(),
@@ -942,6 +969,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             repos: vec![],
             enabled: true,
             priority: 10,
+            match_count: 0,
         },
         // ── Rust framework selectors ─────────────────────────
         SelectorDefinition {
@@ -966,6 +994,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             repos: vec![],
             enabled: true,
             priority: 20,
+            match_count: 0,
         },
         SelectorDefinition {
             sign: "builtin-actix-project".to_string(),
@@ -989,6 +1018,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             repos: vec![],
             enabled: true,
             priority: 20,
+            match_count: 0,
         },
         SelectorDefinition {
             sign: "builtin-axum-project".to_string(),
@@ -1012,6 +1042,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             repos: vec![],
             enabled: true,
             priority: 20,
+            match_count: 0,
         },
         SelectorDefinition {
             sign: "builtin-dioxus-project".to_string(),
@@ -1035,6 +1066,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             repos: vec![],
             enabled: true,
             priority: 20,
+            match_count: 0,
         },
         SelectorDefinition {
             sign: "builtin-makepad-project".to_string(),
@@ -1059,6 +1091,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             repos: vec!["github.com/ZhangHanDong/makepad-skills".to_string()],
             enabled: true,
             priority: 20,
+            match_count: 0,
         },
         // ── JS/TS framework selectors ────────────────────────
         SelectorDefinition {
@@ -1082,6 +1115,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             repos: vec![],
             enabled: true,
             priority: 10,
+            match_count: 0,
         },
         SelectorDefinition {
             sign: "builtin-react-project".to_string(),
@@ -1106,6 +1140,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             repos: vec![],
             enabled: true,
             priority: 20,
+            match_count: 0,
         },
         SelectorDefinition {
             sign: "builtin-vue-project".to_string(),
@@ -1130,6 +1165,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             repos: vec![],
             enabled: true,
             priority: 20,
+            match_count: 0,
         },
         SelectorDefinition {
             sign: "builtin-angular-project".to_string(),
@@ -1154,6 +1190,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             repos: vec![],
             enabled: true,
             priority: 20,
+            match_count: 0,
         },
         SelectorDefinition {
             sign: "builtin-svelte-project".to_string(),
@@ -1178,6 +1215,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             repos: vec![],
             enabled: true,
             priority: 20,
+            match_count: 0,
         },
         SelectorDefinition {
             sign: "builtin-nextjs-project".to_string(),
@@ -1202,6 +1240,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             repos: vec![],
             enabled: true,
             priority: 20,
+            match_count: 0,
         },
         SelectorDefinition {
             sign: "builtin-nuxt-project".to_string(),
@@ -1226,6 +1265,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             repos: vec![],
             enabled: true,
             priority: 20,
+            match_count: 0,
         },
         // ── Monorepo ─────────────────────────────────────────
         SelectorDefinition {
@@ -1252,6 +1292,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             repos: vec![],
             enabled: true,
             priority: 20,
+            match_count: 0,
         },
     ];
     for selector in defaults {

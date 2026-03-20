@@ -83,15 +83,11 @@ savhub flock show <slug>      # Show flock details and skills
 savhub flock fetch <slug>     # Fetch all skills from a flock
 ```
 
-### Registry Cache
-
-The registry is cached locally from GitHub for offline access.
+### Registry
 
 ```bash
-savhub registry sync   # Force sync the local cache
-savhub registry info   # Show sync status
-savhub registry search # Search cached skills
-savhub registry list   # List cached skills
+savhub registry search # Search skills in the registry
+savhub registry list   # List skills with pagination
 ```
 
 ## Building from Source

@@ -145,7 +145,7 @@ When the user describes a project type and what to fetch, follow these steps:
 3. **Resolve** any skills/flocks/repos the user mentioned:
    - Run `savhub registry search`, `savhub flock list`, etc. to find the real sign/slug
    - NEVER guess a sign — always verify via CLI
-   - If the registry isn't synced yet, run `savhub registry sync` first
+   - If the search returns no results, verify the registry API is reachable
 4. **Generate** the selector JSON with a unique sign (use format `det-{descriptive-name}`)
 5. **Write** the updated selectors.json back
 6. **Touch** `~/.savhub/.config-changed` to notify the desktop app
