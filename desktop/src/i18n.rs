@@ -321,7 +321,6 @@ impl Texts {
             Language::Chinese => format!("客户端 API：v{client_ver}，注册表 API：v{registry_ver}"),
         }
     }
-
 }
 
 static EN: Texts = Texts {
