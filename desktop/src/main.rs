@@ -6,6 +6,7 @@
 mod api;
 mod components;
 mod i18n;
+pub mod icons;
 mod pages;
 mod skills;
 mod state;
@@ -540,27 +541,12 @@ fn Sidebar() -> Element {
 // Lucide: panel-left-close / panel-left-open
 #[component]
 fn SidebarToggleIcon(collapsed: bool, size: u32) -> Element {
-    let size_attr = size.to_string();
-
-    if collapsed {
-        // lucide: panel-left-open
-        rsx! {
-            svg { width: "{size_attr}", height: "{size_attr}", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
-                rect { width: "18", height: "18", x: "3", y: "3", rx: "2" }
-                path { d: "M9 3v18" }
-                path { d: "m14 9 3 3-3 3" }
-            }
-        }
+    let icon = if collapsed {
+        icons::Icon::PanelLeftOpen
     } else {
-        // lucide: panel-left-close
-        rsx! {
-            svg { width: "{size_attr}", height: "{size_attr}", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
-                rect { width: "18", height: "18", x: "3", y: "3", rx: "2" }
-                path { d: "M9 3v18" }
-                path { d: "m16 15-3-3 3-3" }
-            }
-        }
-    }
+        icons::Icon::PanelLeftClose
+    };
+    rsx! { icons::LucideIcon { icon, size } }
 }
 
 #[component]
@@ -606,72 +592,16 @@ fn NavItem(
 
 #[component]
 fn SidebarIcon(kind: SidebarIconKind, size: u32) -> Element {
-    let size_attr = size.to_string();
-
-    // Icons from Lucide (https://lucide.dev) — MIT license
-    let svg_attrs = format!(
-        "width=\"{size_attr}\" height=\"{size_attr}\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\""
-    );
-    let _ = &svg_attrs; // used only in the doc comment above
-
-    match kind {
-        // lucide: layout-dashboard
-        SidebarIconKind::Dashboard => rsx! {
-            svg { width: "{size_attr}", height: "{size_attr}", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
-                rect { x: "3", y: "3", width: "7", height: "9", rx: "1" }
-                rect { x: "14", y: "3", width: "7", height: "5", rx: "1" }
-                rect { x: "14", y: "12", width: "7", height: "9", rx: "1" }
-                rect { x: "3", y: "16", width: "7", height: "5", rx: "1" }
-            }
-        },
-        // lucide: compass
-        SidebarIconKind::Explore => rsx! {
-            svg { width: "{size_attr}", height: "{size_attr}", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
-                circle { cx: "12", cy: "12", r: "10" }
-                polygon { points: "16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" }
-            }
-        },
-        // lucide: package
-        SidebarIconKind::Installed => rsx! {
-            svg { width: "{size_attr}", height: "{size_attr}", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
-                path { d: "M16.5 9.4 7.55 4.24" }
-                path { d: "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" }
-                polyline { points: "3.29 7 12 12 20.71 7" }
-                line { x1: "12", y1: "22", x2: "12", y2: "12" }
-            }
-        },
-        // lucide: scan-search
-        SidebarIconKind::Selectors => rsx! {
-            svg { width: "{size_attr}", height: "{size_attr}", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
-                path { d: "M3 7V5a2 2 0 0 1 2-2h2" }
-                path { d: "M17 3h2a2 2 0 0 1 2 2v2" }
-                path { d: "M21 17v2a2 2 0 0 1-2 2h-2" }
-                path { d: "M7 21H5a2 2 0 0 1-2-2v-2" }
-                circle { cx: "12", cy: "12", r: "3" }
-                path { d: "m16 16-1.9-1.9" }
-            }
-        },
-        // lucide: folder-open
-        SidebarIconKind::Projects => rsx! {
-            svg { width: "{size_attr}", height: "{size_attr}", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
-                path { d: "m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" }
-            }
-        },
-        // lucide: book-open
-        SidebarIconKind::Docs => rsx! {
-            svg { width: "{size_attr}", height: "{size_attr}", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
-                path { d: "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" }
-                path { d: "M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" }
-            }
-        },
-        // lucide: settings
-        SidebarIconKind::Settings => rsx! {
-            svg { width: "{size_attr}", height: "{size_attr}", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
-                path { d: "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" }
-                circle { cx: "12", cy: "12", r: "3" }
-            }
-        },
-    }
+    let icon = match kind {
+        SidebarIconKind::Dashboard => icons::Icon::LayoutDashboard,
+        SidebarIconKind::Explore => icons::Icon::Compass,
+        SidebarIconKind::Installed => icons::Icon::Package,
+        SidebarIconKind::Selectors => icons::Icon::ScanSearch,
+        SidebarIconKind::Projects => icons::Icon::FolderOpen,
+        SidebarIconKind::Docs => icons::Icon::BookOpen,
+        SidebarIconKind::Settings => icons::Icon::Settings,
+    };
+    rsx! { icons::LucideIcon { icon, size } }
 }
 
 #[component]

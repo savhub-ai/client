@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 
+use crate::icons::{Icon, LucideIcon};
 use crate::theme::Theme;
 
 pub fn total_pages(total_items: usize, page_size: usize) -> usize {
@@ -49,14 +50,14 @@ pub fn PaginationControls(
     let nav_btn = |enabled: bool| -> String {
         if enabled {
             format!(
-                "display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: {bg}; color: {color}; border: 1px solid {line}; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; line-height: 1; padding: 0;",
+                "display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: {bg}; color: {color}; border: 1px solid {line}; border-radius: 6px; cursor: pointer; line-height: 1; padding: 0;",
                 bg = Theme::PANEL,
                 color = Theme::ACCENT_STRONG,
                 line = Theme::LINE
             )
         } else {
             format!(
-                "display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: rgba(0,0,0,0.03); color: {color}; border: 1px solid {line}; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: not-allowed; opacity: 0.4; line-height: 1; padding: 0;",
+                "display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: rgba(0,0,0,0.03); color: {color}; border: 1px solid {line}; border-radius: 6px; cursor: not-allowed; opacity: 0.4; line-height: 1; padding: 0;",
                 color = Theme::MUTED,
                 line = Theme::LINE
             )
@@ -69,7 +70,7 @@ pub fn PaginationControls(
                 style: "{nav_btn(has_prev)}",
                 disabled: !has_prev,
                 onclick: move |evt| on_prev.call(evt),
-                "\u{2039}"
+                LucideIcon { icon: Icon::ChevronLeft, size: 16 }
             }
             span { style: "font-size: 12px; color: {Theme::MUTED}; min-width: 16px; text-align: center;",
                 "{page_display}"
@@ -78,7 +79,7 @@ pub fn PaginationControls(
                 style: "{nav_btn(has_next)}",
                 disabled: !has_next,
                 onclick: move |evt| on_next.call(evt),
-                "\u{203A}"
+                LucideIcon { icon: Icon::ChevronRight, size: 16 }
             }
         }
     }

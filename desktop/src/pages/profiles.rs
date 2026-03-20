@@ -22,26 +22,12 @@ const LOCAL_SKILLS_PAGE_SIZE: usize = 10;
 
 #[component]
 fn FolderBrowseIcon(size: u32) -> Element {
-    let size_attr = size.to_string();
-
-    rsx! {
-        svg { width: "{size_attr}", height: "{size_attr}", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
-            path { d: "m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" }
-            line { x1: "18", y1: "5.5", x2: "18", y2: "10.5" }
-            line { x1: "15.5", y1: "8", x2: "20.5", y2: "8" }
-        }
-    }
+    rsx! { crate::icons::LucideIcon { icon: crate::icons::Icon::FolderPlus, size } }
 }
 
 #[component]
 fn FolderOpenIcon(size: u32) -> Element {
-    let size_attr = size.to_string();
-
-    rsx! {
-        svg { width: "{size_attr}", height: "{size_attr}", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
-            path { d: "m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" }
-        }
-    }
+    rsx! { crate::icons::LucideIcon { icon: crate::icons::Icon::FolderOpen, size } }
 }
 
 #[component]
@@ -204,7 +190,7 @@ pub fn ProjectsPage() -> Element {
                                                         }
                                                         version.with_mut(|v| *v += 1);
                                                     },
-                                                    "\u{00D7}"
+                                                    crate::icons::LucideIcon { icon: crate::icons::Icon::X, size: 14 }
                                                 }
                                             }
                                         }
@@ -595,7 +581,7 @@ fn AddProjectSkillDialog(
                         button {
                             style: "width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid {Theme::LINE}; border-radius: 8px; font-size: 16px; color: {Theme::MUTED}; cursor: pointer;",
                             onclick: move |_| on_close.call(()),
-                            "\u{00D7}"
+                            crate::icons::LucideIcon { icon: crate::icons::Icon::X, size: 14 }
                         }
                     }
                 }
@@ -1012,7 +998,10 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                         }
                         for name in matched_signs.iter() {
                             div { style: "padding: 4px 0; font-size: 13px; color: {Theme::ACCENT_STRONG};",
-                                "\u{2713} {name}"
+                                span { style: "display: inline-flex; align-items: center; gap: 3px;",
+                                    crate::icons::LucideIcon { icon: crate::icons::Icon::Check, size: 12 }
+                                    "{name}"
+                                }
                             }
                         }
                     }

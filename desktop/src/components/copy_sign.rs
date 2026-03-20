@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 
+use crate::icons::{Icon, LucideIcon};
 use crate::theme::Theme;
 
 /// Inline sign display: shields.io-style "SIGN" badge + value text + copy icon.
@@ -37,9 +38,13 @@ pub fn CopySign(value: String) -> Element {
                 "{display}"
             }
             if *copied.read() {
-                span { style: "flex-shrink: 0; color: #2e8b57; font-size: 13px;", "\u{2713}" }
+                span { style: "flex-shrink: 0; color: #2e8b57;",
+                    LucideIcon { icon: Icon::Check, size: 13 }
+                }
             } else {
-                span { style: "flex-shrink: 0; color: {Theme::MUTED}; opacity: 0.4; font-size: 13px;", "\u{2398}" }
+                span { style: "flex-shrink: 0; color: {Theme::MUTED}; opacity: 0.4;",
+                    LucideIcon { icon: Icon::Clipboard, size: 13 }
+                }
             }
         }
     }

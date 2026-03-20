@@ -473,7 +473,7 @@ pub fn ExplorePage() -> Element {
                             reload_version += 1;
                             flocks_version += 1;
                         },
-                        "\u{21BB}"
+                        crate::icons::LucideIcon { icon: crate::icons::Icon::RefreshCw, size: 14 }
                     }
                     // Grouped toggle
                     button {
@@ -1078,23 +1078,11 @@ fn SecurityBadge(status: SecurityStatus) -> Element {
         SecurityStatus::Unverified => ("#999", t.security_unverified),
     };
     rsx! {
-        span { title: "{title}", style: "display: inline-flex; align-items: center; vertical-align: middle; position: relative; top: -1px; cursor: help;",
-            svg {
-                width: "16",
-                height: "16",
-                view_box: "0 0 24 24",
-                fill: "none",
-                xmlns: "http://www.w3.org/2000/svg",
-                path {
-                    d: "M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3z",
-                    fill: "{color}",
-                }
-                if matches!(status, SecurityStatus::Verified) {
-                    path {
-                        d: "M10 15.5l-3.5-3.5 1.41-1.41L10 12.67l5.59-5.58L17 8.5l-7 7z",
-                        fill: "#fff",
-                    }
-                }
+        span { title: "{title}", style: "display: inline-flex; align-items: center; vertical-align: middle; position: relative; top: -1px; cursor: help; color: {color};",
+            if matches!(status, SecurityStatus::Verified) {
+                crate::icons::LucideIcon { icon: crate::icons::Icon::ShieldCheck, size: 16 }
+            } else {
+                crate::icons::LucideIcon { icon: crate::icons::Icon::Shield, size: 16 }
             }
         }
     }

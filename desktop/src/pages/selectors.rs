@@ -240,7 +240,7 @@ pub fn SelectorsPage() -> Element {
                     title: "Refresh",
                     style: "display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex-shrink: 0; background: {Theme::PANEL}; color: {Theme::ACCENT_STRONG}; border: 1px solid {Theme::LINE}; border-radius: 8px; cursor: pointer; font-size: 16px;",
                     onclick: move |_| version += 1,
-                    "\u{21BB}"
+                    crate::icons::LucideIcon { icon: crate::icons::Icon::RefreshCw, size: 14 }
                 }
                 // View toggle
                 ViewToggleButton {
@@ -387,7 +387,10 @@ fn SelectorRow(
                         span { style: "font-size: 10px; color: {Theme::MUTED};", "P{selector.priority}" }
                     }
                     if match_count > 0 {
-                        span { style: "font-size: 10px; padding: 1px 6px; background: rgba(90, 158, 63, 0.12); color: {Theme::ACCENT_STRONG}; border-radius: 999px;", "\u{2713} {match_count}" }
+                        span { style: "font-size: 10px; padding: 1px 6px; background: rgba(90, 158, 63, 0.12); color: {Theme::ACCENT_STRONG}; border-radius: 999px; display: inline-flex; align-items: center; gap: 2px;",
+                            crate::icons::LucideIcon { icon: crate::icons::Icon::Check, size: 10 }
+                            "{match_count}"
+                        }
                     }
                 }
                 div { style: "display: flex; gap: 4px;",
@@ -429,7 +432,10 @@ fn SelectorRow(
                         span { style: "font-size: 11px; color: {Theme::MUTED};", "P{selector.priority}" }
                     }
                     if match_count > 0 {
-                        span { style: "font-size: 11px; padding: 1px 7px; background: rgba(90, 158, 63, 0.12); color: {Theme::ACCENT_STRONG}; border-radius: 999px;", "\u{2713} {match_count}" }
+                        span { style: "font-size: 11px; padding: 1px 7px; background: rgba(90, 158, 63, 0.12); color: {Theme::ACCENT_STRONG}; border-radius: 999px; display: inline-flex; align-items: center; gap: 2px;",
+                            crate::icons::LucideIcon { icon: crate::icons::Icon::Check, size: 10 }
+                            "{match_count}"
+                        }
                     }
                 }
             }
@@ -477,7 +483,8 @@ fn SelectorDetailPopup(selector: Signal<Option<SelectorDefinition>>) -> Element 
                 div { style: "display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;",
                     h2 { style: "font-size: 18px; font-weight: 800; color: {Theme::TEXT};", "{name}" }
                     button { style: "width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid {Theme::LINE}; border-radius: 8px; font-size: 16px; color: {Theme::MUTED}; cursor: pointer;",
-                        onclick: move |_| selector.set(None), "\u{00D7}"
+                        onclick: move |_| selector.set(None),
+                        crate::icons::LucideIcon { icon: crate::icons::Icon::X, size: 14 }
                     }
                 }
                 if !desc.is_empty() {
@@ -723,7 +730,7 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
                     button {
                         style: "width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid {Theme::LINE}; border-radius: 8px; font-size: 16px; color: {Theme::MUTED}; cursor: pointer;",
                         onclick: move |_| form.set(None),
-                        "\u{00D7}"
+                        crate::icons::LucideIcon { icon: crate::icons::Icon::X, size: 14 }
                     }
                 }
 
@@ -848,7 +855,7 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
                                             button {
                                                 style: "background: none; border: none; color: {Theme::DANGER}; font-size: 13px; cursor: pointer; padding: 0 2px; line-height: 1;",
                                                 onclick: { let sign = sign.clone(); move |_| { let s = sign.clone(); set_field(Box::new(move |f| { f.repos.remove(&s); })); } },
-                                                "\u{00D7}"
+                                                crate::icons::LucideIcon { icon: crate::icons::Icon::X, size: 14 }
                                             }
                                         }
                                     }}
@@ -906,7 +913,7 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
                                             button {
                                                 style: "background: none; border: none; color: {Theme::DANGER}; font-size: 13px; cursor: pointer; padding: 0 2px; line-height: 1;",
                                                 onclick: { let slug = slug.clone(); move |_| { let s = slug.clone(); set_field(Box::new(move |f| { f.flocks.remove(&s); })); } },
-                                                "\u{00D7}"
+                                                crate::icons::LucideIcon { icon: crate::icons::Icon::X, size: 14 }
                                             }
                                         }
                                     }}
@@ -953,7 +960,7 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
                                             button {
                                                 style: "background: none; border: none; color: {Theme::DANGER}; font-size: 13px; cursor: pointer; padding: 0 2px; line-height: 1;",
                                                 onclick: { let slug = slug.clone(); move |_| { let s = slug.clone(); set_field(Box::new(move |f| { f.skills.remove(&s); })); } },
-                                                "\u{00D7}"
+                                                crate::icons::LucideIcon { icon: crate::icons::Icon::X, size: 14 }
                                             }
                                         }
                                     }}

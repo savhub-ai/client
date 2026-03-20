@@ -183,7 +183,7 @@ pub fn DashboardPage() -> Element {
                     title: "Refresh",
                     style: "display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex-shrink: 0; background: {Theme::PANEL}; color: {Theme::ACCENT_STRONG}; border: 1px solid {Theme::LINE}; border-radius: 8px; cursor: pointer; font-size: 16px;",
                     onclick: move |_| loaded.set(false),
-                    "\u{21BB}"
+                    crate::icons::LucideIcon { icon: crate::icons::Icon::RefreshCw, size: 14 }
                 }
             }
             // ── Scrollable content ──
@@ -620,7 +620,7 @@ fn ErrorDialog(
                     button {
                         style: "width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid {Theme::LINE}; border-radius: 8px; font-size: 16px; color: {Theme::MUTED}; cursor: pointer;",
                         onclick: move |_| open.set(false),
-                        "\u{00D7}"
+                        crate::icons::LucideIcon { icon: crate::icons::Icon::X, size: 14 }
                     }
                 }
                 pre { style: "margin: 0; max-height: 480px; overflow: auto; white-space: pre-wrap; word-break: break-word; padding: 14px; background: {Theme::BG}; border: 1px solid {Theme::LINE}; border-radius: 8px; font-size: 12px; line-height: 1.6; color: {Theme::TEXT}; font-family: Consolas, 'SFMono-Regular', monospace;",

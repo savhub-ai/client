@@ -178,7 +178,7 @@ pub fn FetchedPage() -> Element {
                         title: "Refresh",
                         style: "display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex-shrink: 0; background: {Theme::PANEL}; color: {Theme::ACCENT_STRONG}; border: 1px solid {Theme::LINE}; border-radius: 8px; cursor: pointer; font-size: 16px;",
                         onclick: move |_| skill_list.with_mut(|_| {}),
-                        "\u{21BB}"
+                        crate::icons::LucideIcon { icon: crate::icons::Icon::RefreshCw, size: 14 }
                     }
                     if !fetched_items.is_empty() {
                         button {

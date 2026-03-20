@@ -199,7 +199,10 @@ fn DetailContent(detail: SkillDetailResponse) -> Element {
                     button {
                         style: "padding: 8px 14px; font-size: 13px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;",
                         onclick: toggle_star,
-                        if *starred.read() { "\u{2605} {star_count}" } else { "\u{2606} {star_count}" }
+                        span { style: "display: inline-flex; align-items: center; gap: 3px;",
+                            crate::icons::LucideIcon { icon: crate::icons::Icon::Star, size: 14 }
+                            "{star_count}"
+                        }
                     }
                     if *fetching.read() {
                         span { style: "font-size: 13px; color: {Theme::ACCENT}; padding: 8px 14px;", "{fetching_text}" }

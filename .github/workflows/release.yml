@@ -1,0 +1,528 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_VERSION: "1.94.0"
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libssl-dev cmake g++ make perl \
+            libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libxdo-dev libayatana-appindicator3-dev librsvg2-dev lld
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: nightly
+          components: rustfmt
+          rustflags: ""
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Install typos-cli
+        run: cargo install typos-cli --locked
+
+      - name: Run typos
+        run: typos
+
+      - name: Cargo check
+        run: cargo check --workspace --locked
+
+      - name: Cargo test
+        run: cargo test --workspace --locked
+
+  # ── Server: build backend binary for Linux ────────────────────────────
+  build-backend:
+    name: Build Backend
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libssl-dev cmake g++ make perl
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --locked -p savhub-backend
+
+      - name: Package release archive
+        shell: bash
+        run: |
+          PACKAGE_NAME="savhub-backend-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu"
+          mkdir -p "dist/${PACKAGE_NAME}"
+          cp target/release/savhub-backend "dist/${PACKAGE_NAME}/"
+          cp README.md LICENSE .env.example "dist/${PACKAGE_NAME}/"
+          tar -C dist -czf "dist/${PACKAGE_NAME}.tar.gz" "${PACKAGE_NAME}"
+          sha256sum "dist/${PACKAGE_NAME}.tar.gz" > dist/backend-sha256sums.txt
+
+      - name: Upload packaged artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-backend
+          path: |
+            dist/*.tar.gz
+            dist/backend-sha256sums.txt
+
+  # ── Client: cross-platform CLI + Desktop binaries ─────────────────────
+  build-client:
+    name: Build Client (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            build-essential \
+            curl wget file \
+            pkg-config \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            lld
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          cache: true
+          rustflags: ""
+
+      - name: Build client binaries
+        run: cargo build --release --locked -p savhub -p savhub-desktop
+
+      - name: Package artifacts
+        shell: pwsh
+        run: |
+          $dist = Join-Path $pwd "dist"
+          New-Item -ItemType Directory -Force -Path $dist | Out-Null
+
+          $arch = switch ("${{ runner.arch }}") {
+            "X64" { "x64" }
+            "ARM64" { "arm64" }
+            default { "${{ runner.arch }}".ToLowerInvariant() }
+          }
+          $platform = switch ("${{ runner.os }}") {
+            "Linux" { "linux-$arch" }
+            "Windows" { "windows-$arch" }
+            "macOS" { "macos-$arch" }
+            default { throw "unsupported runner OS: ${{ runner.os }}" }
+          }
+          $archiveExt = if ("${{ runner.os }}" -eq "Windows") { ".zip" } else { ".tar.gz" }
+          $binaryExt = if ("${{ runner.os }}" -eq "Windows") { ".exe" } else { "" }
+
+          $pkgName = "savhub-$platform"
+          $staging = Join-Path $dist $pkgName
+          New-Item -ItemType Directory -Force -Path $staging | Out-Null
+
+          Copy-Item (Join-Path $pwd "target/release/savhub$binaryExt") (Join-Path $staging "savhub$binaryExt")
+          Copy-Item (Join-Path $pwd "target/release/savhub-desktop$binaryExt") (Join-Path $staging "savhub-desktop$binaryExt")
+
+          $archive = Join-Path $dist "$pkgName$archiveExt"
+          if ("${{ runner.os }}" -eq "Windows") {
+            Compress-Archive -Path "$staging/*" -DestinationPath $archive -Force
+          } else {
+            tar -C $dist -czf $archive $pkgName
+          }
+
+          Remove-Item $staging -Recurse -Force
+
+      - name: Upload packaged artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-client-${{ matrix.os }}
+          path: dist/*
+          if-no-files-found: error
+
+  # ── Windows MSI installer ─────────────────────────────────────────────
+  msi:
+    name: Build Windows MSI
+    runs-on: windows-latest
+    needs: build-client
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Windows build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-client-windows-latest
+          path: dist
+
+      - name: Install WiX Toolset
+        shell: pwsh
+        run: |
+          dotnet tool install -g wix
+          $wixVersionText = wix --version
+          Write-Host "WiX version: $wixVersionText"
+          if ($wixVersionText -match "(\d+\.\d+\.\d+)") {
+            $wixVersion = $Matches[1]
+          } else {
+            throw "Could not parse WiX version from '$wixVersionText'"
+          }
+          wix extension add -g "WixToolset.UI.wixext/$wixVersion"
+          wix extension add -g "WixToolset.Util.wixext/$wixVersion"
+          wix extension list -g
+
+      - name: Extract and build MSI
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem dist -Filter "savhub-windows-*.zip" | Select-Object -First 1
+          $tmpDir = Join-Path $pwd "msi-tmp"
+          Expand-Archive -Path $zip.FullName -DestinationPath $tmpDir -Force
+
+          $msiDir = Join-Path $pwd "msi-staging"
+          New-Item -ItemType Directory -Force -Path $msiDir | Out-Null
+          Get-ChildItem -Path $tmpDir -Recurse -Filter "*.exe" | Copy-Item -Destination $msiDir -Force
+          Remove-Item $tmpDir -Recurse -Force
+
+          $cliBin = Join-Path $msiDir "savhub.exe"
+          $desktopBin = Join-Path $msiDir "savhub-desktop.exe"
+          if (-not (Test-Path $cliBin)) { throw "savhub.exe not found in msi-staging" }
+          if (-not (Test-Path $desktopBin)) { throw "savhub-desktop.exe not found in msi-staging" }
+          Write-Host "CLI binary: $cliBin ($(( Get-Item $cliBin ).Length / 1MB) MB)"
+          Write-Host "Desktop binary: $desktopBin ($(( Get-Item $desktopBin ).Length / 1MB) MB)"
+
+          $cliAbs = (Resolve-Path $cliBin).Path
+          $desktopAbs = (Resolve-Path $desktopBin).Path
+          $iconAbs = (Resolve-Path (Join-Path $pwd "desktop/assets/savhub.ico")).Path
+
+          $licenseTxt = Join-Path $pwd "LICENSE"
+          $licenseRtf = Join-Path $pwd "LICENSE.rtf"
+          $licenseText = Get-Content $licenseTxt -Raw
+          $escapedLicense = $licenseText.Replace('\', '\\').Replace('{', '\{').Replace('}', '\}')
+          $licenseBody = ($escapedLicense -split "`r?`n") -join "\par`r`n"
+          $licenseRtfContent = "{\rtf1\ansi\deff0{\fonttbl{\f0\fswiss Arial;}}\viewkind4\uc1\pard\f0\fs18 $licenseBody\par`r`n}"
+          [System.IO.File]::WriteAllText($licenseRtf, $licenseRtfContent, [System.Text.Encoding]::ASCII)
+          $licenseRtfAbs = (Resolve-Path $licenseRtf).Path
+
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          if ($version -match "^(\d+\.\d+\.\d+)") {
+            $msiVersion = $Matches[1]
+          } else {
+            $msiVersion = "0.1.0"
+          }
+
+          $wxsContent = @"
+          <?xml version="1.0" encoding="UTF-8"?>
+          <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+               xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+               xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+            <Package Name="Savhub" Manufacturer="Savhub AI" Version="$msiVersion"
+                     Scope="perMachine"
+                     UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
+              <MajorUpgrade DowngradeErrorMessage="A newer version of Savhub is already installed." />
+              <MediaTemplate EmbedCab="yes" />
+              <ui:WixUI Id="WixUI_FeatureTree" />
+              <util:BroadcastEnvironmentChange />
+              <StandardDirectory Id="ProgramFiles6432Folder">
+                <Directory Id="INSTALLDIR" Name="Savhub">
+                  <Component Id="SavhubCLI" Guid="*">
+                    <File Source="$cliAbs" />
+                  </Component>
+                  <Component Id="SavhubDesktop" Guid="*">
+                    <File Source="$desktopAbs" />
+                  </Component>
+                  <Component Id="SavhubPathEnv" Guid="B7E2F4A1-3C5D-4E6F-8A9B-1C2D3E4F5A6B">
+                    <RegistryValue Root="HKLM" Key="Software\Savhub" Name="PathEnvInstalled" Type="integer" Value="1" KeyPath="yes" />
+                    <Environment Id="AddSavhubToSystemPath" Name="PATH" Value="[INSTALLDIR]"
+                                 Permanent="no" Part="last" Action="set" System="yes" />
+                  </Component>
+                </Directory>
+              </StandardDirectory>
+              <StandardDirectory Id="ProgramMenuFolder">
+                <Directory Id="SavhubStartMenuFolder" Name="Savhub">
+                  <Component Id="StartMenuShortcut" Guid="D4A1B2C3-E5F6-4789-ABCD-EF1234567891">
+                    <RegistryValue Root="HKCU" Key="Software\Savhub" Name="StartMenuInstalled" Type="integer" Value="1" KeyPath="yes" />
+                    <Shortcut Id="DesktopAppMenuShortcut" Name="Savhub Desktop" Target="[INSTALLDIR]savhub-desktop.exe"
+                              WorkingDirectory="INSTALLDIR" Icon="SavhubIcon" IconIndex="0" />
+                    <Shortcut Id="CliAppMenuShortcut" Name="Savhub CLI" Target="[INSTALLDIR]savhub.exe"
+                              WorkingDirectory="INSTALLDIR" />
+                    <RemoveFolder Id="RemoveStartMenuFolder" On="uninstall" />
+                  </Component>
+                </Directory>
+              </StandardDirectory>
+              <StandardDirectory Id="DesktopFolder">
+                <Component Id="DesktopShortcut" Guid="F5A6B7C8-D9E0-4123-BCDE-F12345678902">
+                  <RegistryValue Root="HKCU" Key="Software\Savhub" Name="DesktopShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
+                  <Shortcut Id="DesktopAppShortcut" Name="Savhub Desktop" Target="[INSTALLDIR]savhub-desktop.exe"
+                            WorkingDirectory="INSTALLDIR" Icon="SavhubIcon" IconIndex="0" />
+                </Component>
+              </StandardDirectory>
+              <Icon Id="SavhubIcon" SourceFile="$iconAbs" />
+              <Feature Id="MainFeature" Title="Savhub" Description="Savhub CLI and Desktop application." Level="1" ConfigurableDirectory="INSTALLDIR">
+                <ComponentRef Id="SavhubCLI" />
+                <ComponentRef Id="SavhubDesktop" />
+              </Feature>
+              <Feature Id="AddToPath" Title="Add to system PATH" Description="Add Savhub to the system PATH so you can run savhub from any terminal." Level="1">
+                <ComponentRef Id="SavhubPathEnv" />
+              </Feature>
+              <Feature Id="StartMenuFeature" Title="Start Menu shortcut" Description="Create shortcuts in the Windows Start Menu." Level="1">
+                <ComponentRef Id="StartMenuShortcut" />
+              </Feature>
+              <Feature Id="DesktopFeature" Title="Desktop shortcut" Description="Create a shortcut on the Desktop." Level="1">
+                <ComponentRef Id="DesktopShortcut" />
+              </Feature>
+              <CustomAction Id="InstallPilotSkill" Directory="INSTALLDIR"
+                            ExeCommand="savhub.exe pilot install"
+                            Execute="deferred" Impersonate="yes" Return="ignore" />
+              <InstallExecuteSequence>
+                <Custom Action="InstallPilotSkill" After="InstallFiles" Condition="NOT Installed OR REINSTALL" />
+              </InstallExecuteSequence>
+            </Package>
+          </Wix>
+          "@
+          $trimmed = ($wxsContent -split "`n" | ForEach-Object { $_.TrimStart() }) -join "`n"
+          [System.IO.File]::WriteAllText("$pwd/savhub.wxs", $trimmed)
+
+          Write-Host "--- savhub.wxs first 3 lines ---"
+          Get-Content "savhub.wxs" | Select-Object -First 3
+
+          wix build -arch x64 -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext -bindvariable "WixUILicenseRtf=$licenseRtfAbs" savhub.wxs -o dist/savhub-windows-x64.msi
+
+          $sidecarCabs = Get-ChildItem "dist" -Filter "*.cab" -ErrorAction SilentlyContinue
+          if ($sidecarCabs) {
+            Write-Host "WiX emitted external cabinet(s):"
+            $sidecarCabs | ForEach-Object {
+              $cabSize = $_.Length / 1MB
+              Write-Host " - $($_.FullName) ($cabSize MB)"
+            }
+            throw "WiX produced external cabinet(s); MSI payload is not embedded"
+          }
+
+          $msiSize = (Get-Item "dist/savhub-windows-x64.msi").Length / 1MB
+          Write-Host "MSI size: $msiSize MB"
+          if ($msiSize -lt 1) { throw "MSI is suspiciously small ($msiSize MB), source files likely not included" }
+
+      - name: Upload MSI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-msi
+          path: dist/*.msi
+          if-no-files-found: error
+
+  # ── Linux .deb package ────────────────────────────────────────────────
+  deb:
+    name: Build Linux .deb
+    runs-on: ubuntu-latest
+    needs: build-client
+    steps:
+      - name: Download Linux build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-client-ubuntu-latest
+          path: dist
+
+      - name: Build .deb package
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+
+          PKG_ROOT="deb-staging"
+          mkdir -p "${PKG_ROOT}/DEBIAN"
+          mkdir -p "${PKG_ROOT}/usr/local/bin"
+
+          tar -xzf dist/savhub-linux-x64.tar.gz -C /tmp
+          cp /tmp/savhub-linux-x64/savhub "${PKG_ROOT}/usr/local/bin/savhub"
+          cp /tmp/savhub-linux-x64/savhub-desktop "${PKG_ROOT}/usr/local/bin/savhub-desktop"
+          chmod 755 "${PKG_ROOT}/usr/local/bin/savhub"
+          chmod 755 "${PKG_ROOT}/usr/local/bin/savhub-desktop"
+
+          cat > "${PKG_ROOT}/DEBIAN/control" <<CTRL
+          Package: savhub
+          Version: ${VERSION}
+          Section: devel
+          Priority: optional
+          Architecture: amd64
+          Maintainer: Savhub AI <support@savhub.ai>
+          Description: Savhub - AI skills package manager
+           Search, install, and manage AI agent skills from the
+           Savhub registry. Includes CLI and desktop app.
+          CTRL
+          sed -i 's/^          //' "${PKG_ROOT}/DEBIAN/control"
+
+          cat > "${PKG_ROOT}/DEBIAN/postinst" <<'POSTINST'
+          #!/bin/sh
+          set -e
+          if [ -n "${SUDO_USER:-}" ]; then
+            su - "$SUDO_USER" -c '/usr/local/bin/savhub pilot install 2>/dev/null || true'
+          else
+            /usr/local/bin/savhub pilot install 2>/dev/null || true
+          fi
+          POSTINST
+          sed -i 's/^          //' "${PKG_ROOT}/DEBIAN/postinst"
+          chmod 755 "${PKG_ROOT}/DEBIAN/postinst"
+
+          dpkg-deb --build "${PKG_ROOT}" "dist/savhub-linux-x64.deb"
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-deb
+          path: dist/*.deb
+          if-no-files-found: error
+
+  # ── macOS .pkg installer ──────────────────────────────────────────────
+  pkg:
+    name: Build macOS .pkg
+    runs-on: macos-latest
+    needs: build-client
+    steps:
+      - name: Download macOS build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-client-macos-latest
+          path: dist
+
+      - name: Build .pkg installer
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          ARCH=$(uname -m)
+          case "$ARCH" in
+            x86_64) ARCH="x64" ;;
+            arm64|aarch64) ARCH="arm64" ;;
+          esac
+
+          PKG_ROOT="pkg-staging"
+          INSTALL_DEST="${PKG_ROOT}/usr/local/bin"
+          mkdir -p "${INSTALL_DEST}"
+
+          tar -xzf "dist/savhub-macos-${ARCH}.tar.gz" -C /tmp
+          cp "/tmp/savhub-macos-${ARCH}/savhub" "${INSTALL_DEST}/savhub"
+          cp "/tmp/savhub-macos-${ARCH}/savhub-desktop" "${INSTALL_DEST}/savhub-desktop"
+          chmod 755 "${INSTALL_DEST}/savhub"
+          chmod 755 "${INSTALL_DEST}/savhub-desktop"
+
+          SCRIPTS_DIR="pkg-scripts"
+          mkdir -p "${SCRIPTS_DIR}"
+          cat > "${SCRIPTS_DIR}/postinstall" <<'POSTINST'
+          #!/bin/sh
+          REAL_USER="${USER:-$(whoami)}"
+          if [ -n "${SUDO_USER:-}" ]; then
+            REAL_USER="$SUDO_USER"
+          fi
+          su - "$REAL_USER" -c '/usr/local/bin/savhub pilot install 2>/dev/null || true'
+          POSTINST
+          chmod 755 "${SCRIPTS_DIR}/postinstall"
+
+          pkgbuild \
+            --root "${PKG_ROOT}" \
+            --identifier ai.savhub.cli \
+            --version "${VERSION}" \
+            --install-location / \
+            --scripts "${SCRIPTS_DIR}" \
+            "dist/savhub-macos-${ARCH}.pkg"
+
+      - name: Upload .pkg artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-pkg
+          path: dist/*.pkg
+          if-no-files-found: error
+
+  # ── Publish GitHub Release ────────────────────────────────────────────
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-client, msi, deb, pkg]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+
+      - name: Copy install scripts
+        run: |
+          cp scripts/install.sh dist/install.sh
+          cp scripts/install.ps1 dist/install.ps1
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          body: |
+            ## Install
+
+            **Linux / macOS** (one-liner):
+            ```sh
+            curl -fsSL https://raw.githubusercontent.com/savhub-ai/savhub/main/scripts/install.sh | bash
+            ```
+
+            **Windows** (PowerShell):
+            ```powershell
+            irm https://raw.githubusercontent.com/savhub-ai/savhub/main/scripts/install.ps1 | iex
+            ```
+
+            **Linux .deb**:
+            Download `savhub-linux-x64.deb` below and run `sudo dpkg -i savhub-linux-x64.deb`.
+
+            **macOS .pkg**:
+            Download the `.pkg` file below and run the installer.
+
+            **Windows MSI** (GUI installer with PATH setup):
+            Download `savhub-windows-x64.msi` below and run it.
+
+            **Docker** (server):
+            ```sh
+            docker pull ghcr.io/savhub-ai/savhub:latest
+            ```

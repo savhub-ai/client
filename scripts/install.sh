@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-REPO="savhub-ai/client"
+REPO="savhub-ai/savhub"
 INSTALL_DIR="${HOME}/.savhub/bin"
 VERSION=""
 

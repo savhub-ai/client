@@ -104,41 +104,13 @@ fn SettingsMenu(mut active: Signal<SettingsTab>) -> Element {
 
 #[component]
 fn SettingsMenuGlyph(kind: SettingsMenuIcon, size: u32) -> Element {
-    let size_attr = size.to_string();
-
-    // Icons from Lucide (https://lucide.dev)
-    match kind {
-        // lucide: sliders-horizontal
-        SettingsMenuIcon::General => rsx! {
-            svg { width: "{size_attr}", height: "{size_attr}", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
-                line { x1: "21", x2: "14", y1: "4", y2: "4" }
-                line { x1: "10", x2: "3", y1: "4", y2: "4" }
-                line { x1: "21", x2: "12", y1: "12", y2: "12" }
-                line { x1: "8", x2: "3", y1: "12", y2: "12" }
-                line { x1: "21", x2: "16", y1: "20", y2: "20" }
-                line { x1: "12", x2: "3", y1: "20", y2: "20" }
-                line { x1: "14", x2: "14", y1: "2", y2: "6" }
-                line { x1: "8", x2: "8", y1: "10", y2: "14" }
-                line { x1: "16", x2: "16", y1: "18", y2: "22" }
-            }
-        },
-        // lucide: circle-user
-        SettingsMenuIcon::Account => rsx! {
-            svg { width: "{size_attr}", height: "{size_attr}", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
-                circle { cx: "12", cy: "12", r: "10" }
-                circle { cx: "12", cy: "10", r: "3" }
-                path { d: "M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662" }
-            }
-        },
-        // lucide: info
-        SettingsMenuIcon::About => rsx! {
-            svg { width: "{size_attr}", height: "{size_attr}", view_box: "0 0 24 24", fill: "none", stroke: "currentColor", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
-                circle { cx: "12", cy: "12", r: "10" }
-                path { d: "M12 16v-4" }
-                path { d: "M12 8h.01" }
-            }
-        },
-    }
+    use crate::icons::{Icon, LucideIcon};
+    let icon = match kind {
+        SettingsMenuIcon::General => Icon::SlidersHorizontal,
+        SettingsMenuIcon::Account => Icon::CircleUser,
+        SettingsMenuIcon::About => Icon::Info,
+    };
+    rsx! { LucideIcon { icon, size } }
 }
 
 // --- General pane ---
@@ -714,7 +686,10 @@ fn AboutPane() -> Element {
                 // Update status
                 match &*update_status.read() {
                     Some(updater::UpdateStatus::UpToDate) => rsx! {
-                        p { style: "font-size: 13px; color: {Theme::SUCCESS};", "\u{2713} {up_to_date_text}" }
+                        p { style: "display: flex; align-items: center; gap: 4px; font-size: 13px; color: {Theme::SUCCESS};",
+                            crate::icons::LucideIcon { icon: crate::icons::Icon::Check, size: 14 }
+                            "{up_to_date_text}"
+                        }
                     },
                     Some(updater::UpdateStatus::Available { version, .. }) => {
                         let msg = t.fmt_update_available(version);

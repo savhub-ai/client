@@ -11,7 +11,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$Repo = "savhub-ai/client"
+$Repo = "savhub-ai/savhub"
 
 if (-not $InstallDir) {
     $InstallDir = Join-Path $env:LOCALAPPDATA "savhub\bin"

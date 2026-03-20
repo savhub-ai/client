@@ -1,7 +1,6 @@
 # Savhub development commands
 
 set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
-client_root := "E:\\Works\\savhub-ai\\savhub-client"
 
 # Start PostgreSQL via Docker
 db:
@@ -21,11 +20,23 @@ backend:
 
 # Run frontend dev server
 frontend:
-    cd frontend; dx serve --platform web --port 5007
+    cd web; dx serve --platform web --port 5007
 
 # Build frontend (release)
 frontend-build:
-    cd frontend; dx build --release
+    cd web; dx build --release
+
+# Run desktop app (debug)
+desktop:
+    cargo run -p savhub-desktop
+
+# Run desktop app (release)
+desktop-release:
+    cargo run -p savhub-desktop --release
+
+# Run CLI command
+cli *ARGS:
+    cargo run -p savhub -- {{ARGS}}
 
 # Check entire workspace
 check:
@@ -39,9 +50,21 @@ fmt:
 fmt-check:
     cargo fmt --all --check
 
+# Lint entire workspace
+lint:
+    cargo clippy --workspace
+
 # Test entire workspace
 test:
     cargo test --workspace
+
+# Build entire workspace
+build:
+    cargo build --workspace
+
+# Build entire workspace (release)
+build-release:
+    cargo build --workspace --release
 
 # Spellcheck source and docs
 typos:
