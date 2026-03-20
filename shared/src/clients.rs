@@ -22,26 +22,6 @@ pub enum ClientKind {
 }
 
 impl ClientKind {
-    /// Whether this client supports MCP `prompts` capability.
-    pub fn supports_mcp_prompts(self) -> bool {
-        matches!(
-            self,
-            ClientKind::ClaudeCode | ClientKind::Windsurf | ClientKind::VsCode
-        )
-    }
-
-    /// Whether this client supports MCP at all (tools/resources).
-    pub fn supports_mcp(self) -> bool {
-        matches!(
-            self,
-            ClientKind::ClaudeCode
-                | ClientKind::Cursor
-                | ClientKind::Windsurf
-                | ClientKind::Continue
-                | ClientKind::VsCode
-        )
-    }
-
     pub fn as_str(self) -> &'static str {
         match self {
             ClientKind::ClaudeCode => "claude-code",

@@ -729,7 +729,7 @@ pub fn disable_project_skill(workdir: &Path, slug: &str) -> Result<bool> {
 // Skill resolution
 // ---------------------------------------------------------------------------
 
-/// Information about a resolved skill for MCP serving.
+/// Information about a resolved skill.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedSkill {
     pub slug: String,

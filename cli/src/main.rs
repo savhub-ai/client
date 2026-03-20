@@ -144,11 +144,6 @@ enum Command {
     Star(DeleteArgs),
     /// Unstar a skill
     Unstar(DeleteArgs),
-    /// Manage MCP server integration with AI clients
-    Mcp {
-        #[command(subcommand)]
-        command: McpCommand,
-    },
     /// Manage registry access
     Registry {
         #[command(subcommand)]
@@ -182,22 +177,6 @@ enum TransferCommand {
     Accept(DeleteArgs),
     Reject(DeleteArgs),
     Cancel(DeleteArgs),
-}
-
-#[derive(Debug, Subcommand)]
-enum McpCommand {
-    Register(McpClientArgs),
-    Unregister(McpClientArgs),
-    /// Generate a project-level .mcp.json for the current working directory
-    Init,
-    Status,
-    Serve,
-}
-
-#[derive(Debug, Args)]
-struct McpClientArgs {
-    #[arg(long)]
-    client: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -546,7 +525,6 @@ async fn main() -> Result<()> {
         },
         Some(Command::Star(args)) => cmd_set_starred(&opts, args, true).await?,
         Some(Command::Unstar(args)) => cmd_set_starred(&opts, args, false).await?,
-        Some(Command::Mcp { command }) => cmd_mcp(&opts, command)?,
         Some(Command::Registry { command }) => cmd_registry(&opts, command).await?,
         Some(Command::Selector { command }) => cmd_selector(&opts, command)?,
         Some(Command::Apply(args)) => cmd_apply(&opts, args)?,
@@ -2416,123 +2394,6 @@ fn parse_role_arg(value: &str) -> Result<UserRole> {
         "user" => Ok(UserRole::User),
         _ => bail!("role must be one of: user, moderator, admin"),
     }
-}
-
-// ---------------------------------------------------------------------------
-// Profile commands
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// MCP commands
-// ---------------------------------------------------------------------------
-
-fn cmd_mcp(opts: &GlobalOpts, command: McpCommand) -> Result<()> {
-    use savhub_local::clients::detect_clients;
-    use savhub_local::mcp_config;
-
-    match command {
-        McpCommand::Register(args) => {
-            let clients = detect_clients();
-            let mcp_bin = mcp_config::mcp_binary_path()?;
-            if !mcp_bin.exists() {
-                eprintln!(
-                    "Warning: MCP binary not found at {}. \
-                     Build it first with `cargo build -p savhub-mcp`.",
-                    mcp_bin.display()
-                );
-            }
-
-            for client in &clients {
-                if !client.installed {
-                    continue;
-                }
-                if let Some(ref filter) = args.client {
-                    if !client.kind.as_str().eq_ignore_ascii_case(filter)
-                        && !client.name.eq_ignore_ascii_case(filter)
-                    {
-                        continue;
-                    }
-                }
-                if !client.kind.supports_mcp_prompts() {
-                    println!("  {} — skipped (MCP prompts not supported)", client.name);
-                    continue;
-                }
-                match mcp_config::register_mcp(client) {
-                    Ok(()) => {
-                        let path = mcp_config::mcp_config_path(client)
-                            .map(|p| p.display().to_string())
-                            .unwrap_or_default();
-                        println!("  {} — registered ({})", client.name, path);
-                    }
-                    Err(e) => {
-                        println!("  {} — failed: {e}", client.name);
-                    }
-                }
-            }
-        }
-        McpCommand::Unregister(args) => {
-            let clients = detect_clients();
-            for client in &clients {
-                if !client.installed {
-                    continue;
-                }
-                if let Some(ref filter) = args.client {
-                    if !client.kind.as_str().eq_ignore_ascii_case(filter)
-                        && !client.name.eq_ignore_ascii_case(filter)
-                    {
-                        continue;
-                    }
-                }
-                match mcp_config::unregister_mcp(client) {
-                    Ok(()) => println!("  {} — unregistered", client.name),
-                    Err(e) => println!("  {} — failed: {e}", client.name),
-                }
-            }
-        }
-        McpCommand::Init => {
-            mcp_config::register_mcp_for_project(&opts.workdir)?;
-            let config_path = opts.workdir.join(".mcp.json");
-            println!("Created {}", config_path.display());
-            println!("AI agents will now pick up the savhub MCP server when opening this project.");
-        }
-        McpCommand::Status => {
-            let statuses = mcp_config::get_all_registration_status();
-            for s in &statuses {
-                let installed = if s.installed {
-                    "installed"
-                } else {
-                    "not found"
-                };
-                let prompts = if s.supports_prompts {
-                    "prompts ✓"
-                } else {
-                    "prompts ✗"
-                };
-                let registered = if s.registered {
-                    "registered"
-                } else {
-                    "not registered"
-                };
-                println!(
-                    "  {:<12} {:<12} {:<12} {}",
-                    s.client_name, installed, prompts, registered
-                );
-            }
-        }
-        McpCommand::Serve => {
-            println!("Starting MCP server for {}...", opts.workdir.display());
-            let mcp_bin = mcp_config::mcp_binary_path()?;
-            let status = std::process::Command::new(&mcp_bin)
-                .arg("--workdir")
-                .arg(&opts.workdir)
-                .status()
-                .with_context(|| format!("failed to start {}", mcp_bin.display()))?;
-            if !status.success() {
-                bail!("MCP server exited with {status}");
-            }
-        }
-    }
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------

@@ -85,8 +85,6 @@ pub struct Texts {
     pub by: &'static str,
     pub show_as_cards: &'static str,
     pub show_as_list: &'static str,
-    pub pagination_previous: &'static str,
-    pub pagination_next: &'static str,
 
     // Installed
     pub update_all: &'static str,
@@ -324,14 +322,6 @@ impl Texts {
         }
     }
 
-    pub fn fmt_page_indicator(&self, current: usize, total: Option<usize>) -> String {
-        match (self.lang, total) {
-            (Language::English, Some(total)) => format!("Page {current} of {total}"),
-            (Language::English, None) => format!("Page {current}"),
-            (Language::Chinese, Some(total)) => format!("第 {current}/{total} 页"),
-            (Language::Chinese, None) => format!("第 {current} 页"),
-        }
-    }
 }
 
 static EN: Texts = Texts {
@@ -382,8 +372,6 @@ static EN: Texts = Texts {
     by: "by",
     show_as_cards: "Show cards",
     show_as_list: "Show list",
-    pagination_previous: "Previous",
-    pagination_next: "Next",
 
     update_all: "Update All",
     no_skills_fetched: "No skills fetched in this project.",
@@ -594,8 +582,6 @@ static ZH: Texts = Texts {
     by: "作者",
     show_as_cards: "显示为卡片",
     show_as_list: "显示为列表",
-    pagination_previous: "上一页",
-    pagination_next: "下一页",
 
     update_all: "全部更新",
     no_skills_fetched: "当前项目没有已获取的技能。",
