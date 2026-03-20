@@ -1,0 +1,898 @@
+use std::collections::{HashMap, HashSet};
+
+use chrono::Utc;
+use diesel::prelude::*;
+use serde_json::json;
+use uuid::Uuid;
+
+use crate::auth::{AuthContext, RequestUser};
+use crate::error::AppError;
+use crate::models::{
+    FlockChangeset, FlockRow, NewFlockRow, NewRepoRow, NewSkillRow, RepoRow, SkillRow, UserRow,
+};
+use crate::schema::{flocks, repos, skills};
+use shared::{
+    CatalogSource, CreateRepoRequest, FlockDetailResponse, FlockDocument, FlockMetadata,
+    FlockRatingStats, FlockSummary, ImportFlockRequest, ImportedSkillMetadata, ImportedSkillRecord,
+    PagedResponse, RegistryMaintainer, RegistryStatus, RegistryVisibility, RepoDetailResponse,
+    RepoDocument, RepoMetadata, RepoSummary, RuntimeMetadata, validate_flock_document,
+    validate_imported_skill_record,
+};
+
+use super::helpers::{
+    db_conn, insert_audit_log, load_users_map, normalize_git_url, parse_git_url_parts,
+    user_summary_from_row,
+};
+use super::interactions::{fetch_flock_comments, get_user_flock_rating, is_flock_starred};
+use super::registry_sync::sync_registry_checkout;
+use super::security::parse_security_status;
+
+pub fn list_repos(
+    limit: i64,
+    cursor: Option<String>,
+    q: Option<String>,
+) -> Result<PagedResponse<RepoSummary>, AppError> {
+    let mut conn = db_conn()?;
+    let limit = limit.clamp(1, 100);
+    let offset = cursor
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(0);
+
+    let search_query = q.filter(|s| !s.trim().is_empty());
+
+    let all_rows = repos::table
+        .order(repos::updated_at.desc())
+        .select(RepoRow::as_select())
+        .load::<RepoRow>(&mut conn)?;
+    let flock_rows = flocks::table
+        .filter(flocks::repo_id.eq_any(all_rows.iter().map(|row| row.id).collect::<Vec<_>>()))
+        .select(FlockRow::as_select())
+        .load::<FlockRow>(&mut conn)?;
+    let mut flock_counts = HashMap::new();
+    for row in &flock_rows {
+        *flock_counts.entry(row.repo_id).or_insert(0i64) += 1;
+    }
+    let flock_skill_counts =
+        load_flock_skill_counts(&mut conn, flock_rows.iter().map(|row| row.id).collect())?;
+    let repo_skill_counts = load_repo_skill_counts(&flock_rows, &flock_skill_counts);
+
+    if let Some(ref q_str) = search_query {
+        let q_lower = q_str.trim().to_lowercase();
+
+        let mut scored: Vec<(i32, &RepoRow)> = all_rows
+            .iter()
+            .filter_map(|row| {
+                let name_lower = row.name.to_lowercase();
+                let desc_lower = row.description.to_lowercase();
+                let sign_lower = row.sign.to_lowercase();
+
+                let matches = sign_lower.contains(&q_lower)
+                    || name_lower.contains(&q_lower)
+                    || desc_lower.contains(&q_lower);
+
+                if !matches {
+                    return None;
+                }
+
+                let score = if sign_lower == q_lower {
+                    100
+                } else if sign_lower.contains(&q_lower) {
+                    80
+                } else if name_lower == q_lower {
+                    70
+                } else if name_lower.contains(&q_lower) {
+                    50
+                } else {
+                    10
+                };
+
+                Some((score, row))
+            })
+            .collect();
+
+        scored.sort_by(|a, b| {
+            b.0.cmp(&a.0)
+                .then_with(|| b.1.updated_at.cmp(&a.1.updated_at))
+        });
+
+        let total = scored.len();
+        let start = (offset as usize).min(total);
+        let end = (start + limit as usize).min(total);
+        let page = &scored[start..end];
+
+        let next_cursor = if end < total {
+            Some((offset + limit).to_string())
+        } else {
+            None
+        };
+
+        let items = page
+            .iter()
+            .map(|(_, row)| {
+                repo_summary_from_row(
+                    row,
+                    flock_counts.get(&row.id).copied().unwrap_or(0),
+                    repo_skill_counts.get(&row.id).copied().unwrap_or(0),
+                )
+            })
+            .collect();
+
+        Ok(PagedResponse { items, next_cursor })
+    } else {
+        let total = all_rows.len();
+        let start = (offset as usize).min(total);
+        let end = (start + limit as usize).min(total);
+        let has_more = end < total;
+        let page = &all_rows[start..end];
+
+        let next_cursor = if has_more {
+            Some((offset + limit).to_string())
+        } else {
+            None
+        };
+
+        let items = page
+            .iter()
+            .map(|row| {
+                repo_summary_from_row(
+                    row,
+                    flock_counts.get(&row.id).copied().unwrap_or(0),
+                    repo_skill_counts.get(&row.id).copied().unwrap_or(0),
+                )
+            })
+            .collect();
+
+        Ok(PagedResponse { items, next_cursor })
+    }
+}
+
+pub fn create_repo(
+    auth: &AuthContext,
+    request: CreateRepoRequest,
+) -> Result<RepoDetailResponse, AppError> {
+    if request.git_url.trim().is_empty() {
+        return Err(AppError::BadRequest("git_url is required".to_string()));
+    }
+
+    let git_url = normalize_git_url(&request.git_url);
+    let (domain, path_slug) = parse_git_url_parts(&git_url);
+    if domain.is_empty() || path_slug.is_empty() {
+        return Err(AppError::BadRequest(
+            "could not parse domain and path from git_url".to_string(),
+        ));
+    }
+
+    let sign = format!("{domain}/{path_slug}");
+    let name = request
+        .name
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| extract_repo_name(&git_url));
+    let description = request
+        .description
+        .filter(|d| !d.trim().is_empty())
+        .unwrap_or_default();
+
+    let mut conn = db_conn()?;
+    if repos::table
+        .filter(repos::sign.eq(&sign))
+        .select(repos::id)
+        .first::<Uuid>(&mut conn)
+        .optional()?
+        .is_some()
+    {
+        return Err(AppError::Conflict(format!("repo `{sign}` already exists",)));
+    }
+
+    let now = Utc::now();
+    let row = NewRepoRow {
+        id: Uuid::now_v7(),
+        name: name.clone(),
+        description: description.clone(),
+        git_url: git_url.clone(),
+        sign: sign.clone(),
+        visibility: "public".to_string(),
+        verified: false,
+        metadata: serde_json::to_value(RepoMetadata::default())
+            .map_err(|error| AppError::Internal(error.to_string()))?,
+        created_at: now,
+        updated_at: now,
+        last_indexed_at: None,
+        git_rev: None,
+        git_branch: None,
+        keywords: vec![],
+    };
+
+    diesel::insert_into(repos::table)
+        .values(&row)
+        .execute(&mut conn)?;
+
+    insert_audit_log(
+        &mut conn,
+        Some(auth.user.id),
+        "repo.create",
+        "repo",
+        Some(row.id),
+        json!({
+            "sign": row.sign,
+            "name": row.name,
+        }),
+    )?;
+
+    get_repo_detail(&domain, &path_slug)
+}
+
+pub fn get_repo_detail(domain: &str, path_slug: &str) -> Result<RepoDetailResponse, AppError> {
+    let mut conn = db_conn()?;
+    let repo_path = format!("{domain}/{path_slug}");
+    let repo = repos::table
+        .filter(repos::sign.eq(&repo_path))
+        .select(RepoRow::as_select())
+        .first::<RepoRow>(&mut conn)
+        .optional()?
+        .ok_or_else(|| AppError::NotFound(format!("repo `{repo_path}` does not exist")))?;
+    let flock_rows = flocks::table
+        .filter(flocks::repo_id.eq(repo.id))
+        .order(flocks::updated_at.desc())
+        .select(FlockRow::as_select())
+        .load::<FlockRow>(&mut conn)?;
+    let flock_ids = flock_rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    let importing_users = load_users_map(
+        &mut conn,
+        flock_rows
+            .iter()
+            .map(|row| row.imported_by_user_id)
+            .collect(),
+    )?;
+    let flock_skill_counts = load_flock_skill_counts(&mut conn, flock_ids.clone())?;
+    let skill_rows = if flock_ids.is_empty() {
+        Vec::new()
+    } else {
+        skills::table
+            .filter(skills::flock_id.eq_any(&flock_ids))
+            .select(SkillRow::as_select())
+            .load::<SkillRow>(&mut conn)?
+    };
+    let flocks = flock_rows
+        .iter()
+        .map(|row| {
+            flock_summary_from_row(
+                row,
+                &repo,
+                &importing_users,
+                flock_skill_counts.get(&row.id).copied().unwrap_or(0),
+            )
+        })
+        .collect::<Result<Vec<_>, AppError>>()?;
+    let mut skills_list = skill_rows
+        .iter()
+        .map(imported_skill_from_row)
+        .collect::<Result<Vec<_>, AppError>>()?;
+    skills_list.sort_by(|a, b| {
+        a.name
+            .to_lowercase()
+            .cmp(&b.name.to_lowercase())
+            .then_with(|| a.slug.cmp(&b.slug))
+    });
+    let repo_summary = repo_summary_from_row(
+        &repo,
+        flocks.len() as i64,
+        flock_skill_counts.values().sum(),
+    );
+    let document = repo_document_from_row(&repo)?;
+    Ok(RepoDetailResponse {
+        repo: repo_summary,
+        document,
+        flocks,
+        skills: skills_list,
+    })
+}
+
+pub async fn import_flock(
+    auth: &AuthContext,
+    domain: &str,
+    path_slug: &str,
+    request: ImportFlockRequest,
+) -> Result<FlockDetailResponse, AppError> {
+    let ImportFlockRequest {
+        slug,
+        document,
+        skills: request_skills,
+    } = request;
+    let repo = load_import_target(auth, domain, path_slug)?;
+    let skills = if document.source.as_ref().map_or(false, is_github_git_source) {
+        let scan = super::registry_sync::scan_github_flock_import(&slug, &document).await?;
+        scan.skills
+    } else {
+        request_skills
+    };
+
+    persist_flock_import(auth, &repo, &slug, document, skills, true)
+}
+
+pub fn import_flock_seeded(
+    auth: &AuthContext,
+    domain: &str,
+    path_slug: &str,
+    request: ImportFlockRequest,
+) -> Result<FlockDetailResponse, AppError> {
+    let repo = load_import_target(auth, domain, path_slug)?;
+    persist_flock_import(
+        auth,
+        &repo,
+        &request.slug,
+        request.document,
+        request.skills,
+        false,
+    )
+}
+
+fn load_import_target(
+    _auth: &AuthContext,
+    domain: &str,
+    path_slug: &str,
+) -> Result<RepoRow, AppError> {
+    let mut conn = db_conn()?;
+    let repo_path = format!("{domain}/{path_slug}");
+    let repo = repos::table
+        .filter(repos::sign.eq(&repo_path))
+        .select(RepoRow::as_select())
+        .first::<RepoRow>(&mut conn)
+        .optional()?
+        .ok_or_else(|| AppError::NotFound(format!("repo `{repo_path}` does not exist")))?;
+
+    Ok(repo)
+}
+
+fn is_github_git_source(source: &CatalogSource) -> bool {
+    matches!(
+        source,
+        CatalogSource::Git { url, .. } if url.contains("github.com/")
+    )
+}
+
+fn persist_flock_import(
+    auth: &AuthContext,
+    repo: &RepoRow,
+    flock_slug: &str,
+    mut document: FlockDocument,
+    skills: Vec<ImportedSkillRecord>,
+    sync_registry_repo: bool,
+) -> Result<FlockDetailResponse, AppError> {
+    let mut conn = db_conn()?;
+    let repo_id_str = repo.sign.clone();
+
+    if document.repo != repo_id_str {
+        return Err(AppError::BadRequest(format!(
+            "flock repo `{}` does not match path repo `{}`",
+            document.repo, repo_id_str
+        )));
+    }
+
+    // Ensure flock sign is set
+    if document.sign.is_empty() {
+        document.sign = format!("{}/{}", repo_id_str, flock_slug);
+    }
+
+    if document.metadata.maintainers.is_empty() {
+        document
+            .metadata
+            .maintainers
+            .push(owner_maintainer(auth, "owner"));
+    }
+    validate_flock_document(&document).map_err(AppError::BadRequest)?;
+
+    let mut seen_skill_slugs = HashSet::new();
+    for skill in &skills {
+        if !seen_skill_slugs.insert(skill.slug.clone()) {
+            return Err(AppError::BadRequest(format!(
+                "duplicate flock skill slug `{}`",
+                skill.slug
+            )));
+        }
+        validate_imported_skill_record(&repo_id_str, flock_slug, skill)
+            .map_err(AppError::BadRequest)?;
+    }
+
+    for featured in &document.metadata.featured_skills {
+        if !seen_skill_slugs.contains(featured) {
+            return Err(AppError::BadRequest(format!(
+                "featured skill `{featured}` is not present in the imported skills list"
+            )));
+        }
+    }
+
+    let existing_flock = flocks::table
+        .filter(flocks::repo_id.eq(repo.id))
+        .filter(flocks::slug.eq(flock_slug))
+        .select(FlockRow::as_select())
+        .first::<FlockRow>(&mut conn)
+        .optional()?;
+
+    let now = Utc::now();
+    let flock_id = existing_flock
+        .as_ref()
+        .map(|row| row.id)
+        .unwrap_or_else(Uuid::new_v4);
+    let flock_metadata = serde_json::to_value(document.metadata.clone())
+        .map_err(|error| AppError::Internal(error.to_string()))?;
+    let flock_source = serde_json::to_value(document.source.clone())
+        .map_err(|error| AppError::Internal(error.to_string()))?;
+    let flock_row = NewFlockRow {
+        id: flock_id,
+        sign: format!("{}/{}", repo.sign, flock_slug),
+        repo_id: repo.id,
+        slug: flock_slug.to_string(),
+        name: document.name.clone(),
+        keywords: vec![],
+        description: document.description.clone(),
+        version: document.version.clone(),
+        status: status_to_str(document.status).to_string(),
+        visibility: document
+            .visibility
+            .map(|value| visibility_to_str(value).to_string()),
+        license: document.license.clone(),
+        metadata: flock_metadata.clone(),
+        source: flock_source.clone(),
+        imported_by_user_id: auth.user.id,
+        created_at: now,
+        updated_at: now,
+        stats_comments: 0,
+        stats_ratings: 0,
+        stats_avg_rating: 0.0,
+        security_status: "unverified".to_string(),
+        last_synced_at: None,
+        sync_status: "idle".to_string(),
+        sync_error: None,
+        git_commit_sha: None,
+        stats_max_installs: 0,
+        stats_max_unique_users: 0,
+    };
+    let flock_changeset = FlockChangeset {
+        sign: None,
+        name: Some(document.name.clone()),
+        keywords: None,
+        description: Some(document.description.clone()),
+        version: document.version.clone(),
+        status: Some(status_to_str(document.status).to_string()),
+        visibility: Some(
+            document
+                .visibility
+                .map(|value| visibility_to_str(value).to_string()),
+        ),
+        license: Some(document.license.clone()),
+        metadata: Some(flock_metadata),
+        source: Some(flock_source.clone()),
+        imported_by_user_id: Some(auth.user.id),
+        updated_at: Some(now),
+        stats_comments: None,
+        stats_ratings: None,
+        stats_avg_rating: None,
+        security_status: Some("unverified".to_string()),
+        last_synced_at: None,
+        sync_status: None,
+        sync_error: None,
+        git_commit_sha: None,
+        stats_max_installs: None,
+        stats_max_unique_users: None,
+    };
+
+    let mut skill_rows = Vec::with_capacity(skills.len());
+    for skill in &skills {
+        skill_rows.push(NewSkillRow {
+            id: Uuid::now_v7(),
+            sign: format!("{}/{}", repo.sign, skill.path),
+            slug: skill.slug.clone(),
+            name: skill.name.clone(),
+            path: skill.path.clone(),
+            keywords: vec![],
+            repo_id: repo.id,
+            flock_id,
+            description: skill.description.clone(),
+            version: skill.version.clone(),
+            status: status_to_str(skill.status).to_string(),
+            license: skill.license.clone(),
+            source: flock_source.clone(),
+            metadata: serde_json::to_value(skill.metadata.clone())
+                .map_err(|error| AppError::Internal(error.to_string()))?,
+            entry_data: None,
+            runtime_data: skill
+                .runtime
+                .clone()
+                .map(|runtime| serde_json::to_value(runtime))
+                .transpose()
+                .map_err(|error| AppError::Internal(error.to_string()))?,
+            security_status: "unverified".to_string(),
+            latest_version_id: None,
+            tags: serde_json::json!({}),
+            moderation_status: "active".to_string(),
+            highlighted: false,
+            official: false,
+            deprecated: false,
+            suspicious: false,
+            stats_downloads: 0,
+            stats_stars: 0,
+            stats_versions: 0,
+            stats_comments: 0,
+            stats_installs: 0,
+            stats_unique_users: 0,
+            soft_deleted_at: None,
+            created_at: now,
+            updated_at: now,
+        });
+    }
+
+    let repo_document = if sync_registry_repo {
+        Some(repo_document_from_row(repo)?)
+    } else {
+        None
+    };
+    let updated_existing_flock = existing_flock.is_some();
+
+    conn.transaction::<_, AppError, _>(|conn| {
+        if let Some(existing_flock) = &existing_flock {
+            diesel::update(flocks::table.find(existing_flock.id))
+                .set(&flock_changeset)
+                .execute(conn)?;
+            diesel::delete(skills::table.filter(skills::flock_id.eq(existing_flock.id)))
+                .execute(conn)?;
+        } else {
+            diesel::insert_into(flocks::table)
+                .values(&flock_row)
+                .execute(conn)?;
+        }
+
+        // Diesel/PostgreSQL limit: max 65535 bind parameters per query.
+        // NewSkillRow has 30 fields, so batch at most 2000 rows per INSERT.
+        for chunk in skill_rows.chunks(500) {
+            diesel::insert_into(skills::table)
+                .values(chunk)
+                .execute(conn)?;
+        }
+
+        insert_audit_log(
+            conn,
+            Some(auth.user.id),
+            "flock.import",
+            "flock",
+            Some(flock_id),
+            json!({
+                "repo": &repo.sign,
+                "flock_slug": flock_row.slug,
+                "skill_count": skill_rows.len(),
+                "updated": updated_existing_flock,
+            }),
+        )?;
+
+        if sync_registry_repo {
+            sync_registry_checkout(
+                repo_document
+                    .as_ref()
+                    .ok_or_else(|| AppError::Internal("missing repo document".to_string()))?,
+                &path_slug_from_repo_path(&repo.sign),
+                &document,
+                flock_slug,
+                &skills,
+            )?;
+        }
+        Ok(())
+    })?;
+
+    let (d, ps) = split_repo_path(&repo.sign);
+    get_flock_detail(d, ps, &flock_row.slug, None)
+}
+
+pub fn get_flock_detail(
+    domain: &str,
+    path_slug: &str,
+    flock_slug: &str,
+    viewer: Option<&RequestUser>,
+) -> Result<FlockDetailResponse, AppError> {
+    let mut conn = db_conn()?;
+    let repo_path = format!("{domain}/{path_slug}");
+    let repo = repos::table
+        .filter(repos::sign.eq(&repo_path))
+        .select(RepoRow::as_select())
+        .first::<RepoRow>(&mut conn)
+        .optional()?
+        .ok_or_else(|| AppError::NotFound(format!("repo `{repo_path}` does not exist")))?;
+    let flock = flocks::table
+        .filter(flocks::repo_id.eq(repo.id))
+        .filter(flocks::slug.eq(flock_slug))
+        .select(FlockRow::as_select())
+        .first::<FlockRow>(&mut conn)
+        .optional()?
+        .ok_or_else(|| {
+            AppError::NotFound(format!(
+                "flock `{flock_slug}` does not exist under repo `{repo_path}`"
+            ))
+        })?;
+    let users = load_users_map(&mut conn, vec![flock.imported_by_user_id])?;
+    let skills = skills::table
+        .filter(skills::flock_id.eq(flock.id))
+        .order(skills::slug.asc())
+        .select(SkillRow::as_select())
+        .load::<SkillRow>(&mut conn)?;
+    let document = flock_document_from_row(&repo, &flock)?;
+    let comments = fetch_flock_comments(&mut conn, flock.id, viewer)?;
+    let user_rating = viewer
+        .map(|v| get_user_flock_rating(&mut conn, flock.id, v.id))
+        .transpose()?
+        .flatten();
+    let starred = viewer
+        .map(|v| is_flock_starred(&mut conn, flock.id, v.id))
+        .unwrap_or(false);
+    Ok(FlockDetailResponse {
+        flock: flock_summary_from_row(&flock, &repo, &users, skills.len() as i64)?,
+        document,
+        skills: skills
+            .iter()
+            .map(imported_skill_from_row)
+            .collect::<Result<Vec<_>, AppError>>()?,
+        comments,
+        user_rating,
+        starred,
+    })
+}
+
+pub fn get_flock_by_id(
+    flock_id: Uuid,
+    viewer: Option<&RequestUser>,
+) -> Result<FlockDetailResponse, AppError> {
+    let mut conn = db_conn()?;
+    let flock = flocks::table
+        .find(flock_id)
+        .select(FlockRow::as_select())
+        .first::<FlockRow>(&mut conn)
+        .optional()?
+        .ok_or_else(|| AppError::NotFound("flock not found".to_string()))?;
+    let repo = repos::table
+        .find(flock.repo_id)
+        .select(RepoRow::as_select())
+        .first::<RepoRow>(&mut conn)?;
+    let users = load_users_map(&mut conn, vec![flock.imported_by_user_id])?;
+    let skills = skills::table
+        .filter(skills::flock_id.eq(flock.id))
+        .order(skills::slug.asc())
+        .select(SkillRow::as_select())
+        .load::<SkillRow>(&mut conn)?;
+    let document = flock_document_from_row(&repo, &flock)?;
+    let comments = fetch_flock_comments(&mut conn, flock.id, viewer)?;
+    let user_rating = viewer
+        .map(|v| get_user_flock_rating(&mut conn, flock.id, v.id))
+        .transpose()?
+        .flatten();
+    let starred = viewer
+        .map(|v| is_flock_starred(&mut conn, flock.id, v.id))
+        .unwrap_or(false);
+    Ok(FlockDetailResponse {
+        flock: flock_summary_from_row(&flock, &repo, &users, skills.len() as i64)?,
+        document,
+        skills: skills
+            .iter()
+            .map(imported_skill_from_row)
+            .collect::<Result<Vec<_>, AppError>>()?,
+        comments,
+        user_rating,
+        starred,
+    })
+}
+
+pub(crate) fn load_flock_skill_counts(
+    conn: &mut PgConnection,
+    flock_ids: Vec<Uuid>,
+) -> Result<HashMap<Uuid, i64>, AppError> {
+    if flock_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let rows = skills::table
+        .filter(skills::flock_id.eq_any(flock_ids))
+        .select(SkillRow::as_select())
+        .load::<SkillRow>(conn)?;
+    let mut counts = HashMap::new();
+    for row in rows {
+        *counts.entry(row.flock_id).or_insert(0) += 1;
+    }
+    Ok(counts)
+}
+
+fn load_repo_skill_counts(
+    flock_rows: &[FlockRow],
+    flock_skill_counts: &HashMap<Uuid, i64>,
+) -> HashMap<Uuid, i64> {
+    let mut counts = HashMap::new();
+    for row in flock_rows {
+        *counts.entry(row.repo_id).or_insert(0) +=
+            flock_skill_counts.get(&row.id).copied().unwrap_or(0);
+    }
+    counts
+}
+
+fn repo_summary_from_row(row: &RepoRow, flock_count: i64, skill_count: i64) -> RepoSummary {
+    RepoSummary {
+        id: row.id,
+        name: row.name.clone(),
+        description: row.description.clone(),
+        git_url: row.git_url.clone(),
+        git_rev: row.git_rev.clone(),
+        git_branch: row.git_branch.clone(),
+        sign: row.sign.clone(),
+        visibility: parse_visibility(&row.visibility),
+        verified: row.verified,
+        flock_count,
+        skill_count,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    }
+}
+
+pub(crate) fn flock_summary_from_row(
+    row: &FlockRow,
+    repo: &RepoRow,
+    importing_users: &HashMap<Uuid, UserRow>,
+    skill_count: i64,
+) -> Result<FlockSummary, AppError> {
+    let imported_by = importing_users
+        .get(&row.imported_by_user_id)
+        .ok_or_else(|| AppError::Internal("missing flock importer".to_string()))?;
+    Ok(FlockSummary {
+        id: row.id,
+        repo_sign: repo.sign.clone(),
+        slug: row.slug.clone(),
+        name: row.name.clone(),
+        description: row.description.clone(),
+        version: row.version.clone().filter(|v| !v.is_empty()),
+        status: parse_status(&row.status),
+        visibility: row.visibility.as_deref().map(parse_visibility),
+        license: row.license.clone(),
+        source: serde_json::from_value::<Option<CatalogSource>>(row.source.clone())
+            .map_err(|error| AppError::Internal(error.to_string()))?,
+        imported_by: user_summary_from_row(imported_by),
+        skill_count,
+        rating: FlockRatingStats {
+            count: row.stats_ratings,
+            average: row.stats_avg_rating,
+        },
+        stats_comments: row.stats_comments,
+        stats_stars: row.stats_stars,
+        stats_max_installs: row.stats_max_installs,
+        stats_max_unique_users: row.stats_max_unique_users,
+        security_status: parse_security_status(&row.security_status),
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    })
+}
+
+fn repo_document_from_row(row: &RepoRow) -> Result<RepoDocument, AppError> {
+    Ok(RepoDocument {
+        sign: row.sign.clone(),
+        name: row.name.clone(),
+        description: row.description.clone(),
+        git_url: row.git_url.clone(),
+        git_rev: row.git_rev.clone(),
+        git_branch: row.git_branch.clone(),
+        visibility: parse_visibility(&row.visibility),
+        verified: row.verified,
+        metadata: serde_json::from_value::<RepoMetadata>(row.metadata.clone())
+            .map_err(|error| AppError::Internal(error.to_string()))?,
+    })
+}
+
+fn flock_document_from_row(repo: &RepoRow, row: &FlockRow) -> Result<FlockDocument, AppError> {
+    let source: Option<CatalogSource> = serde_json::from_value(row.source.clone())
+        .map_err(|error| AppError::Internal(error.to_string()))?;
+    let path = source.as_ref().and_then(|s| match s {
+        CatalogSource::Git { path, .. } => path.clone().filter(|p| p != "."),
+        _ => None,
+    });
+    Ok(FlockDocument {
+        sign: format!("{}/{}", repo.sign, row.slug),
+        repo: repo.sign.clone(),
+        name: row.name.clone(),
+        description: row.description.clone(),
+        path,
+        version: row.version.clone().filter(|v| !v.is_empty()),
+        status: parse_status(&row.status),
+        visibility: row.visibility.as_deref().map(parse_visibility),
+        license: row.license.clone(),
+        source,
+        security: shared::SecuritySummary::default(),
+        metadata: serde_json::from_value::<FlockMetadata>(row.metadata.clone())
+            .map_err(|error| AppError::Internal(error.to_string()))?,
+    })
+}
+
+fn imported_skill_from_row(row: &SkillRow) -> Result<ImportedSkillRecord, AppError> {
+    Ok(ImportedSkillRecord {
+        id: Some(row.id),
+        slug: row.slug.clone(),
+        path: row.path.clone(),
+        name: row.name.clone(),
+        description: row.description.clone(),
+        version: row.version.clone(),
+        status: parse_status(&row.status),
+        license: row.license.clone(),
+        runtime: row
+            .runtime_data
+            .clone()
+            .map(serde_json::from_value::<RuntimeMetadata>)
+            .transpose()
+            .map_err(|error| AppError::Internal(error.to_string()))?,
+        security: shared::SecuritySummary::default(),
+        metadata: serde_json::from_value::<ImportedSkillMetadata>(row.metadata.clone())
+            .map_err(|error| AppError::Internal(error.to_string()))?,
+    })
+}
+
+fn owner_maintainer(auth: &AuthContext, role: &str) -> RegistryMaintainer {
+    RegistryMaintainer {
+        id: auth.user.handle.clone(),
+        name: auth
+            .user
+            .display_name
+            .clone()
+            .unwrap_or_else(|| auth.user.handle.clone()),
+        role: Some(role.to_string()),
+        email: None,
+        url: None,
+    }
+}
+
+fn visibility_to_str(visibility: RegistryVisibility) -> &'static str {
+    match visibility {
+        RegistryVisibility::Public => "public",
+        RegistryVisibility::Unlisted => "unlisted",
+        RegistryVisibility::Private => "private",
+    }
+}
+
+fn parse_visibility(value: &str) -> RegistryVisibility {
+    match value {
+        "unlisted" => RegistryVisibility::Unlisted,
+        "private" => RegistryVisibility::Private,
+        _ => RegistryVisibility::Public,
+    }
+}
+
+fn status_to_str(status: RegistryStatus) -> &'static str {
+    match status {
+        RegistryStatus::Draft => "draft",
+        RegistryStatus::Active => "active",
+        RegistryStatus::Experimental => "experimental",
+        RegistryStatus::Deprecated => "deprecated",
+        RegistryStatus::Archived => "archived",
+    }
+}
+
+fn parse_status(value: &str) -> RegistryStatus {
+    match value {
+        "draft" => RegistryStatus::Draft,
+        "experimental" => RegistryStatus::Experimental,
+        "deprecated" => RegistryStatus::Deprecated,
+        "archived" => RegistryStatus::Archived,
+        _ => RegistryStatus::Active,
+    }
+}
+
+/// Split a repo path like `"github.com/owner/name"` into `("github.com", "owner/name")`.
+fn split_repo_path(path: &str) -> (&str, &str) {
+    path.split_once('/').unwrap_or((path, ""))
+}
+
+/// Extract the path_slug portion (everything after the first `/`) from a repo path.
+fn path_slug_from_repo_path(path: &str) -> String {
+    split_repo_path(path).1.to_string()
+}
+
+/// Build a human-readable repo name from the git URL path (domain stripped).
+fn extract_repo_name(git_url: &str) -> String {
+    let (_domain, path_slug) = parse_git_url_parts(git_url);
+    if path_slug.is_empty() {
+        return "imported".to_string();
+    }
+    let name = crate::service::index_jobs::path_to_display_name(&path_slug);
+    if name.is_empty() {
+        "imported".to_string()
+    } else {
+        name
+    }
+}

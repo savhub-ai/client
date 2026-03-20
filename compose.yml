@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:18
+    container_name: savhub-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: savhub_dev
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "55432:5432"
+    volumes:
+      - ../test-space/pgsql:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d savhub_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: savhub-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/savhub_dev
+      SAVHUB_BIND: "0.0.0.0:5006"
+      SAVHUB_FRONTEND_ORIGIN: "http://localhost:5006"
+      SAVHUB_API_BASE: "http://localhost:5006/api/v1"
+      SAVHUB_REGISTRY_GIT_URL: "${SAVHUB_REGISTRY_GIT_URL:-https://github.com/savhub-ai/registry.git}"
+      SAVHUB_REGISTRY_GIT_TOKEN: "${SAVHUB_REGISTRY_GIT_TOKEN:-}"
+      SAVHUB_SPACE_PATH: "/data/space"
+      RUST_LOG: "info,savhub_backend=debug"
+    ports:
+      - "5006:5006"
+    volumes:
+      - ../test-space/space:/data/space

@@ -1,0 +1,21 @@
+[application]
+name = "savhub"
+out_dir = "dist"
+
+[web.app]
+title = "Savhub"
+
+[web.resource]
+style = []
+script = []
+
+[web.resource.dev]
+style = []
+script = []
+
+[web.watcher]
+reload_html = true
+watch_path = ["src"]
+
+[[web.proxy]]
+backend = "http://127.0.0.1:5006/api/"

@@ -1,0 +1,1 @@
+ALTER TABLE repos ADD COLUMN keywords TEXT[] NOT NULL DEFAULT '{}';

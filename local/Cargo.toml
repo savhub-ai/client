@@ -1,0 +1,20 @@
+[package]
+name = "savhub-local"
+description = "Shared logic for savhub CLI and desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+savhub-shared.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+directories.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+reqwest = { workspace = true, features = ["blocking"] }
+sha2.workspace = true
+regex.workspace = true
+walkdir.workspace = true
+zip.workspace = true

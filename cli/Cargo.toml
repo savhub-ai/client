@@ -1,0 +1,30 @@
+[package]
+name = "savhub"
+description = "CLI for the Savhub SKILL.md and SOUL.md registry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "savhub"
+path = "src/main.rs"
+
+[dependencies]
+savhub-local.workspace = true
+savhub-shared.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+clap.workspace = true
+crossterm.workspace = true
+dialoguer.workspace = true
+ratatui.workspace = true
+directories.workspace = true
+reqwest.workspace = true
+semver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+walkdir.workspace = true
+zip.workspace = true

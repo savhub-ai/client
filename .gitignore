@@ -1,0 +1,15 @@
+/target
+/web/dist
+/web/.dioxus
+*.log
+.tmp*
+space
+
+.claude
+.agents
+.savhub
+
+.env
+.env.local
+
+_*.md

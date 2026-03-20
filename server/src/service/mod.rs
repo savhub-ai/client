@@ -1,0 +1,21 @@
+pub(crate) mod helpers;
+pub mod registry_sync;
+
+pub mod admin;
+pub mod ai;
+pub mod blocks;
+pub mod browse_history;
+pub mod catalog;
+pub mod github_auth;
+pub mod index_jobs;
+pub mod index_rules;
+pub mod index_rules_admin;
+pub mod interactions;
+pub mod llm_eval;
+pub mod reports;
+pub mod repos;
+pub mod security;
+pub mod security_scan;
+pub mod site_admins;
+pub mod upgrade;
+pub mod users;

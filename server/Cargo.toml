@@ -1,0 +1,39 @@
+[package]
+name = "savhub-backend"
+description = "Backend API server for the Savhub decentralized skills registry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+ammonia.workspace = true
+base64.workspace = true
+novel-core.workspace = true
+novel-shared.workspace = true
+rust-embed.workspace = true
+chrono.workspace = true
+diesel.workspace = true
+diesel_migrations.workspace = true
+dotenvy.workspace = true
+futures-util.workspace = true
+indexmap.workspace = true
+once_cell.workspace = true
+pq-sys.workspace = true
+pulldown-cmark.workspace = true
+regex.workspace = true
+reqwest.workspace = true
+salvo.workspace = true
+semver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde-saphyr.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+walkdir.workspace = true
+savhub-shared.workspace = true
+zip.workspace = true

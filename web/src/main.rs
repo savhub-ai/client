@@ -1,0 +1,13 @@
+mod api;
+mod app;
+mod i18n;
+
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    dioxus::launch(app::App);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn main() {
+    println!("Run the frontend with `dx serve --platform web` from the frontend crate.");
+}

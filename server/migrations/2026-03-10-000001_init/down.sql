@@ -1,0 +1,17 @@
+DROP TABLE IF EXISTS user_footprints;
+DROP TABLE IF EXISTS site_admins;
+DROP TABLE IF EXISTS security_scans;
+DROP TABLE IF EXISTS index_jobs;
+DROP TABLE IF EXISTS index_rules;
+DROP TABLE IF EXISTS reports;
+DROP TABLE IF EXISTS audit_logs;
+DROP TABLE IF EXISTS skill_blocks;
+DROP TABLE IF EXISTS skill_ratings;
+DROP TABLE IF EXISTS skill_stars;
+DROP TABLE IF EXISTS skill_comments;
+DROP TABLE IF EXISTS skill_versions;
+DROP TABLE IF EXISTS skills;
+DROP TABLE IF EXISTS flocks;
+DROP TABLE IF EXISTS repos;
+DROP TABLE IF EXISTS user_tokens;
+DROP TABLE IF EXISTS users;
