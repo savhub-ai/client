@@ -41,7 +41,7 @@ savhub selector test             # Run selectors against current dir (no changes
 
 ### `savhub registry` — Registry cache
 
-The registry is a Git repository containing skill metadata. The CLI downloads it as a zip and caches locally in SQLite.
+Registry metadata is fetched live from the configured Savhub REST API.
 
 ```bash
 savhub registry sync                         # Force sync from GitHub
@@ -185,7 +185,6 @@ savhub mcp serve                 # Start MCP server
 | `projects.json` | `~/.savhub/` | Known project directories |
 | `profiles.json` | `~/.savhub/` | Preset definitions |
 | `selectors.json` | `~/.savhub/` | Selector rules |
-| `registry.db` | `~/.savhub/` | Registry SQLite cache |
 | `installed_skills.json` | `~/.savhub/` | Installed skill tracking |
 | `savhub.toml` | `<project>/` | Project presets and skills |
 | `savhub.lock` | `<project>/` | Locked skill versions |

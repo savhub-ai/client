@@ -80,15 +80,9 @@ Four default selectors are seeded on first use: Rust Service, Web Frontend, Pyth
 - **Account**: GitHub OAuth login, token management.
 - **About**: version info, update check, auto-update with download and restart.
 
-## Registry Cache
+## Registry Data
 
-The Savhub registry is a Git repo (`savhub-ai/registry`) containing JSON metadata for skills organized by repository and flock.
-
-**Performance strategy:**
-- On startup, the desktop app downloads the registry as a single zip archive (~1MB)
-- All JSON metadata is parsed in memory and stored in a local SQLite database (`~/.config/savhub/registry.db`)
-- Subsequent queries (search, list, detail) are served from SQLite — instant responses
-- The commit SHA is tracked; if the registry hasn't changed, the download is skipped
+The desktop app reads skills and flocks directly from the configured Savhub REST API. It no longer keeps a local registry Git clone or SQLite cache.
 
 **Data model** (matching the registry schema):
 - **Repo**: a git repo containing skills
@@ -162,7 +156,6 @@ The release binary is at `target/release/savhub-desktop` (or `.exe` on Windows).
 | `profiles.json` | `~/.config/savhub/` | Preset definitions |
 | `projects.json` | `~/.config/savhub/` | Known project directory list |
 | `selectors.json` | `~/.config/savhub/` | Selector definitions with rule expressions |
-| `registry.db` | `~/.config/savhub/` | Local registry SQLite cache |
 | `savhub.toml` | `<project>/` | Project config: presets, matched selectors, manual skills |
 | `savhub.lock` | `<project>/` | Locked skill versions |
 

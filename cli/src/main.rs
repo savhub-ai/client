@@ -149,7 +149,7 @@ enum Command {
         #[command(subcommand)]
         command: McpCommand,
     },
-    /// Manage the local registry cache
+    /// Manage registry access
     Registry {
         #[command(subcommand)]
         command: RegistryCommand,
@@ -218,9 +218,9 @@ struct SelectorShowArgs {
 
 #[derive(Debug, Subcommand)]
 enum RegistryCommand {
-    /// Force sync the local registry cache from GitHub
+    /// Check registry API connectivity
     Sync,
-    /// Show registry sync status
+    /// Show registry source status
     Info,
     /// Search registry skills
     Search(RegistrySearchArgs),
@@ -2548,28 +2548,24 @@ async fn cmd_registry(_opts: &GlobalOpts, command: RegistryCommand) -> Result<()
 
     match command {
         RegistryCommand::Sync => {
-            println!("Syncing registry...");
-            match registry::ensure_registry_synced()? {
-                true => {
-                    let sha = registry::cached_commit_sha()?.unwrap_or_default();
-                    println!("Done. Synced to commit {}", &sha[..8.min(sha.len())]);
-                }
-                false => println!("Already up to date."),
-            }
+            ensure_registry_cache()?;
+            println!("Registry API is available. No local cache is used.");
         }
         RegistryCommand::Info => match registry::sync_info()? {
             Some(info) => {
-                println!("Registry cache:");
+                println!("Registry source:");
                 println!("  Commit:  {}", info.commit_sha);
                 println!("  Synced:  {}", info.synced_at);
                 println!("  Skills:  {}", info.skill_count);
             }
             None => {
-                println!("Registry cache is empty. Run `savhub registry sync` first.");
+                println!(
+                    "Registry data is fetched live from the configured API. No local cache is stored."
+                );
             }
         },
         RegistryCommand::Search(args) => {
-            ensure_registry_cache().await?;
+            ensure_registry_cache()?;
             let query = args.query.join(" ");
             let results = registry::search_skills(&query, args.limit)?;
             if results.is_empty() {
@@ -2588,7 +2584,7 @@ async fn cmd_registry(_opts: &GlobalOpts, command: RegistryCommand) -> Result<()
             println!("\n{} result(s)", results.len());
         }
         RegistryCommand::List(args) => {
-            ensure_registry_cache().await?;
+            ensure_registry_cache()?;
             let page = args.page.saturating_sub(1); // user-facing 1-based
             let (skills, total) = registry::list_skills(
                 args.query.as_deref(),
@@ -2633,21 +2629,8 @@ async fn cmd_registry(_opts: &GlobalOpts, command: RegistryCommand) -> Result<()
     Ok(())
 }
 
-/// Ensure the local registry cache has been populated at least once.
-async fn ensure_registry_cache() -> Result<()> {
-    use savhub_local::registry;
-
-    match registry::ensure_registry_synced() {
-        Ok(true) => eprintln!("Registry synced."),
-        Ok(false) => {} // Already up to date
-        Err(e) => {
-            // Non-fatal: offline or git unavailable
-            if registry::cached_commit_sha()?.is_none() {
-                return Err(e);
-            }
-            eprintln!("Warning: registry sync failed ({e}), using cached data.");
-        }
-    }
+fn ensure_registry_cache() -> Result<()> {
+    let _ = savhub_local::registry::list_skills(None, None, 0, 1)?;
     Ok(())
 }
 
@@ -2772,7 +2755,7 @@ fn cmd_flock(_opts: &GlobalOpts, command: FlockCommand) -> Result<()> {
         FlockCommand::List => {
             let flocks = registry::list_flocks()?;
             if flocks.is_empty() {
-                println!("No flocks in registry cache. Run `savhub registry sync` first.");
+                println!("No flocks found.");
                 return Ok(());
             }
             for flock in &flocks {
@@ -2965,19 +2948,8 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     clean(&mut args.add_flocks);
     clean(&mut args.skip_flocks);
 
-    // Ensure registry is synced before applying
-    eprint!("Syncing registry...");
-    match registry::ensure_registry_synced() {
-        Ok(true) => eprintln!(" done."),
-        Ok(false) => eprintln!(" up to date."),
-        Err(e) => {
-            eprintln!();
-            if registry::cached_commit_sha()?.is_none() {
-                bail!("Registry not available: {e}\nRun `savhub registry sync` first.");
-            }
-            eprintln!("Warning: registry sync failed ({e}), using cached data.");
-        }
-    }
+    eprintln!("Checking registry API...");
+    ensure_registry_cache()?;
 
     let workdir = &opts.workdir;
     eprintln!("Scanning project...");
@@ -3196,7 +3168,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         if let Ok(flock_skills) = registry::list_flock_skill_slugs(flock_slug) {
             if flock_skills.is_empty() {
                 eprintln!(
-                    "  \x1b[33m!\x1b[0m flock \"{flock_slug}\" has 0 skills in cache. Try: savhub registry sync"
+                    "  \x1b[33m!\x1b[0m flock \"{flock_slug}\" has 0 skills in the registry API"
                 );
             }
             for skill in flock_skills {

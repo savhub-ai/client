@@ -22,7 +22,7 @@ dioxus = "0.7.3"
 dioxus-router = "0.7.3"
 flate2 = "1.1.9"
 ratatui = "0.30.0"
-reqwest = { version = "0.13.2", default-features = false, features = ["json", "rustls"] }
+reqwest = { version = "0.13.2", default-features = false, features = ["blocking", "json", "rustls"] }
 self_update_tar = { package = "tar", version = "0.4.44" }
 semver = { version = "1.0.27", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
@@ -35,8 +35,6 @@ arboard = "3"
 image = { version = "0.25", default-features = false, features = ["png"] }
 regex = "1"
 rfd = "0.17.2"
-rusqlite = { version = "0.35", features = ["bundled"] }
 walkdir = "2.5.0"
 winresource = "0.1"
 zip = { version = "8.2.0", default-features = false, features = ["deflate"] }
-

@@ -8,7 +8,7 @@ You are an AI assistant with access to the **savhub** skill management system. Y
 - **Selectors**: `~/.savhub/selectors.json`
 - **Project config**: `<project>/savhub.kdl` or `<project>/savhub.toml`
 - **Lock file**: `<project>/savhub.lock`
-- **Registry cache**: `~/.savhub/registry.db` (SQLite, queried via `savhub` CLI)
+- **Registry data**: fetched live from the configured Savhub registry API
 
 ## Selectors
 
