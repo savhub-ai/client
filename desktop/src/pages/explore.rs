@@ -1,13 +1,14 @@
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use dioxus::prelude::*;
-use savhub_local::registry::{CachedSkillSummary, RegistryFlock, SecuritySummary};
+use savhub_shared::{FlockSummary, SecurityStatus, SkillDetailResponse, SkillListItem};
 
-use crate::components::pagination::{self, PaginationControls};
+use crate::components::pagination::PaginationControls;
 use crate::components::view_toggle::{ViewMode, ViewToggleButton};
-use crate::i18n;
 use crate::state::AppState;
 use crate::theme::Theme;
+use crate::{api, i18n};
 
 const EXPLORE_PAGE_SIZE: usize = 24;
 const FLOCKS_PAGE_SIZE: usize = 12;
@@ -22,23 +23,44 @@ struct DisplaySkill {
     owner: Option<String>,
 }
 
-impl From<CachedSkillSummary> for DisplaySkill {
-    fn from(item: CachedSkillSummary) -> Self {
+impl From<SkillListItem> for DisplaySkill {
+    fn from(item: SkillListItem) -> Self {
         Self {
             sign: item.sign,
             slug: item.slug,
-            name: item.name,
+            name: item.display_name,
             summary: item.summary,
-            version: item.version,
-            owner: item.owner,
+            version: item.latest_version.map(|v| v.version),
+            owner: Some(item.owner.handle),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 struct DisplayFlock {
-    flock: RegistryFlock,
-    skill_slugs: Vec<String>,
+    id: String,
+    repo_sign: String,
+    slug: String,
+    name: String,
+    description: String,
+    version: Option<String>,
+    skill_count: usize,
+    security_status: SecurityStatus,
+}
+
+impl From<FlockSummary> for DisplayFlock {
+    fn from(item: FlockSummary) -> Self {
+        Self {
+            id: item.id.to_string(),
+            repo_sign: item.repo_sign,
+            slug: item.slug,
+            name: item.name,
+            description: item.description,
+            version: item.version,
+            skill_count: item.skill_count.max(0) as usize,
+            security_status: item.security_status,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,73 +70,101 @@ enum SkillFilter {
 }
 
 fn load_skills_page(
+    client: api::ApiClient,
+    workdir: PathBuf,
     query: String,
     filter: SkillFilter,
     page_index: usize,
     mut loading: Signal<bool>,
     mut error: Signal<Option<String>>,
     mut skill_list: Signal<Vec<DisplaySkill>>,
-    mut total_skills: Signal<usize>,
+    mut skills_has_next: Signal<bool>,
     mut installed_skill_total: Signal<usize>,
 ) {
     spawn(async move {
         loading.set(true);
-        let query = query.trim().to_string();
-        let result = tokio::task::spawn_blocking(move || {
-            let query_ref = if query.is_empty() {
-                None
-            } else {
-                Some(query.as_str())
-            };
-            let installed_only = matches!(filter, SkillFilter::Installed);
-            let (items, filtered_total) = savhub_local::registry::list_cached_skill_summaries(
-                query_ref,
-                Some("active"),
-                installed_only,
-                page_index,
-                EXPLORE_PAGE_SIZE,
-            )
-            .map_err(|e| e.to_string())?;
-            let total =
-                savhub_local::registry::count_cached_skills(query_ref, Some("active"), false)
-                    .map_err(|e| e.to_string())?;
-            let installed_total =
-                savhub_local::registry::count_cached_skills(query_ref, Some("active"), true)
-                    .map_err(|e| e.to_string())?;
-            Ok::<_, String>((
-                items
-                    .into_iter()
-                    .map(DisplaySkill::from)
-                    .collect::<Vec<_>>(),
-                filtered_total,
-                total,
-                installed_total,
-            ))
+        error.set(None);
+
+        let installed_versions = tokio::task::spawn_blocking(move || {
+            crate::skills::read_installed_skill_versions(&workdir)
         })
-        .await;
+        .await
+        .unwrap_or_default();
+        installed_skill_total.set(installed_versions.len());
+
+        let result: Result<(Vec<DisplaySkill>, bool), String> = match filter {
+            SkillFilter::All => {
+                match api::fetch_remote_skill_page(
+                    &client,
+                    Some(query.trim()),
+                    EXPLORE_PAGE_SIZE,
+                    page_index,
+                )
+                .await
+                {
+                    Ok((items, has_next)) => Ok((
+                        items.into_iter().map(DisplaySkill::from).collect(),
+                        has_next,
+                    )),
+                    Err(err) => Err(err),
+                }
+            }
+            SkillFilter::Installed => {
+                let mut installed_items = Vec::new();
+                let mut installed_slugs: Vec<String> = installed_versions.into_keys().collect();
+                installed_slugs.sort_unstable();
+
+                for slug in installed_slugs {
+                    match client
+                        .get_json::<SkillDetailResponse>(&format!("/skills/{slug}"))
+                        .await
+                    {
+                        Ok(resp) => installed_items.push(DisplaySkill::from(resp.skill)),
+                        Err(err) => eprintln!("failed to load installed skill '{slug}': {err}"),
+                    }
+                }
+
+                let needle = query.trim().to_lowercase();
+                if !needle.is_empty() {
+                    installed_items.retain(|item| {
+                        item.slug.to_lowercase().contains(&needle)
+                            || item.name.to_lowercase().contains(&needle)
+                            || item
+                                .summary
+                                .as_deref()
+                                .unwrap_or_default()
+                                .to_lowercase()
+                                .contains(&needle)
+                            || item
+                                .owner
+                                .as_deref()
+                                .unwrap_or_default()
+                                .to_lowercase()
+                                .contains(&needle)
+                    });
+                }
+
+                let start = page_index.saturating_mul(EXPLORE_PAGE_SIZE);
+                let total_filtered = installed_items.len();
+                let page_items = installed_items
+                    .into_iter()
+                    .skip(start)
+                    .take(EXPLORE_PAGE_SIZE)
+                    .collect::<Vec<_>>();
+                let has_next = start + page_items.len() < total_filtered;
+                Ok((page_items, has_next))
+            }
+        };
 
         match result {
-            Ok(Ok((items, filtered_total, total, installed_total))) => {
+            Ok((items, has_next)) => {
                 skill_list.set(items);
-                total_skills.set(if matches!(filter, SkillFilter::Installed) {
-                    filtered_total
-                } else {
-                    total
-                });
-                installed_skill_total.set(installed_total);
-                error.set(None);
+                skills_has_next.set(has_next);
             }
-            Ok(Err(e)) => {
+            Err(err) => {
                 skill_list.set(Vec::new());
-                total_skills.set(0);
-                installed_skill_total.set(0);
-                error.set(Some(e.to_string()));
-            }
-            Err(e) => {
-                skill_list.set(Vec::new());
-                total_skills.set(0);
-                installed_skill_total.set(0);
-                error.set(Some(e.to_string()));
+                skills_has_next.set(false);
+                error.set(Some(err));
             }
         }
         loading.set(false);
@@ -122,6 +172,7 @@ fn load_skills_page(
 }
 
 fn load_flocks_page(
+    client: api::ApiClient,
     query: String,
     page_index: usize,
     append: bool,
@@ -129,52 +180,40 @@ fn load_flocks_page(
     mut loading: Signal<bool>,
     mut loaded: Signal<bool>,
     mut error: Signal<Option<String>>,
-    mut total_flocks: Signal<usize>,
+    mut flocks_has_next: Signal<bool>,
 ) {
     spawn(async move {
         loading.set(true);
         loaded.set(false);
-        let query = query.trim().to_string();
-        let result = tokio::task::spawn_blocking(move || {
-            let query_ref = if query.is_empty() {
-                None
-            } else {
-                Some(query.as_str())
-            };
-            let (flocks, total) =
-                savhub_local::registry::list_flocks_page(query_ref, page_index, FLOCKS_PAGE_SIZE)
-                    .map_err(|e| e.to_string())?;
-            let mut items = Vec::with_capacity(flocks.len());
-            for flock in flocks {
-                let skill_slugs =
-                    savhub_local::registry::list_flock_skill_slugs(&flock.slug).unwrap_or_default();
-                items.push(DisplayFlock { flock, skill_slugs });
-            }
-            Ok::<_, String>((items, total))
-        })
-        .await;
+        error.set(None);
 
-        match result {
-            Ok(Ok((items, total))) => {
+        match api::fetch_remote_flock_page(
+            &client,
+            Some(query.trim()),
+            FLOCKS_PAGE_SIZE,
+            page_index,
+        )
+        .await
+        {
+            Ok((items, has_next)) => {
+                let items = items
+                    .into_iter()
+                    .map(DisplayFlock::from)
+                    .collect::<Vec<_>>();
                 if append {
                     flocks_data.with_mut(|existing| existing.extend(items));
                 } else {
                     flocks_data.set(items);
                 }
-                total_flocks.set(total);
-                error.set(None);
+                flocks_has_next.set(has_next);
             }
-            Ok(Err(e)) => {
+            Err(err) => {
                 flocks_data.set(Vec::new());
-                total_flocks.set(0);
-                error.set(Some(e.to_string()));
-            }
-            Err(e) => {
-                flocks_data.set(Vec::new());
-                total_flocks.set(0);
-                error.set(Some(e.to_string()));
+                flocks_has_next.set(false);
+                error.set(Some(err));
             }
         }
+
         loading.set(false);
         loaded.set(true);
     });
@@ -187,7 +226,6 @@ pub fn ExplorePage() -> Element {
     let mut query = use_signal(String::new);
     let mut applied_query = use_signal(String::new);
     let skill_list: Signal<Vec<DisplaySkill>> = use_signal(Vec::new);
-    let total_skills = use_signal(|| 0usize);
     let installed_skill_total = use_signal(|| 0usize);
     let mut installed_versions: Signal<BTreeMap<String, String>> = use_signal(BTreeMap::new);
     let mut active_filter = use_signal(|| SkillFilter::All);
@@ -196,24 +234,22 @@ pub fn ExplorePage() -> Element {
     let mut flocks_page = use_signal(|| 0usize);
     let skills_loading = use_signal(|| false);
     let skills_error = use_signal(|| Option::<String>::None);
+    let skills_has_next = use_signal(|| false);
     let flocks_loading = use_signal(|| false);
     let flocks_error = use_signal(|| Option::<String>::None);
     let flocks_loaded = use_signal(|| false);
+    let flocks_has_next = use_signal(|| false);
     let mut grouped = use_signal(|| true);
     let flocks_data: Signal<Vec<DisplayFlock>> = use_signal(Vec::new);
-    let total_flocks = use_signal(|| 0usize);
     let mut reload_version = use_signal(|| 0u32);
     let mut flocks_version = use_signal(|| 0u32);
 
     use_effect(move || {
         let _ = *state.config_version.read();
+        let workdir = state.workdir.read().clone();
         spawn(async move {
-            let installed = tokio::task::spawn_blocking(|| {
-                savhub_local::registry::read_installed_skills_file()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|e| (e.slug, "installed".to_string()))
-                    .collect::<BTreeMap<String, String>>()
+            let installed = tokio::task::spawn_blocking(move || {
+                crate::skills::read_installed_skill_versions(&workdir)
             })
             .await
             .unwrap_or_default();
@@ -227,14 +263,19 @@ pub fn ExplorePage() -> Element {
         let page = *current_page.read();
         let _ = *reload_version.read();
         let _ = *state.config_version.read();
+        if *grouped.read() {
+            return;
+        }
         load_skills_page(
+            state.api_client(),
+            state.workdir.read().clone(),
             query,
             filter,
             page,
             skills_loading,
             skills_error,
             skill_list,
-            total_skills,
+            skills_has_next,
             installed_skill_total,
         );
     });
@@ -247,6 +288,7 @@ pub fn ExplorePage() -> Element {
         let _ = *state.config_version.read();
         if *grouped.read() {
             load_flocks_page(
+                state.api_client(),
                 query,
                 page,
                 page > 0,
@@ -254,7 +296,7 @@ pub fn ExplorePage() -> Element {
                 flocks_loading,
                 flocks_loaded,
                 flocks_error,
-                total_flocks,
+                flocks_has_next,
             );
         }
     });
@@ -282,6 +324,7 @@ pub fn ExplorePage() -> Element {
     let installed_label = t.installed;
     let loading_text = t.loading;
     let no_found = t.no_skills_found;
+    let no_flocks_found = t.no_flocks_found;
     let flock_skills_label = t.flock_skills_count;
     let is_grouped = *grouped.read();
 
@@ -290,20 +333,16 @@ pub fn ExplorePage() -> Element {
     let current_filter = *active_filter.read();
     let current_view = *active_view.read();
     let visible_skills = skill_list.read().clone();
-    let skill_total = *total_skills.read();
-    let current_page_index =
-        pagination::clamp_page(*current_page.read(), skill_total, EXPLORE_PAGE_SIZE);
-    let total_pages = pagination::total_pages(skill_total, EXPLORE_PAGE_SIZE);
-    let flock_total = *total_flocks.read();
-    let current_flocks_page =
-        pagination::clamp_page(*flocks_page.read(), flock_total, FLOCKS_PAGE_SIZE);
-    let has_more_flocks = filtered_flocks.len() < flock_total;
+    let current_page_index = *current_page.read();
+    let current_flocks_page = *flocks_page.read();
+    let has_more_flocks = *flocks_has_next.read();
+    let has_more_skills = *skills_has_next.read();
     let filter_items = [
-        (SkillFilter::All, all_label, *total_skills.read()),
+        (SkillFilter::All, all_label, Option::<usize>::None),
         (
             SkillFilter::Installed,
             installed_label,
-            *installed_skill_total.read(),
+            Some(*installed_skill_total.read()),
         ),
     ];
 
@@ -385,7 +424,9 @@ pub fn ExplorePage() -> Element {
                                         active_filter.set(filter);
                                     },
                                     span { "{label}" }
-                                    span { style: "font-size: 10px; opacity: 0.8;", "{count}" }
+                                    if let Some(count) = count {
+                                        span { style: "font-size: 10px; opacity: 0.8;", "{count}" }
+                                    }
                                 }
                             }
                         }
@@ -436,7 +477,6 @@ pub fn ExplorePage() -> Element {
                             FlockListRow {
                                 flock: flock.clone(),
                                 flock_skills_label: flock_skills_label,
-                                installed_versions: installed_versions,
                             }
                         }
                     }
@@ -446,7 +486,6 @@ pub fn ExplorePage() -> Element {
                             FlockCard {
                                 flock: flock.clone(),
                                 flock_skills_label: flock_skills_label,
-                                installed_versions: installed_versions,
                             }
                         }
                     }
@@ -454,7 +493,7 @@ pub fn ExplorePage() -> Element {
                 if filtered_flocks.is_empty() && !*flocks_loading.read() {
                     if *flocks_loaded.read() && flocks_error.read().is_none() {
                         p { style: "color: {Theme::MUTED}; text-align: center; padding: 40px 0;",
-                            "{no_found}"
+                            "{no_flocks_found}"
                         }
                     }
                 }
@@ -488,15 +527,13 @@ pub fn ExplorePage() -> Element {
                     }
                 }
 
-                if skill_total > 0 {
-                    PaginationControls {
-                        current_page: current_page_index,
-                        total_pages: Some(total_pages),
-                        has_prev: current_page_index > 0,
-                        has_next: current_page_index + 1 < total_pages,
-                        on_prev: move |_| current_page.set(current_page_index.saturating_sub(1)),
-                        on_next: move |_| current_page.set(current_page_index + 1),
-                    }
+                PaginationControls {
+                    current_page: current_page_index,
+                    total_pages: None,
+                    has_prev: current_page_index > 0,
+                    has_next: has_more_skills,
+                    on_prev: move |_| current_page.set(current_page_index.saturating_sub(1)),
+                    on_next: move |_| current_page.set(current_page_index + 1),
                 }
 
                 if !*skills_loading.read() && visible_skills.is_empty() && skills_error.read().is_none() {
@@ -519,55 +556,51 @@ fn SkillListRow(
     let t = i18n::texts(*state.lang.read());
     let mut working = use_signal(|| false);
     let mut action_error = use_signal(|| Option::<String>::None);
-    let sign = skill.sign.clone();
     let slug = skill.slug.clone();
     let is_installed = installed_versions.read().contains_key(&skill.slug);
 
     let do_action = move |e: Event<MouseData>| {
         e.stop_propagation();
-        let sign = sign.clone();
         let slug = slug.clone();
         let uninstall = is_installed;
+        let client = state.api_client();
+        let workdir = state.workdir.read().clone();
         spawn(async move {
             working.set(true);
             action_error.set(None);
-            let result = {
-                let sign = sign.clone();
+            let result = if uninstall {
+                let workdir = workdir.clone();
                 let slug = slug.clone();
-                tokio::task::spawn_blocking(move || {
-                    if uninstall {
-                        savhub_local::registry::uninstall_skill_from_registry(&slug).map(|_| ())
-                    } else {
-                        savhub_local::registry::install_skill_from_registry(&sign).map(|_| ())
-                    }
-                })
-                .await
-                .map_err(|e| e.to_string())
-                .and_then(|r| r.map_err(|e| e.to_string()))
+                tokio::task::spawn_blocking(move || crate::skills::uninstall_skill(&workdir, &slug))
+                    .await
+                    .map_err(|e| e.to_string())
+                    .and_then(|r| r.map(|_| String::new()))
+            } else {
+                api::install_remote_skill(&client, &workdir, &slug).await
             };
             match result {
-                Ok(()) => {
+                Ok(version) => {
                     installed_versions.with_mut(|entries| {
                         if uninstall {
                             entries.remove(&slug);
                         } else {
-                            entries.insert(slug.clone(), "installed".to_string());
+                            entries.insert(slug.clone(), version);
                         }
                     });
                     if !uninstall {
-                        let track_sign = sign.clone();
+                        let track_slug = slug.clone();
                         let track_client = state.api_client();
                         tokio::spawn(async move {
                             let _ = track_client
                                 .post_json::<serde_json::Value, serde_json::Value>(
-                                    &format!("/collect?skill={track_sign}"),
+                                    &format!("/collect?skill={track_slug}"),
                                     &serde_json::json!({ "client_type": "desktop" }),
                                 )
                                 .await;
                         });
                     }
                 }
-                Err(e) => action_error.set(Some(e.to_string())),
+                Err(err) => action_error.set(Some(err)),
             }
             working.set(false);
         });
@@ -639,55 +672,51 @@ fn SkillCard(
     let t = i18n::texts(*state.lang.read());
     let mut working = use_signal(|| false);
     let mut action_error = use_signal(|| Option::<String>::None);
-    let sign = skill.sign.clone();
     let slug = skill.slug.clone();
     let is_installed = installed_versions.read().contains_key(&skill.slug);
 
     let do_action = move |e: Event<MouseData>| {
         e.stop_propagation();
-        let sign = sign.clone();
         let slug = slug.clone();
         let uninstall = is_installed;
+        let client = state.api_client();
+        let workdir = state.workdir.read().clone();
         spawn(async move {
             working.set(true);
             action_error.set(None);
-            let result = {
-                let s = sign.clone();
+            let result = if uninstall {
+                let workdir = workdir.clone();
                 let slug = slug.clone();
-                tokio::task::spawn_blocking(move || {
-                    if uninstall {
-                        savhub_local::registry::uninstall_skill_from_registry(&slug).map(|_| ())
-                    } else {
-                        savhub_local::registry::install_skill_from_registry(&s).map(|_| ())
-                    }
-                })
-                .await
-                .map_err(|e| e.to_string())
-                .and_then(|r| r.map_err(|e| e.to_string()))
+                tokio::task::spawn_blocking(move || crate::skills::uninstall_skill(&workdir, &slug))
+                    .await
+                    .map_err(|e| e.to_string())
+                    .and_then(|r| r.map(|_| String::new()))
+            } else {
+                api::install_remote_skill(&client, &workdir, &slug).await
             };
             match result {
-                Ok(()) => {
+                Ok(version) => {
                     installed_versions.with_mut(|entries| {
                         if uninstall {
                             entries.remove(&slug);
                         } else {
-                            entries.insert(slug.clone(), "installed".to_string());
+                            entries.insert(slug.clone(), version);
                         }
                     });
                     if !uninstall {
-                        let track_sign = sign.clone();
+                        let track_slug = slug.clone();
                         let track_client = state.api_client();
                         tokio::spawn(async move {
                             let _ = track_client
                                 .post_json::<serde_json::Value, serde_json::Value>(
-                                    &format!("/collect?skill={track_sign}"),
+                                    &format!("/collect?skill={track_slug}"),
                                     &serde_json::json!({ "client_type": "desktop" }),
                                 )
                                 .await;
                         });
                     }
                 }
-                Err(e) => action_error.set(Some(e.to_string())),
+                Err(err) => action_error.set(Some(err)),
             }
             working.set(false);
         });
@@ -749,81 +778,11 @@ fn SkillCard(
 }
 
 #[component]
-fn FlockListRow(
-    flock: DisplayFlock,
-    flock_skills_label: &'static str,
-    mut installed_versions: Signal<BTreeMap<String, String>>,
-) -> Element {
-    let state = use_context::<AppState>();
-    let t = i18n::texts(*state.lang.read());
-    let mut working = use_signal(|| false);
-    let mut action_error = use_signal(|| Option::<String>::None);
-    let flock_info = flock.flock.clone();
-    let skill_slugs = flock.skill_slugs.clone();
-    let skill_count = skill_slugs.len();
-    let all_installed = skill_count > 0 && {
-        let map = installed_versions.read();
-        skill_slugs.iter().all(|s| map.contains_key(s))
-    };
-    let version_display = flock_info.version.as_deref().unwrap_or("\u{2014}");
-    let slug_display = if flock_info.repo.is_empty() {
-        flock_info.slug.clone()
-    } else {
-        format!("{}/{}", flock_info.repo, flock_info.slug)
-    };
-
-    let do_action = move |e: Event<MouseData>| {
-        e.stop_propagation();
-        let slugs = skill_slugs.clone();
-        let uninstall = all_installed;
-        spawn(async move {
-            working.set(true);
-            action_error.set(None);
-            for slug in &slugs {
-                let s = slug.clone();
-                let result = tokio::task::spawn_blocking(move || {
-                    if uninstall {
-                        savhub_local::registry::uninstall_skill_from_registry(&s).map(|_| ())
-                    } else {
-                        let sign = savhub_local::registry::get_skill_db_info(&s)
-                            .map(|(repo_id, path)| format!("{repo_id}/{path}"))
-                            .unwrap_or(s.clone());
-                        savhub_local::registry::install_skill_from_registry(&sign).map(|_| ())
-                    }
-                })
-                .await
-                .map_err(|e| e.to_string())
-                .and_then(|r| r.map_err(|e| e.to_string()));
-                if let Err(e) = result {
-                    action_error.set(Some(e.to_string()));
-                    break;
-                }
-                installed_versions.with_mut(|map| {
-                    if uninstall {
-                        map.remove(slug);
-                    } else {
-                        map.insert(slug.clone(), "installed".to_string());
-                    }
-                });
-                if !uninstall {
-                    let track_slug = slug.clone();
-                    let track_client = state.api_client();
-                    tokio::spawn(async move {
-                        let _ = track_client
-                            .post_json::<serde_json::Value, serde_json::Value>(
-                                &format!("/collect?skill={track_slug}"),
-                                &serde_json::json!({ "client_type": "desktop" }),
-                            )
-                            .await;
-                    });
-                }
-            }
-            working.set(false);
-        });
-    };
-
+fn FlockListRow(flock: DisplayFlock, flock_skills_label: &'static str) -> Element {
+    let version_display = flock.version.as_deref().unwrap_or("\u{2014}");
+    let slug_display = format!("{}/{}", flock.repo_sign, flock.slug);
     let nav = use_navigator();
-    let nav_slug = flock_info.slug.clone();
+    let nav_slug = flock.id.clone();
 
     rsx! {
         div { style: "background: {Theme::PANEL}; border: 1px solid {Theme::LINE}; border-radius: 10px; padding: 14px 16px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; cursor: pointer;",
@@ -831,9 +790,9 @@ fn FlockListRow(
             div { style: "min-width: 0; flex: 1;",
                 div { style: "display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px;",
                     h3 { style: "font-size: 15px; font-weight: 600; color: {Theme::TEXT};",
-                        "{flock_info.name}"
+                        "{flock.name}"
                     }
-                    SecurityBadge { security: flock_info.security.clone() }
+                    SecurityBadge { status: flock.security_status }
                     span { style: "font-size: 12px; padding: 2px 8px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border-radius: 999px; white-space: nowrap;",
                         "v{version_display}"
                     }
@@ -841,36 +800,15 @@ fn FlockListRow(
                 div { style: "margin-bottom: 6px;",
                     crate::components::copy_sign::CopySign { value: slug_display.clone() }
                 }
-                if !flock_info.description.is_empty() {
+                if !flock.description.is_empty() {
                     p { style: "font-size: 13px; color: {Theme::MUTED}; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;",
-                        "{flock_info.description}"
+                        "{flock.description}"
                     }
                 }
             }
             div { style: "display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0;",
                 span { style: "font-size: 12px; color: {Theme::MUTED}; white-space: nowrap;",
-                    "{skill_count} {flock_skills_label}"
-                }
-                if *working.read() {
-                    span { style: "display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: {Theme::ACCENT}; font-weight: 600;",
-                        span { style: "display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(90, 158, 63, 0.3); border-top-color: {Theme::ACCENT}; border-radius: 50%; animation: spin 0.8s linear infinite;" }
-                        "{t.installing}"
-                    }
-                } else if all_installed {
-                    button {
-                        style: "padding: 5px 12px; font-size: 12px; background: rgba(139, 30, 30, 0.08); color: {Theme::DANGER}; border: 1px solid rgba(139, 30, 30, 0.2); border-radius: 999px; cursor: pointer; font-weight: 600; white-space: nowrap;",
-                        onclick: do_action,
-                        "{t.uninstall}"
-                    }
-                } else {
-                    button {
-                        style: "padding: 5px 12px; font-size: 12px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border: none; border-radius: 999px; cursor: pointer; font-weight: 600; white-space: nowrap;",
-                        onclick: do_action,
-                        "{t.install}"
-                    }
-                }
-                if let Some(err) = action_error.read().as_ref() {
-                    p { style: "font-size: 11px; color: {Theme::DANGER}; max-width: 220px; text-align: right;", "{err}" }
+                    "{flock.skill_count} {flock_skills_label}"
                 }
             }
         }
@@ -878,81 +816,11 @@ fn FlockListRow(
 }
 
 #[component]
-fn FlockCard(
-    flock: DisplayFlock,
-    flock_skills_label: &'static str,
-    mut installed_versions: Signal<BTreeMap<String, String>>,
-) -> Element {
-    let state = use_context::<AppState>();
-    let t = i18n::texts(*state.lang.read());
-    let mut working = use_signal(|| false);
-    let mut action_error = use_signal(|| Option::<String>::None);
-    let flock_info = flock.flock.clone();
-    let skill_slugs = flock.skill_slugs.clone();
-    let skill_count = skill_slugs.len();
-    let all_installed = skill_count > 0 && {
-        let map = installed_versions.read();
-        skill_slugs.iter().all(|s| map.contains_key(s))
-    };
-    let version_display = flock_info.version.as_deref().unwrap_or("\u{2014}");
-    let slug_display = if flock_info.repo.is_empty() {
-        flock_info.slug.clone()
-    } else {
-        format!("{}/{}", flock_info.repo, flock_info.slug)
-    };
-
-    let do_action = move |e: Event<MouseData>| {
-        e.stop_propagation();
-        let slugs = skill_slugs.clone();
-        let uninstall = all_installed;
-        spawn(async move {
-            working.set(true);
-            action_error.set(None);
-            for slug in &slugs {
-                let s = slug.clone();
-                let result = tokio::task::spawn_blocking(move || {
-                    if uninstall {
-                        savhub_local::registry::uninstall_skill_from_registry(&s).map(|_| ())
-                    } else {
-                        let sign = savhub_local::registry::get_skill_db_info(&s)
-                            .map(|(repo_id, path)| format!("{repo_id}/{path}"))
-                            .unwrap_or(s.clone());
-                        savhub_local::registry::install_skill_from_registry(&sign).map(|_| ())
-                    }
-                })
-                .await
-                .map_err(|e| e.to_string())
-                .and_then(|r| r.map_err(|e| e.to_string()));
-                if let Err(e) = result {
-                    action_error.set(Some(e.to_string()));
-                    break;
-                }
-                installed_versions.with_mut(|map| {
-                    if uninstall {
-                        map.remove(slug);
-                    } else {
-                        map.insert(slug.clone(), "installed".to_string());
-                    }
-                });
-                if !uninstall {
-                    let track_slug = slug.clone();
-                    let track_client = state.api_client();
-                    tokio::spawn(async move {
-                        let _ = track_client
-                            .post_json::<serde_json::Value, serde_json::Value>(
-                                &format!("/collect?skill={track_slug}"),
-                                &serde_json::json!({ "client_type": "desktop" }),
-                            )
-                            .await;
-                    });
-                }
-            }
-            working.set(false);
-        });
-    };
-
+fn FlockCard(flock: DisplayFlock, flock_skills_label: &'static str) -> Element {
+    let version_display = flock.version.as_deref().unwrap_or("\u{2014}");
+    let slug_display = format!("{}/{}", flock.repo_sign, flock.slug);
     let nav = use_navigator();
-    let nav_slug = flock_info.slug.clone();
+    let nav_slug = flock.id.clone();
 
     rsx! {
         div { style: "background: {Theme::PANEL}; border: 1px solid {Theme::LINE}; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 8px; cursor: pointer; transition: box-shadow 0.15s;",
@@ -961,9 +829,9 @@ fn FlockCard(
                 div {
                     div { style: "display: flex; align-items: center; gap: 6px; margin-bottom: 2px;",
                         h3 { style: "font-size: 15px; font-weight: 600; color: {Theme::TEXT};",
-                            "{flock_info.name}"
+                            "{flock.name}"
                         }
-                        SecurityBadge { security: flock_info.security.clone() }
+                        SecurityBadge { status: flock.security_status }
                     }
                     p { style: "font-size: 12px; color: {Theme::MUTED};",
                         "{slug_display}"
@@ -973,59 +841,30 @@ fn FlockCard(
                     "v{version_display}"
                 }
             }
-            if !flock_info.description.is_empty() {
+            if !flock.description.is_empty() {
                 p { style: "font-size: 13px; color: {Theme::MUTED}; flex: 1; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;",
-                    "{flock_info.description}"
+                    "{flock.description}"
                 }
             }
             div { style: "display: flex; justify-content: space-between; align-items: center; margin-top: 4px;",
                 span { style: "font-size: 12px; color: {Theme::MUTED};",
-                    "{skill_count} {flock_skills_label}"
+                    "{flock.skill_count} {flock_skills_label}"
                 }
-                if *working.read() {
-                    span { style: "display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: {Theme::ACCENT}; font-weight: 600;",
-                        span { style: "display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(90, 158, 63, 0.3); border-top-color: {Theme::ACCENT}; border-radius: 50%; animation: spin 0.8s linear infinite;" }
-                        "{t.installing}"
-                    }
-                } else if all_installed {
-                    button {
-                        style: "padding: 4px 12px; font-size: 12px; background: rgba(139, 30, 30, 0.08); color: {Theme::DANGER}; border: 1px solid rgba(139, 30, 30, 0.2); border-radius: 4px; cursor: pointer; font-weight: 500;",
-                        onclick: do_action,
-                        "{t.uninstall}"
-                    }
-                } else {
-                    button {
-                        style: "padding: 4px 12px; font-size: 12px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;",
-                        onclick: do_action,
-                        "{t.install}"
-                    }
-                }
-            }
-            if let Some(err) = action_error.read().as_ref() {
-                p { style: "font-size: 11px; color: {Theme::DANGER};", "{err}" }
             }
         }
     }
 }
 
 #[component]
-fn SecurityBadge(security: SecuritySummary) -> Element {
+fn SecurityBadge(status: SecurityStatus) -> Element {
     let state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
-    let status = security.status.as_deref().unwrap_or("unverified");
-    let value_bg = match status {
-        "verified" => "#2e8b57",
-        "scanning" => "#1e82d2",
-        "flagged" => "#b8860b",
-        "rejected" => "#9f2b2b",
-        _ => "#999",
-    };
-    let value_label = match status {
-        "verified" => t.security_verified,
-        "scanning" => t.security_scanning,
-        "flagged" => t.security_flagged,
-        "rejected" => t.security_rejected,
-        _ => t.security_unverified,
+    let (value_bg, value_label) = match status {
+        SecurityStatus::Verified => ("#2e8b57", t.security_verified),
+        SecurityStatus::Scanning => ("#1e82d2", t.security_scanning),
+        SecurityStatus::Flagged => ("#b8860b", t.security_flagged),
+        SecurityStatus::Rejected => ("#9f2b2b", t.security_rejected),
+        SecurityStatus::Unverified => ("#999", t.security_unverified),
     };
     rsx! {
         span { style: "display: inline-flex; align-items: center; font-size: 11px; line-height: 1; border-radius: 3px; overflow: hidden; vertical-align: middle; white-space: nowrap; position: relative; top: -1px;",

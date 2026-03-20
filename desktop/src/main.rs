@@ -224,52 +224,6 @@ fn Shell() -> Element {
             let result = compat_client.check_api_compatibility().await;
             state.registry_compat.set(result);
         });
-
-        // Registry sync strategy:
-        // 1. Always render from SQLite immediately.
-        // 2. If the cache is empty, sync now in the background and refresh pages after it lands.
-        // 3. If the cache already has data, only sync when the remote head differs from the synced
-        //    commit recorded in SQLite, and do not force-refresh current pages.
-        spawn(async move {
-            let db_has_data = tokio::task::spawn_blocking(|| {
-                savhub_local::registry::skill_count().unwrap_or(0) > 0
-            })
-            .await
-            .unwrap_or(false);
-
-            let needs_sync = if db_has_data {
-                tokio::task::spawn_blocking(|| {
-                    savhub_local::registry::registry_has_remote_updates().unwrap_or(false)
-                })
-                .await
-                .unwrap_or(false)
-            } else {
-                true
-            };
-
-            if !needs_sync {
-                return;
-            }
-
-            state.registry_syncing.set(true);
-            let sync_task =
-                tokio::task::spawn_blocking(|| savhub_local::registry::ensure_registry_synced());
-            let sync_result = sync_task.await;
-            state.registry_syncing.set(false);
-            match sync_result {
-                Ok(Ok(performed)) => {
-                    if !db_has_data && performed {
-                        state.config_version.with_mut(|v| *v += 1);
-                    }
-                }
-                Ok(Err(err)) => {
-                    eprintln!("background registry sync failed: {err}");
-                }
-                Err(err) => {
-                    eprintln!("background registry sync task failed: {err}");
-                }
-            }
-        });
     });
 
     use_effect(move || {
@@ -309,7 +263,6 @@ fn Shell() -> Element {
             div { style: "flex: 1; display: flex; flex-direction: column; overflow: hidden;",
                 CompatBanner {}
                 UpdateBanner { status: update_status }
-                RegistrySyncBanner {}
                 ConfigChangedBanner {}
                 div { style: "flex: 1; overflow-y: auto;",
                     Outlet::<Route> {}
@@ -426,24 +379,6 @@ fn CompatBanner() -> Element {
             }
         }
         _ => rsx! {},
-    }
-}
-
-/// Thin banner shown while the registry is syncing in the background.
-#[component]
-fn RegistrySyncBanner() -> Element {
-    let state = use_context::<AppState>();
-    let syncing = *state.registry_syncing.read();
-
-    if !syncing {
-        return rsx! {};
-    }
-
-    rsx! {
-        div { style: "display: flex; align-items: center; gap: 10px; padding: 6px 20px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; font-size: 13px;",
-            span { style: "display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite;" }
-            span { "Syncing registry..." }
-        }
     }
 }
 

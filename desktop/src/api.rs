@@ -1,6 +1,10 @@
+use std::path::Path;
+
 use reqwest::{Client, Method, Response, Url};
 use savhub_local::registry::{DataSource, SkillEntry};
-use savhub_shared::{PagedResponse, SkillListItem};
+use savhub_shared::{
+    FlockDetailResponse, FlockSummary, PagedResponse, ResolveResponse, SkillListItem,
+};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -54,6 +58,10 @@ impl ApiClient {
 
     pub async fn get_json<T: DeserializeOwned>(&self, path: &str) -> Result<T, String> {
         let url = self.v1_url(path)?;
+        self.request_json::<(), T>(Method::GET, url, None).await
+    }
+
+    pub async fn get_json_url<T: DeserializeOwned>(&self, url: Url) -> Result<T, String> {
         self.request_json::<(), T>(Method::GET, url, None).await
     }
 
@@ -251,6 +259,89 @@ pub async fn fetch_remote_skills(
         .await?;
     let entries = resp.items.iter().map(skill_list_item_to_entry).collect();
     Ok((entries, resp.next_cursor))
+}
+
+pub async fn fetch_remote_skill_page(
+    client: &ApiClient,
+    query: Option<&str>,
+    limit: usize,
+    page_index: usize,
+) -> Result<(Vec<SkillListItem>, bool), String> {
+    let mut url = client.v1_url("/skills")?;
+    url.query_pairs_mut()
+        .append_pair("limit", &limit.to_string())
+        .append_pair("sort", "updated")
+        .append_pair("cursor", &(page_index.saturating_mul(limit)).to_string());
+    if let Some(q) = query.filter(|q| !q.trim().is_empty()) {
+        url.query_pairs_mut().append_pair("q", q.trim());
+    }
+    let resp = client
+        .get_json_url::<PagedResponse<SkillListItem>>(url)
+        .await?;
+    Ok((resp.items, resp.next_cursor.is_some()))
+}
+
+pub async fn fetch_remote_flock_page(
+    client: &ApiClient,
+    query: Option<&str>,
+    limit: usize,
+    page_index: usize,
+) -> Result<(Vec<FlockSummary>, bool), String> {
+    let mut url = client.v1_url("/flocks")?;
+    url.query_pairs_mut()
+        .append_pair("limit", &limit.to_string())
+        .append_pair("sort", "updated")
+        .append_pair("cursor", &(page_index.saturating_mul(limit)).to_string());
+    if let Some(q) = query.filter(|q| !q.trim().is_empty()) {
+        url.query_pairs_mut().append_pair("q", q.trim());
+    }
+    let resp = client
+        .get_json_url::<PagedResponse<FlockSummary>>(url)
+        .await?;
+    Ok((resp.items, resp.next_cursor.is_some()))
+}
+
+pub async fn fetch_remote_flock_detail(
+    client: &ApiClient,
+    id: &str,
+) -> Result<FlockDetailResponse, String> {
+    client
+        .get_json::<FlockDetailResponse>(&format!("/flocks/{id}"))
+        .await
+}
+
+pub async fn install_remote_skill(
+    client: &ApiClient,
+    workdir: &Path,
+    slug: &str,
+) -> Result<String, String> {
+    let resolved = client
+        .get_json::<ResolveResponse>(&format!("/skills/{slug}/resolve?tag=latest"))
+        .await?;
+    let version = resolved
+        .matched
+        .or(resolved.latest_version)
+        .map(|v| v.version)
+        .ok_or_else(|| "no version available".to_string())?;
+    let bytes = client
+        .get_bytes(&format!("/skills/{slug}/versions/{version}/download"))
+        .await?;
+    let skill_dir = workdir.join(slug);
+    crate::skills::extract_zip(&bytes, &skill_dir)?;
+    crate::skills::update_lockfile(workdir, slug, &version);
+    Ok(version)
+}
+
+pub async fn fetch_remote_flock_slug_suggestions(
+    client: &ApiClient,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<String>, String> {
+    let (items, _) = fetch_remote_flock_page(client, Some(query), limit, 0).await?;
+    Ok(items
+        .into_iter()
+        .map(|item| format!("{}/{}", item.repo_sign, item.slug))
+        .collect())
 }
 
 async fn parse_error(response: Response) -> String {

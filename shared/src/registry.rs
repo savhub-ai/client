@@ -9,7 +9,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
@@ -1312,6 +1312,7 @@ impl IncrementalRegistryPlan {
 }
 
 const MAX_INCREMENTAL_PLAN_ITEMS: usize = 5000;
+const MAX_REGISTRY_PARSE_WORKERS: usize = 8;
 
 fn effective_synced_commit() -> Result<Option<String>> {
     cached_commit_sha().map(|commit| commit.filter(|value| !value.trim().is_empty()))
@@ -1585,6 +1586,258 @@ fn load_skills_from_clone(repo_dir: &Path, rel_path: &str) -> Result<SkillsFile>
     })
 }
 
+type LoadedRepoRow = (String, RegistryRepo, String);
+type LoadedFlockRow = (String, String, RegistryFlock, String);
+type LoadedRegistrySnapshot = (Vec<LoadedRepoRow>, Vec<LoadedFlockRow>, Vec<SkillsFile>);
+
+#[derive(Clone, Copy)]
+enum RegistryCloneFileKind {
+    Repo,
+    Flock,
+    Skills,
+}
+
+#[derive(Clone)]
+struct RegistryCloneFileEntry {
+    path: PathBuf,
+    rel_path: String,
+    kind: RegistryCloneFileKind,
+}
+
+fn registry_parse_worker_count(item_count: usize) -> usize {
+    if item_count < 64 {
+        return 1;
+    }
+    std::thread::available_parallelism()
+        .map(|count| count.get())
+        .unwrap_or(4)
+        .min(MAX_REGISTRY_PARSE_WORKERS)
+        .min(item_count)
+}
+
+fn parallel_load_rel_paths<T, F>(rel_paths: Vec<String>, loader: F) -> Result<Vec<T>>
+where
+    T: Send,
+    F: Fn(&str) -> Result<T> + Sync,
+{
+    if rel_paths.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let workers = registry_parse_worker_count(rel_paths.len());
+    if workers <= 1 {
+        let mut items = Vec::with_capacity(rel_paths.len());
+        for rel_path in &rel_paths {
+            items.push(loader(rel_path)?);
+        }
+        return Ok(items);
+    }
+
+    let chunk_size = rel_paths.len().div_ceil(workers);
+    std::thread::scope(|scope| -> Result<Vec<T>> {
+        let mut handles = Vec::new();
+        for chunk in rel_paths.chunks(chunk_size) {
+            let loader = &loader;
+            handles.push(scope.spawn(move || -> Result<Vec<T>> {
+                let mut items = Vec::with_capacity(chunk.len());
+                for rel_path in chunk {
+                    items.push(loader(rel_path)?);
+                }
+                Ok(items)
+            }));
+        }
+
+        let mut items = Vec::with_capacity(rel_paths.len());
+        for handle in handles {
+            let mut chunk_items = handle
+                .join()
+                .map_err(|_| anyhow!("registry parse worker panicked"))??;
+            items.append(&mut chunk_items);
+        }
+        Ok(items)
+    })
+}
+
+fn load_repo_batch_from_clone(
+    repo_dir: &Path,
+    rel_paths: &std::collections::BTreeSet<String>,
+) -> Result<Vec<LoadedRepoRow>> {
+    parallel_load_rel_paths(rel_paths.iter().cloned().collect(), |rel_path| {
+        load_repo_from_clone(repo_dir, rel_path)
+    })
+}
+
+fn load_flock_batch_from_clone(
+    repo_dir: &Path,
+    rel_paths: &std::collections::BTreeSet<String>,
+) -> Result<Vec<LoadedFlockRow>> {
+    parallel_load_rel_paths(rel_paths.iter().cloned().collect(), |rel_path| {
+        load_flock_from_clone(repo_dir, rel_path)
+    })
+}
+
+fn load_skills_batch_from_clone(
+    repo_dir: &Path,
+    rel_paths: &std::collections::BTreeSet<String>,
+) -> Result<Vec<SkillsFile>> {
+    parallel_load_rel_paths(rel_paths.iter().cloned().collect(), |rel_path| {
+        load_skills_from_clone(repo_dir, rel_path)
+    })
+}
+
+fn parse_registry_clone_entry(entry: &RegistryCloneFileEntry) -> Result<LoadedRegistrySnapshot> {
+    match entry.kind {
+        RegistryCloneFileKind::Repo => {
+            let raw = fs::read_to_string(&entry.path)
+                .with_context(|| format!("failed to read {}", entry.path.display()))?;
+            let parsed = serde_json::from_str::<RepoFile>(&raw)
+                .with_context(|| format!("invalid repo json: {}", entry.rel_path))?;
+            let repo_id = entry
+                .rel_path
+                .strip_suffix("/repo.json")
+                .unwrap_or(&entry.rel_path)
+                .to_string();
+            Ok((vec![(repo_id, parsed.repo, raw)], Vec::new(), Vec::new()))
+        }
+        RegistryCloneFileKind::Flock => {
+            let raw = fs::read_to_string(&entry.path)
+                .with_context(|| format!("failed to read {}", entry.path.display()))?;
+            let parsed = serde_json::from_str::<FlockFile>(&raw)
+                .with_context(|| format!("invalid flock json: {}", entry.rel_path))?;
+            let stripped = entry
+                .rel_path
+                .strip_suffix("/flock.json")
+                .unwrap_or(&entry.rel_path);
+            let (repo_id, flock_slug) =
+                match stripped.rsplitn(2, '/').collect::<Vec<_>>().as_slice() {
+                    [flock, repo] => (repo.to_string(), flock.to_string()),
+                    _ => (parsed.flock.repo.clone(), String::new()),
+                };
+            let flock_id = format!("{}/{}", repo_id, flock_slug);
+            let mut flock = parsed.flock;
+            if flock.repo.is_empty() {
+                flock.repo = repo_id;
+            }
+            Ok((
+                Vec::new(),
+                vec![(flock_id, flock_slug, flock, raw)],
+                Vec::new(),
+            ))
+        }
+        RegistryCloneFileKind::Skills => {
+            let raw = fs::read_to_string(&entry.path)
+                .with_context(|| format!("failed to read {}", entry.path.display()))?;
+            let items = serde_json::from_str::<Vec<RegistrySkill>>(&raw)
+                .with_context(|| format!("invalid skills json: {}", entry.rel_path))?;
+            let stripped = entry
+                .rel_path
+                .strip_suffix("/skills.json")
+                .unwrap_or(&entry.rel_path);
+            let (repo_id, flock_slug) =
+                match stripped.rsplitn(2, '/').collect::<Vec<_>>().as_slice() {
+                    [flock, repo] => (repo.to_string(), flock.to_string()),
+                    _ => (String::new(), String::new()),
+                };
+            Ok((
+                Vec::new(),
+                Vec::new(),
+                vec![SkillsFile {
+                    repo_id,
+                    flock_slug,
+                    items,
+                }],
+            ))
+        }
+    }
+}
+
+fn load_registry_snapshot_from_clone(data_dir: &Path) -> Result<LoadedRegistrySnapshot> {
+    let mut entries = Vec::new();
+    for entry in walkdir::WalkDir::new(data_dir)
+        .max_depth(10)
+        .into_iter()
+        .flatten()
+    {
+        if entry.file_type().is_dir() {
+            continue;
+        }
+        let path = entry.path();
+        let Ok(rel) = path.strip_prefix(data_dir) else {
+            continue;
+        };
+        let rel_path = rel.to_string_lossy().replace('\\', "/");
+        let kind = match path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("")
+        {
+            "repo.json" => RegistryCloneFileKind::Repo,
+            "flock.json" => RegistryCloneFileKind::Flock,
+            "skills.json" => RegistryCloneFileKind::Skills,
+            _ => continue,
+        };
+        entries.push(RegistryCloneFileEntry {
+            path: path.to_path_buf(),
+            rel_path,
+            kind,
+        });
+    }
+
+    let workers = registry_parse_worker_count(entries.len());
+    println!(
+        "[registry-sync] full clone scan: discovered {} registry files, parsing with {} worker(s)",
+        entries.len(),
+        workers
+    );
+    if entries.is_empty() {
+        return Ok((Vec::new(), Vec::new(), Vec::new()));
+    }
+    if workers <= 1 {
+        let mut repos = Vec::new();
+        let mut flocks = Vec::new();
+        let mut skills_files = Vec::new();
+        for entry in &entries {
+            let (mut r, mut f, mut s) = parse_registry_clone_entry(entry)?;
+            repos.append(&mut r);
+            flocks.append(&mut f);
+            skills_files.append(&mut s);
+        }
+        return Ok((repos, flocks, skills_files));
+    }
+
+    let chunk_size = entries.len().div_ceil(workers);
+    std::thread::scope(|scope| -> Result<LoadedRegistrySnapshot> {
+        let mut handles = Vec::new();
+        for chunk in entries.chunks(chunk_size) {
+            handles.push(scope.spawn(move || -> Result<LoadedRegistrySnapshot> {
+                let mut repos = Vec::new();
+                let mut flocks = Vec::new();
+                let mut skills_files = Vec::new();
+                for entry in chunk {
+                    let (mut r, mut f, mut s) = parse_registry_clone_entry(entry)?;
+                    repos.append(&mut r);
+                    flocks.append(&mut f);
+                    skills_files.append(&mut s);
+                }
+                Ok((repos, flocks, skills_files))
+            }));
+        }
+
+        let mut repos = Vec::new();
+        let mut flocks = Vec::new();
+        let mut skills_files = Vec::new();
+        for handle in handles {
+            let (mut r, mut f, mut s) = handle
+                .join()
+                .map_err(|_| anyhow!("registry parse worker panicked"))??;
+            repos.append(&mut r);
+            flocks.append(&mut f);
+            skills_files.append(&mut s);
+        }
+        Ok((repos, flocks, skills_files))
+    })
+}
+
 fn repo_source_json_from_repo(repo: &RegistryRepo) -> String {
     repo.source
         .as_ref()
@@ -1734,22 +1987,26 @@ fn apply_incremental_registry_sync(
         plan.skills_deletes.len(),
         plan.skills_upserts.len()
     );
-    let skill_repo_ids: std::collections::BTreeSet<String> = plan
-        .skills_upserts
-        .iter()
-        .filter_map(|rel_path| match parse_registry_data_path(rel_path) {
-            Some(RegistryDataPath::Skills { repo_id, .. }) => Some(repo_id),
-            _ => None,
-        })
-        .collect();
-    let repo_upsert_ids: std::collections::BTreeSet<String> = plan
-        .repo_upserts
-        .iter()
-        .filter_map(|rel_path| match parse_registry_data_path(rel_path) {
-            Some(RegistryDataPath::Repo { repo_id }) => Some(repo_id),
-            _ => None,
-        })
-        .collect();
+    let parse_items =
+        plan.repo_upserts.len() + plan.flock_upserts.len() + plan.skills_upserts.len();
+    let parse_workers = registry_parse_worker_count(parse_items);
+    println!(
+        "[registry-sync] preloading changed registry files: items={}, workers={}",
+        parse_items, parse_workers
+    );
+    let repo_upserts = load_repo_batch_from_clone(repo_dir, &plan.repo_upserts)?;
+    let flock_upserts = load_flock_batch_from_clone(repo_dir, &plan.flock_upserts)?;
+    let skills_upserts = load_skills_batch_from_clone(repo_dir, &plan.skills_upserts)?;
+    println!(
+        "[registry-sync] parsed incremental payload: repos={}, flocks={}, skills_files={}",
+        repo_upserts.len(),
+        flock_upserts.len(),
+        skills_upserts.len()
+    );
+    let skill_repo_ids: std::collections::BTreeSet<String> =
+        skills_upserts.iter().map(|sf| sf.repo_id.clone()).collect();
+    let repo_upsert_ids: std::collections::BTreeSet<String> =
+        repo_upserts.iter().map(|(id, ..)| id.clone()).collect();
 
     let conn = open_cache()?;
     let unchanged_repo_ids: std::collections::BTreeSet<String> = skill_repo_ids
@@ -1803,9 +2060,8 @@ fn apply_incremental_registry_sync(
     }
 
     let mut repo_count = 0usize;
-    let repo_total = plan.repo_upserts.len();
-    for rel_path in &plan.repo_upserts {
-        let (id, repo, raw) = load_repo_from_clone(repo_dir, rel_path)?;
+    let repo_total = repo_upserts.len();
+    for (id, repo, raw) in &repo_upserts {
         upsert_repo_row(&mut upsert_repo_stmt, &id, &repo, &raw)?;
         repo_source_cache.insert(id.clone(), repo_source_json_from_repo(&repo));
         repo_count += 1;
@@ -1818,9 +2074,8 @@ fn apply_incremental_registry_sync(
     }
 
     let mut flock_count = 0usize;
-    let flock_total = plan.flock_upserts.len();
-    for rel_path in &plan.flock_upserts {
-        let (id, slug, flock, raw) = load_flock_from_clone(repo_dir, rel_path)?;
+    let flock_total = flock_upserts.len();
+    for (id, slug, flock, raw) in &flock_upserts {
         upsert_flock_row(&mut upsert_flock_stmt, &id, &slug, &flock, &raw)?;
         flock_count += 1;
         if flock_count % PROGRESS_STEP == 0 || flock_count == flock_total {
@@ -1832,10 +2087,9 @@ fn apply_incremental_registry_sync(
     }
 
     let mut skill_count = 0usize;
-    let skills_total = plan.skills_upserts.len();
+    let skills_total = skills_upserts.len();
     let mut skills_files_done = 0usize;
-    for rel_path in &plan.skills_upserts {
-        let skills = load_skills_from_clone(repo_dir, rel_path)?;
+    for skills in &skills_upserts {
         let repo_source = repo_source_cache
             .get(&skills.repo_id)
             .cloned()
@@ -2057,74 +2311,7 @@ pub fn sync_from_local_clone() -> Result<SyncStats> {
     );
 
     let data_dir = repo_dir.join("data");
-    let mut repos = Vec::new();
-    let mut flocks = Vec::new();
-    let mut skills_files = Vec::new();
-
-    for entry in walkdir::WalkDir::new(&data_dir)
-        .max_depth(10)
-        .into_iter()
-        .flatten()
-    {
-        if entry.file_type().is_dir() {
-            continue;
-        }
-        let path = entry.path();
-        let Ok(rel) = path.strip_prefix(&data_dir) else {
-            continue;
-        };
-        let rel_str = rel.to_string_lossy().replace('\\', "/");
-
-        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        match file_name {
-            "repo.json" => {
-                let buf = fs::read_to_string(path).unwrap_or_default();
-                if let Ok(parsed) = serde_json::from_str::<RepoFile>(&buf) {
-                    let repo_id = rel_str
-                        .strip_suffix("/repo.json")
-                        .unwrap_or(&rel_str)
-                        .to_string();
-                    repos.push((repo_id, parsed.repo, buf));
-                }
-            }
-            "flock.json" => {
-                let buf = fs::read_to_string(path).unwrap_or_default();
-                if let Ok(parsed) = serde_json::from_str::<FlockFile>(&buf) {
-                    let stripped = rel_str.strip_suffix("/flock.json").unwrap_or(&rel_str);
-                    // Path: domain/owner/repo/flock_slug → repo_id = domain/owner/repo
-                    let (repo_id, flock_slug) =
-                        match stripped.rsplitn(2, '/').collect::<Vec<_>>().as_slice() {
-                            [flock, repo] => (repo.to_string(), flock.to_string()),
-                            _ => (parsed.flock.repo.clone(), String::new()),
-                        };
-                    let flock_id = format!("{}/{}", repo_id, flock_slug);
-                    let mut flock = parsed.flock;
-                    if flock.repo.is_empty() {
-                        flock.repo = repo_id;
-                    }
-                    flocks.push((flock_id, flock_slug, flock, buf));
-                }
-            }
-            "skills.json" => {
-                let buf = fs::read_to_string(path).unwrap_or_default();
-                if let Ok(items) = serde_json::from_str::<Vec<RegistrySkill>>(&buf) {
-                    let stripped = rel_str.strip_suffix("/skills.json").unwrap_or(&rel_str);
-                    // Path: domain/owner/repo/flock_slug → repo_id = domain/owner/repo
-                    let (repo_id, flock_slug) =
-                        match stripped.rsplitn(2, '/').collect::<Vec<_>>().as_slice() {
-                            [flock, repo] => (repo.to_string(), flock.to_string()),
-                            _ => (String::new(), String::new()),
-                        };
-                    skills_files.push(SkillsFile {
-                        repo_id,
-                        flock_slug,
-                        items,
-                    });
-                }
-            }
-            _ => {}
-        }
-    }
+    let (repos, flocks, skills_files) = load_registry_snapshot_from_clone(&data_dir)?;
 
     println!(
         "[registry-sync] parsed full registry snapshot: repos={}, flocks={}, skills_files={}",

@@ -577,9 +577,12 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
     // Collect available skills (off UI thread)
     let mut installed_skills_sig = use_signal(Vec::<String>::new);
     use_effect(move || {
+        let workdir = state.workdir.read().clone();
         spawn(async move {
-            let slugs = tokio::task::spawn_blocking(|| {
-                savhub_local::registry::list_installed_slugs().unwrap_or_default()
+            let slugs = tokio::task::spawn_blocking(move || {
+                crate::skills::read_installed_skill_versions(&workdir)
+                    .into_keys()
+                    .collect::<Vec<_>>()
             })
             .await
             .unwrap_or_default();
@@ -645,18 +648,24 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
     let error_val = f.error.clone();
     drop(guard);
 
-    let mut all_flock_slugs_sig = use_signal(Vec::<String>::new);
+    let mut flock_suggestions_sig = use_signal(Vec::<String>::new);
+    let selected_flocks_for_effect = selected_flocks.clone();
     use_effect(move || {
+        let query = flock_search.read().trim().to_string();
+        let selected = selected_flocks_for_effect.clone();
+        if query.is_empty() {
+            flock_suggestions_sig.set(Vec::new());
+            return;
+        }
+        let client = state.api_client();
         spawn(async move {
-            let slugs = tokio::task::spawn_blocking(|| {
-                savhub_local::registry::list_flock_slugs().unwrap_or_default()
-            })
-            .await
-            .unwrap_or_default();
-            all_flock_slugs_sig.set(slugs);
+            let mut slugs = crate::api::fetch_remote_flock_slug_suggestions(&client, &query, 20)
+                .await
+                .unwrap_or_default();
+            slugs.retain(|slug| !selected.contains(slug));
+            flock_suggestions_sig.set(slugs);
         });
     });
-    let all_flock_slugs = all_flock_slugs_sig.read().clone();
 
     let skill_search_val = skill_search.read().to_lowercase();
     // Only show unselected skills that match the search query; empty search = show nothing
@@ -669,18 +678,7 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
             .collect()
     };
 
-    let flock_search_val = flock_search.read().to_lowercase();
-    let flock_suggestions: Vec<&String> = if flock_search_val.is_empty() {
-        Vec::new()
-    } else {
-        all_flock_slugs
-            .iter()
-            .filter(|s| {
-                !selected_flocks.contains(*s) && s.to_lowercase().contains(&flock_search_val)
-            })
-            .take(20)
-            .collect()
-    };
+    let flock_suggestions = flock_suggestions_sig.read().clone();
 
     let input_style = format!(
         "width: 100%; padding: 8px 12px; border: 1px solid {}; border-radius: 8px; font-size: 13px; background: white; color: {};",
@@ -854,16 +852,9 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
                                         let raw = repo_input.read().trim().to_string();
                                         if !raw.is_empty() {
                                             let sign = normalize_repo_url_to_sign(&raw);
-                                            match savhub_local::registry::repo_exists_in_registry(&sign) {
-                                                Ok(true) => {
-                                                    set_field(Box::new(move |f| { f.repos.insert(sign); }));
-                                                    repo_input.set(String::new());
-                                                    repo_error.set(String::new());
-                                                }
-                                                _ => {
-                                                    repo_error.set(format!("Repo '{}' is not indexed in the registry. Sync first or check the URL.", sign));
-                                                }
-                                            }
+                                            set_field(Box::new(move |f| { f.repos.insert(sign); }));
+                                            repo_input.set(String::new());
+                                            repo_error.set(String::new());
                                         }
                                     }
                                 },
@@ -874,16 +865,9 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
                                     let raw = repo_input.read().trim().to_string();
                                     if !raw.is_empty() {
                                         let sign = normalize_repo_url_to_sign(&raw);
-                                        match savhub_local::registry::repo_exists_in_registry(&sign) {
-                                            Ok(true) => {
-                                                set_field(Box::new(move |f| { f.repos.insert(sign); }));
-                                                repo_input.set(String::new());
-                                                repo_error.set(String::new());
-                                            }
-                                            _ => {
-                                                repo_error.set(format!("Repo '{}' is not indexed in the registry. Sync first or check the URL.", sign));
-                                            }
-                                        }
+                                        set_field(Box::new(move |f| { f.repos.insert(sign); }));
+                                        repo_input.set(String::new());
+                                        repo_error.set(String::new());
                                     }
                                 },
                                 "{t.selectors_add_tag}"
@@ -925,7 +909,7 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
                         if !flock_suggestions.is_empty() {
                             div { style: "display: flex; flex-direction: column; gap: 2px; max-height: 160px; overflow-y: auto; padding: 6px; margin-top: 4px; background: rgba(255,255,255,0.6); border: 1px solid {Theme::LINE}; border-radius: 8px;",
                                 for slug in flock_suggestions.iter() {
-                                    { let s = (*slug).clone();
+                                    { let s = slug.clone();
                                       rsx! {
                                         button {
                                             style: "display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: transparent; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; color: {Theme::TEXT}; text-align: left; width: 100%;",
@@ -940,9 +924,6 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
                                     }}
                                 }
                             }
-                        }
-                        if all_flock_slugs.is_empty() {
-                            p { style: "font-size: 12px; color: {Theme::MUTED}; margin-top: 4px;", "No flocks in registry. Sync first." }
                         }
                     }
                     // Skills — search-to-add from installed skills

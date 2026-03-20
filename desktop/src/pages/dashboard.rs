@@ -32,7 +32,7 @@ struct RecentProject {
 
 #[component]
 pub fn DashboardPage() -> Element {
-    let mut state = use_context::<AppState>();
+    let state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
     let mut health = use_signal(|| t.checking.to_string());
     let mut health_error = use_signal(|| Option::<String>::None);
@@ -44,7 +44,6 @@ pub fn DashboardPage() -> Element {
     let mut recent_projects_page = use_signal(|| 0usize);
     let mut detected_agents_page = use_signal(|| 0usize);
     let mut loaded = use_signal(|| false);
-    let mut registry_sync_result = use_signal(|| Option::<Result<bool, String>>::None);
 
     use_effect(move || {
         if *loaded.read() {
@@ -196,56 +195,8 @@ pub fn DashboardPage() -> Element {
                         p { style: "font-size: 12px; color: {Theme::MUTED};",
                             "{registry_label}"
                         }
-                        if *state.registry_syncing.read() {
-                            span { style: "display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: {Theme::ACCENT}; font-weight: 600;",
-                                span { style: "display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(90, 158, 63, 0.3); border-top-color: {Theme::ACCENT}; border-radius: 50%; animation: spin 0.8s linear infinite;" }
-                                "{t.registry_syncing}"
-                            }
-                        } else {
-                            button {
-                                style: "padding: 3px 10px; font-size: 11px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border: 1px solid rgba(90, 158, 63, 0.18); border-radius: 6px; cursor: pointer; font-weight: 600;",
-                                onclick: move |_| {
-                                    spawn(async move {
-                                        state.registry_syncing.set(true);
-                                        registry_sync_result.set(None);
-                                        let result = tokio::task::spawn_blocking(|| {
-                                            // Force sync by clearing the cached sqlite sync state first.
-                                            let _ = savhub_local::registry::clear_cached_commit_sha();
-                                            savhub_local::registry::ensure_registry_synced()
-                                        })
-                                        .await
-                                        .map_err(|e| e.to_string())
-                                        .and_then(|r| r.map_err(|e| e.to_string()));
-                                        registry_sync_result.set(Some(result));
-                                        state.registry_syncing.set(false);
-
-                                        // Re-check API health after sync so status updates if back online
-                                        let client = state.api_client();
-                                        let t = i18n::texts(*state.lang.read());
-                                        match client.get_json::<serde_json::Value>("/health").await {
-                                            Ok(value) => {
-                                                let status = value
-                                                    .get("status")
-                                                    .and_then(|field| field.as_str())
-                                                    .unwrap_or("unknown");
-                                                let api_ver = value
-                                                    .get("apiVersion")
-                                                    .and_then(|v| v.as_u64())
-                                                    .map(|v| format!(" (API v{v})"))
-                                                    .unwrap_or_default();
-                                                health.set(format!("{status}{api_ver}"));
-                                                health_error.set(None);
-                                                show_health_error.set(false);
-                                            }
-                                            Err(error) => {
-                                                health.set(t.offline.to_string());
-                                                health_error.set(Some(error));
-                                            }
-                                        }
-                                    });
-                                },
-                                "{t.registry_sync}"
-                            }
+                        span { style: "font-size: 11px; color: {Theme::MUTED}; font-weight: 600;",
+                            "REST API"
                         }
                     }
                     if registry_error.is_some() {
@@ -257,19 +208,6 @@ pub fn DashboardPage() -> Element {
                     } else {
                         p { style: "font-size: 20px; font-weight: 600; color: {registry_accent};",
                             "{registry_value}"
-                        }
-                    }
-                    if let Some(result) = registry_sync_result.read().as_ref() {
-                        match result {
-                            Ok(true) => rsx! {
-                                p { style: "font-size: 11px; color: {Theme::SUCCESS}; margin-top: 6px;", "{t.registry_synced}" }
-                            },
-                            Ok(false) => rsx! {
-                                p { style: "font-size: 11px; color: {Theme::MUTED}; margin-top: 6px;", "{t.registry_synced}" }
-                            },
-                            Err(e) => rsx! {
-                                p { style: "font-size: 11px; color: {Theme::DANGER}; margin-top: 6px;", "{e}" }
-                            },
                         }
                     }
                 }

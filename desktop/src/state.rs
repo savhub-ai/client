@@ -79,8 +79,6 @@ pub struct AppState {
     pub agents: Signal<Vec<String>>,
     /// Minimum security level for skill/flock installation.
     pub security_level: Signal<SecurityLevel>,
-    /// Whether the registry is currently syncing in the background.
-    pub registry_syncing: Signal<bool>,
     /// Incremented when an external config change is detected via the signal file.
     pub config_version: Signal<u64>,
 }
@@ -98,7 +96,6 @@ impl AppState {
             registry_compat: Signal::new(ApiCompatibility::Unknown),
             agents: Signal::new(agents),
             security_level: Signal::new(security_level),
-            registry_syncing: Signal::new(false),
             config_version: Signal::new(0),
         }
     }
