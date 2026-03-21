@@ -1,6 +1,6 @@
 DROP TABLE IF EXISTS ai_request_cache;
 DROP TABLE IF EXISTS ai_usage_logs;
-DROP TABLE IF EXISTS user_footprints;
+DROP TABLE IF EXISTS browse_histories;
 DROP TABLE IF EXISTS site_admins;
 DROP TABLE IF EXISTS security_scans;
 DROP TABLE IF EXISTS index_jobs;

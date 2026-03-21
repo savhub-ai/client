@@ -242,7 +242,7 @@ pub fn run_automated_scans_with_files(
             .execute(conn)?;
 
         // ----- License audit -----
-        let license_result = license_audit_scan(&skill.license);
+        let license_result = license_audit_scan(skill.license.as_deref().unwrap_or(""));
         let license_severity = if license_result == "fail" {
             Some("medium")
         } else {

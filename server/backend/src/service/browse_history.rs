@@ -6,8 +6,8 @@ use uuid::Uuid;
 
 use crate::auth::AuthContext;
 use crate::error::AppError;
-use crate::models::{FlockRow, NewUserFootprintRow, SkillRow, UserFootprintRow};
-use crate::schema::{flocks, skills, user_footprints};
+use crate::models::{FlockRow, NewBrowseHistoryRow, SkillRow, BrowseHistoryRow};
+use crate::schema::{flocks, skills, browse_histories};
 use shared::{BrowseHistoryItem, BrowseHistoryResponse, RecordViewRequest};
 
 use super::helpers::{db_conn, load_users_map};
@@ -19,21 +19,21 @@ pub fn record_view(auth: &AuthContext, request: RecordViewRequest) -> Result<(),
     let now = Utc::now();
 
     // Check for existing entry for this user + resource
-    let existing = user_footprints::table
-        .filter(user_footprints::user_id.eq(auth.user.id))
-        .filter(user_footprints::resource_type.eq(&request.resource_type))
-        .filter(user_footprints::resource_id.eq(request.resource_id))
-        .select(UserFootprintRow::as_select())
-        .first::<UserFootprintRow>(&mut conn)
+    let existing = browse_histories::table
+        .filter(browse_histories::user_id.eq(auth.user.id))
+        .filter(browse_histories::resource_type.eq(&request.resource_type))
+        .filter(browse_histories::resource_id.eq(request.resource_id))
+        .select(BrowseHistoryRow::as_select())
+        .first::<BrowseHistoryRow>(&mut conn)
         .optional()?;
 
     if let Some(row) = existing {
-        diesel::update(user_footprints::table.find(row.id))
-            .set(user_footprints::viewed_at.eq(now))
+        diesel::update(browse_histories::table.find(row.id))
+            .set(browse_histories::viewed_at.eq(now))
             .execute(&mut conn)?;
     } else {
-        diesel::insert_into(user_footprints::table)
-            .values(NewUserFootprintRow {
+        diesel::insert_into(browse_histories::table)
+            .values(NewBrowseHistoryRow {
                 id: Uuid::now_v7(),
                 user_id: auth.user.id,
                 resource_type: request.resource_type,
@@ -65,30 +65,30 @@ pub fn get_history_for_user_id_with_conn(
     user_id: Uuid,
     limit: i64,
 ) -> Result<BrowseHistoryResponse, AppError> {
-    let rows = user_footprints::table
-        .filter(user_footprints::user_id.eq(user_id))
-        .order(user_footprints::viewed_at.desc())
+    let rows = browse_histories::table
+        .filter(browse_histories::user_id.eq(user_id))
+        .order(browse_histories::viewed_at.desc())
         .limit(limit.clamp(1, 200))
-        .select(UserFootprintRow::as_select())
-        .load::<UserFootprintRow>(conn)?;
+        .select(BrowseHistoryRow::as_select())
+        .load::<BrowseHistoryRow>(conn)?;
 
     Ok(BrowseHistoryResponse {
         items: hydrate_history_items(conn, rows)?,
     })
 }
 
-/// Delete user_footprints entries older than 365 days.
+/// Delete browse_histories entries older than 365 days.
 pub fn cleanup_old_history(conn: &mut PgConnection) -> Result<usize, AppError> {
     let cutoff = Utc::now() - chrono::Duration::days(365);
     let deleted =
-        diesel::delete(user_footprints::table.filter(user_footprints::viewed_at.lt(cutoff)))
+        diesel::delete(browse_histories::table.filter(browse_histories::viewed_at.lt(cutoff)))
             .execute(conn)?;
     Ok(deleted)
 }
 
 fn hydrate_history_items(
     conn: &mut PgConnection,
-    rows: Vec<UserFootprintRow>,
+    rows: Vec<BrowseHistoryRow>,
 ) -> Result<Vec<BrowseHistoryItem>, AppError> {
     if rows.is_empty() {
         return Ok(Vec::new());

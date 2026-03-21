@@ -250,7 +250,7 @@ CREATE TABLE site_admins (
     UNIQUE (user_id)
 );
 
-CREATE TABLE user_footprints (
+CREATE TABLE browse_histories (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     resource_type TEXT NOT NULL,
@@ -317,8 +317,8 @@ CREATE INDEX idx_reports_status ON reports(status);
 CREATE INDEX idx_index_jobs_dedup ON index_jobs (git_url, commit_sha) WHERE status = 'completed' AND commit_sha IS NOT NULL;
 CREATE INDEX idx_index_jobs_url_hash_active ON index_jobs (url_hash) WHERE status IN ('pending', 'running');
 
-CREATE INDEX idx_user_footprints_user ON user_footprints (user_id, viewed_at DESC);
-CREATE INDEX idx_user_footprints_cleanup ON user_footprints (viewed_at);
+CREATE INDEX idx_browse_histories_user ON browse_histories (user_id, viewed_at DESC);
+CREATE INDEX idx_browse_histories_cleanup ON browse_histories (viewed_at);
 
 CREATE INDEX idx_ai_usage_logs_task_type ON ai_usage_logs (task_type);
 CREATE INDEX idx_ai_usage_logs_created_at ON ai_usage_logs (created_at);

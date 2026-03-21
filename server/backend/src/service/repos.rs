@@ -189,16 +189,17 @@ pub fn create_repo(
         description: description.clone(),
         git_url: git_url.clone(),
         sign: sign.clone(),
+        license: None,
         visibility: "public".to_string(),
         verified: false,
         metadata: serde_json::to_value(RepoMetadata::default())
             .map_err(|error| AppError::Internal(error.to_string()))?,
+        keywords: vec![],
         created_at: now,
         updated_at: now,
         last_indexed_at: None,
         git_rev: None,
         git_branch: None,
-        keywords: vec![],
     };
 
     diesel::insert_into(repos::table)
@@ -413,7 +414,7 @@ fn persist_flock_import(
         visibility: document
             .visibility
             .map(|value| visibility_to_str(value).to_string()),
-        license: document.license.clone(),
+        license: Some(document.license.clone()),
         metadata: flock_metadata.clone(),
         source: flock_source.clone(),
         imported_by_user_id: auth.user.id,
@@ -465,7 +466,7 @@ fn persist_flock_import(
             description: skill.description.clone(),
             version: skill.version.clone(),
             status: status_to_str(skill.status).to_string(),
-            license: skill.license.clone(),
+            license: Some(skill.license.clone()),
             source: flock_source.clone(),
             metadata: serde_json::to_value(skill.metadata.clone())
                 .map_err(|error| AppError::Internal(error.to_string()))?,
@@ -702,7 +703,7 @@ pub(crate) fn flock_summary_from_row(
         version: row.version.clone().filter(|v| !v.is_empty()),
         status: parse_status(&row.status),
         visibility: row.visibility.as_deref().map(parse_visibility),
-        license: row.license.clone(),
+        license: row.license.clone().unwrap_or_default(),
         source: serde_json::from_value::<Option<CatalogSource>>(row.source.clone())
             .map_err(|error| AppError::Internal(error.to_string()))?,
         imported_by: user_summary_from_row(imported_by),
@@ -751,7 +752,7 @@ fn flock_document_from_row(repo: &RepoRow, row: &FlockRow) -> Result<FlockDocume
         version: row.version.clone().filter(|v| !v.is_empty()),
         status: parse_status(&row.status),
         visibility: row.visibility.as_deref().map(parse_visibility),
-        license: row.license.clone(),
+        license: row.license.clone().unwrap_or_default(),
         source,
         security: shared::SecuritySummary::default(),
         metadata: serde_json::from_value::<FlockMetadata>(row.metadata.clone())
@@ -768,7 +769,7 @@ fn imported_skill_from_row(row: &SkillRow) -> Result<ImportedSkillRecord, AppErr
         description: row.description.clone(),
         version: row.version.clone(),
         status: parse_status(&row.status),
-        license: row.license.clone(),
+        license: row.license.clone().unwrap_or_default(),
         runtime: row
             .runtime_data
             .clone()

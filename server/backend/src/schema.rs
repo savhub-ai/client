@@ -53,7 +53,7 @@ diesel::table! {
         version -> Nullable<Text>,
         status -> Text,
         visibility -> Nullable<Text>,
-        license -> Text,
+        license -> Nullable<Text>,
         metadata -> Jsonb,
         source -> Jsonb,
         imported_by_user_id -> Uuid,
@@ -130,13 +130,14 @@ diesel::table! {
         git_url -> Text,
         git_rev -> Nullable<Text>,
         git_branch -> Nullable<Text>,
+        license -> Nullable<Text>,
         visibility -> Text,
         verified -> Bool,
         metadata -> Jsonb,
+        keywords -> Array<Nullable<Text>>,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
         last_indexed_at -> Nullable<Timestamptz>,
-        keywords -> Array<Nullable<Text>>,
     }
 }
 
@@ -257,7 +258,7 @@ diesel::table! {
         flock_id -> Uuid,
         version -> Nullable<Text>,
         status -> Text,
-        license -> Text,
+        license -> Nullable<Text>,
         source -> Jsonb,
         metadata -> Jsonb,
         entry_data -> Nullable<Jsonb>,
@@ -283,7 +284,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    user_footprints (id) {
+    browse_histories (id) {
         id -> Uuid,
         user_id -> Uuid,
         resource_type -> Text,
@@ -347,7 +348,7 @@ diesel::joinable!(skill_versions -> skills (skill_id));
 diesel::joinable!(skill_versions -> users (created_by));
 diesel::joinable!(skills -> flocks (flock_id));
 diesel::joinable!(skills -> repos (repo_id));
-diesel::joinable!(user_footprints -> users (user_id));
+diesel::joinable!(browse_histories -> users (user_id));
 diesel::joinable!(user_tokens -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
@@ -368,7 +369,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     skill_stars,
     skill_versions,
     skills,
-    user_footprints,
+    browse_histories,
     user_tokens,
     users,
 );

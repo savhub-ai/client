@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::schema::{
     ai_request_cache, ai_usage_logs, audit_logs, flocks, index_jobs, index_rules, reports, repos,
     security_scans, site_admins, skill_blocks, skill_comments, skill_installs, skill_ratings,
-    skill_stars, skill_versions, skills, user_footprints, user_tokens, users,
+    skill_stars, skill_versions, skills, browse_histories, user_tokens, users,
 };
 
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable)]
@@ -83,13 +83,14 @@ pub struct RepoRow {
     pub git_url: String,
     pub git_rev: Option<String>,
     pub git_branch: Option<String>,
+    pub license: Option<String>,
     pub visibility: String,
     pub verified: bool,
     pub metadata: Value,
+    pub keywords: Vec<Option<String>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub last_indexed_at: Option<DateTime<Utc>>,
-    pub keywords: Vec<Option<String>>,
 }
 
 #[derive(Debug, Clone, Insertable)]
@@ -102,13 +103,14 @@ pub struct NewRepoRow {
     pub git_url: String,
     pub git_rev: Option<String>,
     pub git_branch: Option<String>,
+    pub license: Option<String>,
     pub visibility: String,
     pub verified: bool,
     pub metadata: Value,
+    pub keywords: Vec<Option<String>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub last_indexed_at: Option<DateTime<Utc>>,
-    pub keywords: Vec<Option<String>>,
 }
 
 #[derive(Debug, Default, Clone, AsChangeset)]
@@ -143,7 +145,7 @@ pub struct FlockRow {
     pub version: Option<String>,
     pub status: String,
     pub visibility: Option<String>,
-    pub license: String,
+    pub license: Option<String>,
     pub metadata: Value,
     pub source: Value,
     pub imported_by_user_id: Uuid,
@@ -171,7 +173,7 @@ pub struct NewFlockRow {
     pub version: Option<String>,
     pub status: String,
     pub visibility: Option<String>,
-    pub license: String,
+    pub license: Option<String>,
     pub metadata: Value,
     pub source: Value,
     pub imported_by_user_id: Uuid,
@@ -223,7 +225,7 @@ pub struct SkillRow {
     pub flock_id: Uuid,
     pub version: Option<String>,
     pub status: String,
-    pub license: String,
+    pub license: Option<String>,
     pub source: Value,
     pub metadata: Value,
     pub entry_data: Option<Value>,
@@ -261,7 +263,7 @@ pub struct NewSkillRow {
     pub flock_id: Uuid,
     pub version: Option<String>,
     pub status: String,
-    pub license: String,
+    pub license: Option<String>,
     pub source: Value,
     pub metadata: Value,
     pub entry_data: Option<Value>,
@@ -476,9 +478,9 @@ pub struct NewSkillRatingRow {
 }
 
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable, Associations)]
-#[diesel(table_name = user_footprints)]
+#[diesel(table_name = browse_histories)]
 #[diesel(belongs_to(UserRow, foreign_key = user_id))]
-pub struct UserFootprintRow {
+pub struct BrowseHistoryRow {
     pub id: Uuid,
     pub user_id: Uuid,
     pub resource_type: String,
@@ -487,8 +489,8 @@ pub struct UserFootprintRow {
 }
 
 #[derive(Debug, Clone, Insertable)]
-#[diesel(table_name = user_footprints)]
-pub struct NewUserFootprintRow {
+#[diesel(table_name = browse_histories)]
+pub struct NewBrowseHistoryRow {
     pub id: Uuid,
     pub user_id: Uuid,
     pub resource_type: String,
