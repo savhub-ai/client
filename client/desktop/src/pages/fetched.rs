@@ -35,7 +35,7 @@ pub fn FetchedPage() -> Element {
             return;
         }
         loaded.set(true);
-        let workdir = state.workdir.read().clone();
+        let workdir = state.skills_dir();
 
         spawn(async move {
             let workdir_bg = workdir.clone();
@@ -74,7 +74,7 @@ pub fn FetchedPage() -> Element {
 
     let update_all = move |_| {
         let client = state.api_client();
-        let workdir = state.workdir.read().clone();
+        let workdir = state.skills_dir();
         let entries = skill_list.read().clone();
         let mut status = state.status_message;
         let mut skill_list_signal = skill_list;
@@ -205,7 +205,7 @@ fn FetchedRow(skill: FetchedSkill, mut skill_list: Signal<Vec<FetchedSkill>>) ->
     let slug = skill.slug.clone();
 
     let do_uninstall = move |_| {
-        let workdir = state.workdir.read().clone();
+        let workdir = state.skills_dir();
         let slug = slug.clone();
         let skill_dir = workdir.join(&slug);
         let _ = std::fs::remove_dir_all(&skill_dir);

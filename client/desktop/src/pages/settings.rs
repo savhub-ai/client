@@ -813,6 +813,7 @@ pub fn save_config(
         security_level,
     };
     let _ = savhub_local::config::write_global_config(&config);
+    crate::watcher::mark_self_written();
 }
 
 /// Perform GitHub OAuth login by opening a browser and waiting for the callback.

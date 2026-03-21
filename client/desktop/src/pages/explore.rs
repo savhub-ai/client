@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 
 use dioxus::prelude::*;
@@ -240,11 +240,13 @@ fn fetch_flock_from_explore(
     state: AppState,
     flock: DisplayFlock,
     mut fetched_versions: Signal<BTreeMap<String, String>>,
+    mut fetched_flock_signs: Signal<HashSet<String>>,
     mut working: Signal<bool>,
     mut action_error: Signal<Option<String>>,
 ) {
     let client = state.api_client();
-    let workdir = state.workdir.read().clone();
+    let workdir = state.skills_dir();
+    let flock_sign = format!("{}/{}", flock.repo_sign, flock.slug);
 
     spawn(async move {
         working.set(true);
@@ -259,6 +261,7 @@ fn fetch_flock_from_explore(
             }
         };
         let repo_sign = detail.flock.repo_sign.clone();
+        let mut all_ok = true;
 
         for skill in detail.skills {
             match api::fetch_remote_skill_with_lookup(
@@ -294,11 +297,74 @@ fn fetch_flock_from_explore(
                 }
                 Err(err) => {
                     action_error.set(Some(err));
+                    all_ok = false;
                     break;
                 }
             }
         }
 
+        if all_ok {
+            fetched_flock_signs.with_mut(|signs| {
+                signs.insert(flock_sign);
+            });
+        }
+        working.set(false);
+    });
+}
+
+fn prune_flock_from_explore(
+    state: AppState,
+    flock: DisplayFlock,
+    mut fetched_versions: Signal<BTreeMap<String, String>>,
+    mut fetched_flock_signs: Signal<HashSet<String>>,
+    mut working: Signal<bool>,
+    mut action_error: Signal<Option<String>>,
+) {
+    let workdir = state.skills_dir();
+    let flock_sign = format!("{}/{}", flock.repo_sign, flock.slug);
+
+    spawn(async move {
+        working.set(true);
+        action_error.set(None);
+
+        let sign_prefix = flock_sign.clone();
+        let wd = workdir.clone();
+        let slugs = tokio::task::spawn_blocking(move || {
+            savhub_local::skills::fetched_slugs_by_sign_prefix(&wd, &sign_prefix)
+        })
+        .await
+        .unwrap_or_default();
+
+        let mut all_ok = true;
+        for slug in &slugs {
+            let wd = workdir.clone();
+            let s = slug.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                savhub_local::skills::prune_skill(&wd, &s)
+            })
+            .await
+            .map_err(|e| e.to_string())
+            .and_then(|r| r.map_err(|e| e.to_string()));
+
+            match result {
+                Ok(()) => {
+                    fetched_versions.with_mut(|entries| {
+                        entries.remove(slug);
+                    });
+                }
+                Err(err) => {
+                    action_error.set(Some(err));
+                    all_ok = false;
+                    break;
+                }
+            }
+        }
+
+        if all_ok {
+            fetched_flock_signs.with_mut(|signs| {
+                signs.remove(&flock_sign);
+            });
+        }
         working.set(false);
     });
 }
@@ -312,6 +378,7 @@ pub fn ExplorePage() -> Element {
     let skill_list: Signal<Vec<DisplaySkill>> = use_signal(Vec::new);
     let fetched_skill_total = use_signal(|| 0usize);
     let mut fetched_versions: Signal<BTreeMap<String, String>> = use_signal(BTreeMap::new);
+    let fetched_flock_signs: Signal<HashSet<String>> = use_signal(HashSet::new);
     let mut active_filter = use_signal(|| SkillFilter::All);
     let mut active_view = use_signal(|| ViewMode::Cards);
     let mut current_page = use_signal(|| 0usize);
@@ -330,7 +397,7 @@ pub fn ExplorePage() -> Element {
 
     use_effect(move || {
         let _ = *state.config_version.read();
-        let workdir = state.workdir.read().clone();
+        let workdir = state.skills_dir();
         spawn(async move {
             let versions = tokio::task::spawn_blocking(move || {
                 savhub_local::skills::read_fetched_skill_versions(&workdir)
@@ -352,7 +419,7 @@ pub fn ExplorePage() -> Element {
         }
         load_skills_page(
             state.api_client(),
-            state.workdir.read().clone(),
+            state.skills_dir(),
             query,
             filter,
             page,
@@ -572,6 +639,7 @@ pub fn ExplorePage() -> Element {
                                 flock: flock.clone(),
                                 flock_skills_label: flock_skills_label,
                                 fetched_versions: fetched_versions,
+                                fetched_flock_signs: fetched_flock_signs,
                             }
                         }
                     }
@@ -582,6 +650,7 @@ pub fn ExplorePage() -> Element {
                                 flock: flock.clone(),
                                 flock_skills_label: flock_skills_label,
                                 fetched_versions: fetched_versions,
+                                fetched_flock_signs: fetched_flock_signs,
                             }
                         }
                     }
@@ -664,7 +733,7 @@ fn SkillListRow(
         let remote_slug = remote_slug.clone();
         let should_prune = is_fetched;
         let client = state.api_client();
-        let workdir = state.workdir.read().clone();
+        let workdir = state.skills_dir();
         spawn(async move {
             working.set(true);
             action_error.set(None);
@@ -798,7 +867,7 @@ fn SkillCard(
         let remote_slug = remote_slug.clone();
         let should_prune = is_fetched;
         let client = state.api_client();
-        let workdir = state.workdir.read().clone();
+        let workdir = state.skills_dir();
         spawn(async move {
             working.set(true);
             action_error.set(None);
@@ -905,6 +974,7 @@ fn FlockListRow(
     flock: DisplayFlock,
     flock_skills_label: &'static str,
     fetched_versions: Signal<BTreeMap<String, String>>,
+    fetched_flock_signs: Signal<HashSet<String>>,
 ) -> Element {
     let state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
@@ -913,19 +983,33 @@ fn FlockListRow(
     let action_error = use_signal(|| Option::<String>::None);
     let version_display = flock.version.as_deref().unwrap_or("\u{2014}");
     let slug_display = format!("{}/{}", flock.repo_sign, flock.slug);
+    let flock_sign = format!("{}/{}", flock.repo_sign, flock.slug);
+    let is_fetched = fetched_flock_signs.read().contains(&flock_sign);
     let nav = use_navigator();
     let nav_slug = flock.id.clone();
-    let fetch_flock = {
+    let flock_action = {
         let flock = flock.clone();
         move |e: Event<MouseData>| {
             e.stop_propagation();
-            fetch_flock_from_explore(
-                state,
-                flock.clone(),
-                fetched_versions,
-                working,
-                action_error,
-            );
+            if is_fetched {
+                prune_flock_from_explore(
+                    state,
+                    flock.clone(),
+                    fetched_versions,
+                    fetched_flock_signs,
+                    working,
+                    action_error,
+                );
+            } else {
+                fetch_flock_from_explore(
+                    state,
+                    flock.clone(),
+                    fetched_versions,
+                    fetched_flock_signs,
+                    working,
+                    action_error,
+                );
+            }
         }
     };
 
@@ -965,10 +1049,16 @@ fn FlockListRow(
                         span { style: "display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(90, 158, 63, 0.3); border-top-color: {Theme::ACCENT}; border-radius: 50%; animation: spin 0.8s linear infinite;" }
                         "{t.fetching}"
                     }
+                } else if is_fetched {
+                    button {
+                        style: "padding: 5px 12px; font-size: 12px; background: rgba(200,50,50,0.1); color: #c03030; border: none; border-radius: 999px; cursor: pointer; font-weight: 600; white-space: nowrap;",
+                        onclick: flock_action,
+                        "{t.prune}"
+                    }
                 } else {
                     button {
                         style: "padding: 5px 12px; font-size: 12px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border: none; border-radius: 999px; cursor: pointer; font-weight: 600; white-space: nowrap;",
-                        onclick: fetch_flock,
+                        onclick: flock_action,
                         "{t.fetch}"
                     }
                 }
@@ -987,6 +1077,7 @@ fn FlockCard(
     flock: DisplayFlock,
     flock_skills_label: &'static str,
     fetched_versions: Signal<BTreeMap<String, String>>,
+    fetched_flock_signs: Signal<HashSet<String>>,
 ) -> Element {
     let state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
@@ -995,19 +1086,33 @@ fn FlockCard(
     let action_error = use_signal(|| Option::<String>::None);
     let version_display = flock.version.as_deref().unwrap_or("\u{2014}");
     let slug_display = format!("{}/{}", flock.repo_sign, flock.slug);
+    let flock_sign = format!("{}/{}", flock.repo_sign, flock.slug);
+    let is_fetched = fetched_flock_signs.read().contains(&flock_sign);
     let nav = use_navigator();
     let nav_slug = flock.id.clone();
-    let fetch_flock = {
+    let flock_action = {
         let flock = flock.clone();
         move |e: Event<MouseData>| {
             e.stop_propagation();
-            fetch_flock_from_explore(
-                state,
-                flock.clone(),
-                fetched_versions,
-                working,
-                action_error,
-            );
+            if is_fetched {
+                prune_flock_from_explore(
+                    state,
+                    flock.clone(),
+                    fetched_versions,
+                    fetched_flock_signs,
+                    working,
+                    action_error,
+                );
+            } else {
+                fetch_flock_from_explore(
+                    state,
+                    flock.clone(),
+                    fetched_versions,
+                    fetched_flock_signs,
+                    working,
+                    action_error,
+                );
+            }
         }
     };
 
@@ -1049,10 +1154,16 @@ fn FlockCard(
                         span { style: "display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(90, 158, 63, 0.3); border-top-color: {Theme::ACCENT}; border-radius: 50%; animation: spin 0.8s linear infinite;" }
                         "{t.fetching}"
                     }
+                } else if is_fetched {
+                    button {
+                        style: "padding: 4px 12px; font-size: 12px; background: rgba(200,50,50,0.1); color: #c03030; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;",
+                        onclick: flock_action,
+                        "{t.prune}"
+                    }
                 } else {
                     button {
                         style: "padding: 4px 12px; font-size: 12px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;",
-                        onclick: fetch_flock,
+                        onclick: flock_action,
                         "{t.fetch}"
                     }
                 }

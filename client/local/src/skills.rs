@@ -620,6 +620,63 @@ pub fn read_fetched_skill_versions(workdir: &Path) -> std::collections::BTreeMap
         .unwrap_or_default()
 }
 
+/// Read the full lockfile entries (slug → LockEntry) for richer queries.
+pub fn read_fetched_skill_entries(
+    workdir: &Path,
+) -> std::collections::BTreeMap<String, LockEntry> {
+    let lock_path = workdir.join(".savhub").join("lock.json");
+    fs::read_to_string(&lock_path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Lockfile>(&raw).ok())
+        .map(|lock| lock.skills)
+        .unwrap_or_default()
+}
+
+/// Count how many skills from a given repo_sign prefix are present in the lockfile.
+pub fn count_fetched_by_sign_prefix(
+    workdir: &Path,
+    sign_prefix: &str,
+) -> usize {
+    let entries = read_fetched_skill_entries(workdir);
+    let prefix = if sign_prefix.ends_with('/') {
+        sign_prefix.to_string()
+    } else {
+        format!("{sign_prefix}/")
+    };
+    entries
+        .values()
+        .filter(|entry| {
+            entry
+                .sign
+                .as_deref()
+                .map_or(false, |s| s.starts_with(&prefix))
+        })
+        .count()
+}
+
+/// Collect the slugs of all fetched skills whose sign matches a given prefix.
+pub fn fetched_slugs_by_sign_prefix(
+    workdir: &Path,
+    sign_prefix: &str,
+) -> Vec<String> {
+    let entries = read_fetched_skill_entries(workdir);
+    let prefix = if sign_prefix.ends_with('/') {
+        sign_prefix.to_string()
+    } else {
+        format!("{sign_prefix}/")
+    };
+    entries
+        .into_iter()
+        .filter(|(_, entry)| {
+            entry
+                .sign
+                .as_deref()
+                .map_or(false, |s| s.starts_with(&prefix))
+        })
+        .map(|(slug, _)| slug)
+        .collect()
+}
+
 /// Remove a fetched skill folder and update the lockfile.
 pub fn prune_skill(workdir: &Path, slug: &str) -> Result<()> {
     let skill_dir = workdir.join(slug);

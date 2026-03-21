@@ -261,6 +261,7 @@ fn Shell() -> Element {
                         if let Ok(Some(mut cfg)) = savhub_local::config::read_global_config() {
                             cfg.token = None;
                             let _ = savhub_local::config::write_global_config(&cfg);
+                            watcher::mark_self_written();
                         }
                     }
                 }
@@ -274,7 +275,6 @@ fn Shell() -> Element {
             div { style: "flex: 1; display: flex; flex-direction: column; overflow: hidden;",
                 CompatBanner {}
                 UpdateBanner { status: update_status }
-                ConfigChangedBanner {}
                 div { style: "flex: 1; overflow-y: auto;",
                     Outlet::<Route> {}
                 }
@@ -390,29 +390,6 @@ fn CompatBanner() -> Element {
             }
         }
         _ => rsx! {},
-    }
-}
-
-/// Thin banner shown when external config changes are detected.
-#[component]
-fn ConfigChangedBanner() -> Element {
-    let state = use_context::<AppState>();
-    let version = *state.config_version.read();
-    let mut dismissed = use_signal(|| 0u64);
-
-    if version == 0 || version <= *dismissed.read() {
-        return rsx! {};
-    }
-
-    rsx! {
-        div { style: "display: flex; align-items: center; justify-content: space-between; padding: 6px 20px; background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%); color: white; font-size: 13px;",
-            span { "Config updated externally. Pages will reflect the latest changes." }
-            button {
-                style: "padding: 3px 10px; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 4px; font-size: 11px; cursor: pointer;",
-                onclick: move |_| dismissed.set(version),
-                "Dismiss"
-            }
-        }
     }
 }
 
