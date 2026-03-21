@@ -1,6 +1,6 @@
 //! ratatui-based interactive multi-select for `savhub apply`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::io;
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
@@ -37,8 +37,8 @@ pub struct ApplySelection {
 
 /// Extract the repository part from a flock sign.
 ///
-/// `github.com/owner/repo/flock-slug` → `github.com/owner/repo`
-/// `github.com/owner/repo`            → `github.com/owner/repo`
+/// `github.com/owner/repo/flock-slug` -> `github.com/owner/repo`
+/// `github.com/owner/repo`            -> `github.com/owner/repo`
 fn repo_group(flock_sign: &str) -> &str {
     let mut end = 0;
     let mut slashes = 0;
@@ -79,16 +79,92 @@ fn group_flocks_by_repo(flocks: &[String]) -> Vec<(String, Vec<String>)> {
     groups
 }
 
+// Row types
+#[derive(Clone)]
+enum Row {
+    SectionHeader(&'static str, Color),
+    Separator,
+    RepoGroup(String),
+    Selector(usize),
+    Flock(String),
+    RemovedSelector(usize),
+    RemovedFlock(String),
+}
+
+fn is_interactive(row: &Row) -> bool {
+    matches!(row, Row::Selector(_) | Row::Flock(_))
+}
+
+/// Find the first interactive row index, or `None`.
+fn first_interactive(rows: &[Row]) -> Option<usize> {
+    rows.iter().position(|r| is_interactive(r))
+}
+
+/// Find the last interactive row index, or `None`.
+fn last_interactive(rows: &[Row]) -> Option<usize> {
+    rows.iter().rposition(|r| is_interactive(r))
+}
+
+/// Move cursor up to the nearest interactive row. Returns the original
+/// position if no interactive row exists above.
+fn move_up(rows: &[Row], cursor: usize) -> usize {
+    if cursor == 0 {
+        return cursor;
+    }
+    let mut pos = cursor - 1;
+    while pos > 0 && !is_interactive(&rows[pos]) {
+        pos -= 1;
+    }
+    if is_interactive(&rows[pos]) { pos } else { cursor }
+}
+
+/// Move cursor down to the nearest interactive row. Returns the original
+/// position if no interactive row exists below.
+fn move_down(rows: &[Row], cursor: usize) -> usize {
+    let last = rows.len().saturating_sub(1);
+    if cursor >= last {
+        return cursor;
+    }
+    let mut pos = cursor + 1;
+    while pos < last && !is_interactive(&rows[pos]) {
+        pos += 1;
+    }
+    if is_interactive(&rows[pos]) { pos } else { cursor }
+}
+
+/// Recompute derived flocks from checked selectors.
+fn compute_derived(selectors: &[MatchedSelector]) -> Vec<String> {
+    let mut flocks = Vec::new();
+    for sel in selectors {
+        if !sel.checked {
+            continue;
+        }
+        for f in &sel.flocks {
+            if !flocks.contains(f) {
+                flocks.push(f.clone());
+            }
+        }
+    }
+    flocks
+}
+
+fn is_flock_checked(flock: &str, overrides: &HashMap<String, bool>) -> bool {
+    overrides.get(flock).copied().unwrap_or(true)
+}
+
 /// Show an interactive TUI for `savhub apply`.
 ///
 /// Selectors are directly toggleable. Flocks are derived from checked
 /// selectors and can also be individually toggled.
 ///
+/// `flock_skill_counts` maps flock sign -> number of skills (pre-computed,
+/// no IO during rendering).
+///
 /// Returns `None` if cancelled.
 pub fn apply_select(
     selectors: &mut [MatchedSelector],
     flock_skip_set: &BTreeSet<String>,
-    flock_skill_counts: &dyn Fn(&str) -> usize,
+    flock_skill_counts: &HashMap<String, usize>,
     unmatched: &[UnmatchedSelector],
 ) -> anyhow::Result<Option<ApplySelection>> {
     if selectors.is_empty() && unmatched.is_empty() {
@@ -101,48 +177,11 @@ pub fn apply_select(
     }
 
     // Derived flocks with user overrides
-    let mut flock_overrides: std::collections::HashMap<String, bool> =
-        std::collections::HashMap::new();
+    let mut flock_overrides: HashMap<String, bool> = HashMap::new();
 
     // Initialize overrides from existing skip sets
     for f in flock_skip_set {
         flock_overrides.insert(f.clone(), false);
-    }
-
-    // Recompute derived flocks from checked selectors
-    fn compute_derived(selectors: &[MatchedSelector]) -> Vec<String> {
-        let mut flocks = Vec::new();
-        for sel in selectors {
-            if !sel.checked {
-                continue;
-            }
-            for f in &sel.flocks {
-                if !flocks.contains(f) {
-                    flocks.push(f.clone());
-                }
-            }
-        }
-        flocks
-    }
-
-    fn is_flock_checked(flock: &str, overrides: &std::collections::HashMap<String, bool>) -> bool {
-        overrides.get(flock).copied().unwrap_or(true)
-    }
-
-    // Row types
-    #[derive(Clone)]
-    enum Row {
-        SectionHeader(&'static str, Color), // label, color
-        Separator,
-        RepoGroup(String),
-        Selector(usize),
-        Flock(String),
-        RemovedSelector(usize),
-        RemovedFlock(String),
-    }
-
-    fn is_interactive(row: &Row) -> bool {
-        matches!(row, Row::Selector(_) | Row::Flock(_))
     }
 
     terminal::enable_raw_mode()?;
@@ -161,7 +200,7 @@ pub fn apply_select(
         // Build row list
         let mut rows: Vec<Row> = Vec::new();
 
-        // ── Install section ──
+        // -- Install section --
         if !selectors.is_empty() {
             rows.push(Row::SectionHeader("  Install", Color::Green));
             for i in 0..selectors.len() {
@@ -178,7 +217,7 @@ pub fn apply_select(
             }
         }
 
-        // ── Remove section ──
+        // -- Remove section --
         if !unmatched.is_empty() {
             if !rows.is_empty() {
                 rows.push(Row::Separator);
@@ -192,23 +231,12 @@ pub fn apply_select(
             }
         }
 
-        // Clamp cursor and find first interactive row
+        // Clamp cursor to nearest interactive row
         if cursor >= rows.len() {
             cursor = rows.len().saturating_sub(1);
         }
         if !rows.is_empty() && !is_interactive(&rows[cursor]) {
-            // find next interactive
-            let mut found = false;
-            for i in 0..rows.len() {
-                if is_interactive(&rows[i]) {
-                    cursor = i;
-                    found = true;
-                    break;
-                }
-            }
-            if !found {
-                cursor = 0;
-            }
+            cursor = first_interactive(&rows).unwrap_or(0);
         }
 
         // Counts for title
@@ -217,6 +245,11 @@ pub fn apply_select(
             .iter()
             .filter(|f| is_flock_checked(f, &flock_overrides))
             .count();
+        let add_skills: usize = derived_flocks
+            .iter()
+            .filter(|f| is_flock_checked(f, &flock_overrides))
+            .map(|f| flock_skill_counts.get(f.as_str()).copied().unwrap_or(0))
+            .sum();
         let rm_sel = unmatched.len();
 
         let rows_snapshot = rows.clone();
@@ -230,7 +263,7 @@ pub fn apply_select(
             ])
             .split(area);
 
-            // ── Title bar ──
+            // -- Title bar --
             let mut title_spans = vec![Span::styled(
                 " savhub apply ",
                 Style::default()
@@ -239,7 +272,7 @@ pub fn apply_select(
             )];
             if add_sel > 0 || add_flock > 0 {
                 title_spans.push(Span::styled(
-                    format!(" +{add_sel} selectors  +{add_flock} flocks"),
+                    format!(" +{add_sel} selectors  +{add_flock} flocks ({add_skills} skills)"),
                     Style::default().fg(Color::Green),
                 ));
             }
@@ -256,18 +289,23 @@ pub fn apply_select(
             );
             frame.render_widget(title, chunks[0]);
 
-            // ── Main list ──
+            // -- Main list --
             let list_items: Vec<ListItem> = rows_snapshot
                 .iter()
                 .map(|row| match row {
                     Row::SectionHeader(label, color) => ListItem::new(Line::from(vec![
                         Span::styled(
-                            format!(" ── {label} "),
+                            format!(" -- {label} "),
                             Style::default().fg(*color).add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled("─".repeat(40), Style::default().fg(Color::DarkGray)),
+                        Span::styled(
+                            "-".repeat(area.width.saturating_sub(14) as usize),
+                            Style::default().fg(Color::DarkGray),
+                        ),
                     ])),
-                    Row::Separator => ListItem::new(Line::from(Span::styled("", Style::default()))),
+                    Row::Separator => {
+                        ListItem::new(Line::from(Span::styled("", Style::default())))
+                    }
                     Row::RepoGroup(repo) => ListItem::new(Line::from(Span::styled(
                         format!("    {repo}"),
                         Style::default()
@@ -291,7 +329,10 @@ pub fn apply_select(
                     }
                     Row::Flock(slug) => {
                         let on = is_flock_checked(slug, &flock_overrides);
-                        let count = flock_skill_counts(slug);
+                        let count = flock_skill_counts
+                            .get(slug.as_str())
+                            .copied()
+                            .unwrap_or(0);
                         let (marker, mc, lc) = if on {
                             ("[+]", Color::Green, Color::White)
                         } else {
@@ -311,7 +352,7 @@ pub fn apply_select(
                         let u = &unmatched[*i];
                         ListItem::new(Line::from(vec![
                             Span::styled(
-                                "   [✕] ",
+                                "   [x] ",
                                 Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                             ),
                             Span::styled(
@@ -326,7 +367,7 @@ pub fn apply_select(
                         let display = flock_display(slug);
                         ListItem::new(Line::from(vec![
                             Span::styled(
-                                "      [✕] ",
+                                "      [x] ",
                                 Style::default().fg(Color::Rgb(120, 50, 50)),
                             ),
                             Span::styled(
@@ -345,10 +386,10 @@ pub fn apply_select(
 
             let list = List::new(list_items)
                 .highlight_style(Style::default().bg(Color::Rgb(40, 60, 35)))
-                .highlight_symbol("▸");
+                .highlight_symbol(">");
             frame.render_stateful_widget(list, chunks[1], &mut list_state);
 
-            // ── Help bar ──
+            // -- Help bar --
             let help = Paragraph::new(Line::from(vec![
                 Span::styled(
                     " Space",
@@ -384,7 +425,21 @@ pub fn apply_select(
                         .fg(Color::Yellow)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(" cancel", Style::default().fg(Color::DarkGray)),
+                Span::styled(" cancel  ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    "Home",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("/", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    "End",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" jump", Style::default().fg(Color::DarkGray)),
             ]));
             frame.render_widget(help, chunks[2]);
         })?;
@@ -400,19 +455,19 @@ pub fn apply_select(
                 }
                 KeyCode::Enter => break,
                 KeyCode::Up | KeyCode::Char('k') => {
-                    if cursor > 0 {
-                        cursor -= 1;
-                        while cursor > 0 && !is_interactive(&rows[cursor]) {
-                            cursor -= 1;
-                        }
-                    }
+                    cursor = move_up(&rows, cursor);
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    if cursor + 1 < rows.len() {
-                        cursor += 1;
-                        while cursor + 1 < rows.len() && !is_interactive(&rows[cursor]) {
-                            cursor += 1;
-                        }
+                    cursor = move_down(&rows, cursor);
+                }
+                KeyCode::Home => {
+                    if let Some(pos) = first_interactive(&rows) {
+                        cursor = pos;
+                    }
+                }
+                KeyCode::End => {
+                    if let Some(pos) = last_interactive(&rows) {
+                        cursor = pos;
                     }
                 }
                 KeyCode::Char(' ') => match &rows[cursor] {

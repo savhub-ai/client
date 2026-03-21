@@ -2993,14 +2993,21 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             .cloned()
             .collect();
 
+        // Pre-compute skill counts per flock to avoid API calls during TUI rendering.
+        let flock_skill_counts: std::collections::HashMap<String, usize> = matched_flocks
+            .iter()
+            .map(|slug| {
+                let count = registry::list_flock_skill_slugs(slug)
+                    .map(|v| v.len())
+                    .unwrap_or(0);
+                (slug.clone(), count)
+            })
+            .collect();
+
         let sel_result = tui::apply_select(
             &mut tui_selectors,
             &flock_skip,
-            &|slug| {
-                registry::list_flock_skill_slugs(slug)
-                    .map(|v| v.len())
-                    .unwrap_or(0)
-            },
+            &flock_skill_counts,
             &unmatched,
         )?;
 
