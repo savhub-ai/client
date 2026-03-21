@@ -479,9 +479,6 @@ pub struct VersionDetail {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SkillListItem {
     pub id: Uuid,
-    /// Skill sign: `{repo_sign}/{skill_path}`.
-    #[serde(default)]
-    pub sign: String,
     pub slug: String,
     pub path: String,
     pub display_name: String,

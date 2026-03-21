@@ -122,7 +122,7 @@ pub fn list_blocked_flocks(auth: &AuthContext) -> Result<FlockBlockListResponse,
             let repo = repo_rows.iter().find(|r| r.id == flock.repo_id)?;
             Some(BlockedFlockDto {
                 flock_id: flock.id,
-                repo_slug: repo.sign.clone(),
+                repo_slug: super::helpers::derive_repo_sign(&repo.git_url),
                 flock_slug: flock.slug.clone(),
                 flock_name: flock.name.clone(),
                 blocked_at: block.created_at,

@@ -510,12 +510,11 @@ async fn do_auto_import(
             "repo has been moved/renamed — applying redirect"
         );
         let normalized = normalize_git_url(new_url);
-        // If the repo already exists under the old sign, migrate it in-place
-        let (old_domain, old_slug) = parse_git_url_parts(&job.git_url);
-        let old_sign = format!("{old_domain}/{old_slug}");
+        // If the repo already exists under the old URL, migrate it in-place
         let mut redir_conn = db_conn()?;
+        let old_git_url = normalize_git_url(&job.git_url);
         if let Some(existing) = repos::table
-            .filter(repos::sign.eq(&old_sign))
+            .filter(repos::git_url.eq(&old_git_url))
             .select(RepoRow::as_select())
             .first::<RepoRow>(&mut redir_conn)
             .optional()?
@@ -629,7 +628,7 @@ async fn do_auto_import(
     let repo = {
         let mut conn = db_conn()?;
         let repo = if let Some(existing) = repos::table
-            .filter(repos::sign.eq(&repo_sign))
+            .filter(repos::git_url.eq(&effective_git_url))
             .select(RepoRow::as_select())
             .first::<RepoRow>(&mut conn)
             .optional()?
@@ -652,7 +651,6 @@ async fn do_auto_import(
                 name: repo_name.to_string(),
                 description: repo_description,
                 git_url: effective_git_url.clone(),
-                sign: repo_sign.to_owned(),
                 license: None,
                 visibility: "public".to_string(),
                 verified: false,
@@ -669,7 +667,7 @@ async fn do_auto_import(
                 .execute(&mut conn)?;
 
             repos::table
-                .filter(repos::sign.eq(&repo_sign))
+                .filter(repos::git_url.eq(&effective_git_url))
                 .select(RepoRow::as_select())
                 .first::<RepoRow>(&mut conn)?
         };
@@ -1102,8 +1100,6 @@ pub(crate) fn persist_auto_import_flock(
     skill_scan_files: &[super::security::SkillScanInput],
 ) -> Result<(), AppError> {
     let now = Utc::now();
-    let repo_sign = repo.sign.clone();
-
     let existing_flock = flocks::table
         .filter(flocks::repo_id.eq(repo.id))
         .filter(flocks::slug.eq(flock_slug))
@@ -1159,7 +1155,6 @@ pub(crate) fn persist_auto_import_flock(
         diesel::insert_into(flocks::table)
             .values(NewFlockRow {
                 id: flock_id,
-                sign: format!("{}/{}", repo.sign, flock_slug),
                 repo_id: repo.id,
                 slug: flock_slug.to_string(),
                 name: flock_name.to_string(),
@@ -1189,7 +1184,6 @@ pub(crate) fn persist_auto_import_flock(
     for skill in skills {
         skill_rows.push(NewSkillRow {
             id: Uuid::now_v7(),
-            sign: format!("{repo_sign}/{}", skill.path),
             slug: skill.slug.clone(),
             name: skill.name.clone(),
             path: skill.path.clone(),
@@ -1282,7 +1276,7 @@ pub(crate) fn persist_auto_import_flock(
         "flock",
         Some(flock_id),
         json!({
-            "repo_sign": &repo.sign,
+            "repo_sign": &repo.git_url,
             "flock_slug": flock_slug,
             "skill_count": skills.len(),
             "source_path": source_path,

@@ -21,8 +21,8 @@ use shared::{
 };
 
 use super::helpers::{
-    db_conn, insert_audit_log, load_users_map, normalize_git_url, parse_git_url_parts,
-    user_summary_from_row,
+    db_conn, derive_repo_sign, insert_audit_log, load_users_map, normalize_git_url,
+    parse_git_url_parts, sign_to_git_url, user_summary_from_row,
 };
 use super::interactions::{fetch_flock_comments, get_user_flock_rating, is_flock_starred};
 use super::security::parse_security_status;
@@ -64,9 +64,9 @@ pub fn list_repos(
             .filter_map(|row| {
                 let name_lower = row.name.to_lowercase();
                 let desc_lower = row.description.to_lowercase();
-                let sign_lower = row.sign.to_lowercase();
+                let git_url_lower = row.git_url.to_lowercase();
 
-                let matches = sign_lower.contains(&q_lower)
+                let matches = git_url_lower.contains(&q_lower)
                     || name_lower.contains(&q_lower)
                     || desc_lower.contains(&q_lower);
 
@@ -74,9 +74,7 @@ pub fn list_repos(
                     return None;
                 }
 
-                let score = if sign_lower == q_lower {
-                    100
-                } else if sign_lower.contains(&q_lower) {
+                let score = if git_url_lower.contains(&q_lower) {
                     80
                 } else if name_lower == q_lower {
                     70
@@ -162,7 +160,6 @@ pub fn create_repo(
         ));
     }
 
-    let sign = format!("{domain}/{path_slug}");
     let name = request
         .name
         .filter(|n| !n.trim().is_empty())
@@ -174,12 +171,13 @@ pub fn create_repo(
 
     let mut conn = db_conn()?;
     if repos::table
-        .filter(repos::sign.eq(&sign))
+        .filter(repos::git_url.eq(&git_url))
         .select(repos::id)
         .first::<Uuid>(&mut conn)
         .optional()?
         .is_some()
     {
+        let sign = format!("{domain}/{path_slug}");
         return Err(AppError::Conflict(format!("repo `{sign}` already exists",)));
     }
 
@@ -189,7 +187,6 @@ pub fn create_repo(
         name: name.clone(),
         description: description.clone(),
         git_url: git_url.clone(),
-        sign: sign.clone(),
         license: None,
         visibility: "public".to_string(),
         verified: false,
@@ -214,7 +211,7 @@ pub fn create_repo(
         "repo",
         Some(row.id),
         json!({
-            "sign": row.sign,
+            "git_url": row.git_url,
             "name": row.name,
         }),
     )?;
@@ -225,8 +222,9 @@ pub fn create_repo(
 pub fn get_repo_detail(domain: &str, path_slug: &str) -> Result<RepoDetailResponse, AppError> {
     let mut conn = db_conn()?;
     let repo_path = format!("{domain}/{path_slug}");
+    let git_url = sign_to_git_url(domain, path_slug);
     let repo = repos::table
-        .filter(repos::sign.eq(&repo_path))
+        .filter(repos::git_url.eq(&git_url))
         .select(RepoRow::as_select())
         .first::<RepoRow>(&mut conn)
         .optional()?
@@ -321,8 +319,9 @@ fn load_import_target(
 ) -> Result<RepoRow, AppError> {
     let mut conn = db_conn()?;
     let repo_path = format!("{domain}/{path_slug}");
+    let git_url = sign_to_git_url(domain, path_slug);
     let repo = repos::table
-        .filter(repos::sign.eq(&repo_path))
+        .filter(repos::git_url.eq(&git_url))
         .select(RepoRow::as_select())
         .first::<RepoRow>(&mut conn)
         .optional()?
@@ -339,18 +338,18 @@ fn persist_flock_import(
     skills: Vec<ImportedSkillRecord>,
 ) -> Result<FlockDetailResponse, AppError> {
     let mut conn = db_conn()?;
-    let repo_id_str = repo.sign.clone();
+    let repo_sign_str = derive_repo_sign(&repo.git_url);
 
-    if document.repo != repo_id_str {
+    if document.repo != repo.git_url && document.repo != repo_sign_str {
         return Err(AppError::BadRequest(format!(
             "flock repo `{}` does not match path repo `{}`",
-            document.repo, repo_id_str
+            document.repo, repo_sign_str
         )));
     }
 
     // Ensure flock sign is set
     if document.sign.is_empty() {
-        document.sign = format!("{}/{}", repo_id_str, flock_slug);
+        document.sign = format!("{}/{}", repo_sign_str, flock_slug);
     }
 
     if document.metadata.maintainers.is_empty() {
@@ -369,7 +368,7 @@ fn persist_flock_import(
                 skill.slug
             )));
         }
-        validate_imported_skill_record(&repo_id_str, flock_slug, skill)
+        validate_imported_skill_record(&repo_sign_str, flock_slug, skill)
             .map_err(AppError::BadRequest)?;
     }
 
@@ -404,7 +403,6 @@ fn persist_flock_import(
         .unwrap_or(serde_json::Value::Null);
     let flock_row = NewFlockRow {
         id: flock_id,
-        sign: format!("{}/{}", repo.sign, flock_slug),
         repo_id: repo.id,
         slug: flock_slug.to_string(),
         name: document.name.clone(),
@@ -429,7 +427,6 @@ fn persist_flock_import(
         stats_max_unique_users: 0,
     };
     let flock_changeset = FlockChangeset {
-        sign: None,
         name: Some(document.name.clone()),
         keywords: None,
         description: Some(document.description.clone()),
@@ -488,7 +485,6 @@ fn persist_flock_import(
                     // Update existing skill, preserving stats/stars/comments etc.
                     diesel::update(skills::table.find(existing.id))
                         .set(SkillChangeset {
-                            sign: Some(format!("{}/{}", repo.sign, skill.path)),
                             slug: Some(skill.slug.clone()),
                             name: Some(skill.name.clone()),
                             path: Some(skill.path.clone()),
@@ -508,7 +504,6 @@ fn persist_flock_import(
                     diesel::insert_into(skills::table)
                         .values(NewSkillRow {
                             id: Uuid::now_v7(),
-                            sign: format!("{}/{}", repo.sign, skill.path),
                             slug: skill.slug.clone(),
                             name: skill.name.clone(),
                             path: skill.path.clone(),
@@ -564,7 +559,6 @@ fn persist_flock_import(
             for skill in &skills {
                 skill_rows.push(NewSkillRow {
                     id: Uuid::now_v7(),
-                    sign: format!("{}/{}", repo.sign, skill.path),
                     slug: skill.slug.clone(),
                     name: skill.name.clone(),
                     path: skill.path.clone(),
@@ -618,7 +612,7 @@ fn persist_flock_import(
             "flock",
             Some(flock_id),
             json!({
-                "repo": &repo.sign,
+                "repo": &repo.git_url,
                 "flock_slug": flock_row.slug,
                 "skill_count": skills.len(),
                 "updated": updated_existing_flock,
@@ -628,7 +622,8 @@ fn persist_flock_import(
         Ok(())
     })?;
 
-    let (d, ps) = split_repo_path(&repo.sign);
+    let rs = derive_repo_sign(&repo.git_url);
+    let (d, ps) = split_repo_path(&rs);
     get_flock_detail(d, ps, &flock_row.slug, None)
 }
 
@@ -640,8 +635,9 @@ pub fn get_flock_detail(
 ) -> Result<FlockDetailResponse, AppError> {
     let mut conn = db_conn()?;
     let repo_path = format!("{domain}/{path_slug}");
+    let git_url = sign_to_git_url(domain, path_slug);
     let repo = repos::table
-        .filter(repos::sign.eq(&repo_path))
+        .filter(repos::git_url.eq(&git_url))
         .select(RepoRow::as_select())
         .first::<RepoRow>(&mut conn)
         .optional()?
@@ -766,7 +762,7 @@ fn repo_summary_from_row(row: &RepoRow, flock_count: i64, skill_count: i64) -> R
         git_url: row.git_url.clone(),
         git_rev: Some(row.git_rev.clone()),
         git_branch: row.git_branch.clone(),
-        sign: row.sign.clone(),
+        sign: derive_repo_sign(&row.git_url),
         visibility: parse_visibility(&row.visibility),
         verified: row.verified,
         flock_count,
@@ -787,7 +783,7 @@ pub(crate) fn flock_summary_from_row(
         .ok_or_else(|| AppError::Internal("missing flock importer".to_string()))?;
     Ok(FlockSummary {
         id: row.id,
-        repo_sign: repo.sign.clone(),
+        repo_sign: derive_repo_sign(&repo.git_url),
         slug: row.slug.clone(),
         name: row.name.clone(),
         description: row.description.clone(),
@@ -815,7 +811,7 @@ pub(crate) fn flock_summary_from_row(
 
 fn repo_document_from_row(row: &RepoRow) -> Result<RepoDocument, AppError> {
     Ok(RepoDocument {
-        sign: row.sign.clone(),
+        sign: derive_repo_sign(&row.git_url),
         name: row.name.clone(),
         description: row.description.clone(),
         git_url: row.git_url.clone(),
@@ -835,8 +831,8 @@ fn flock_document_from_row(repo: &RepoRow, row: &FlockRow) -> Result<FlockDocume
         CatalogSource::Registry { path } => Some(path.clone()).filter(|p| p != "."),
     });
     Ok(FlockDocument {
-        sign: format!("{}/{}", repo.sign, row.slug),
-        repo: repo.sign.clone(),
+        sign: format!("{}/{}", derive_repo_sign(&repo.git_url), row.slug),
+        repo: repo.git_url.clone(),
         name: row.name.clone(),
         description: row.description.clone(),
         path,

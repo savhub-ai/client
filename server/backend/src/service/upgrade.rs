@@ -50,14 +50,14 @@ pub async fn backfill_repo_git_rev(pool: &PgPool) -> Result<(), AppError> {
                     .execute(&mut conn)?;
                 tracing::info!(
                     "[upgrade] repo {} git_rev = {}",
-                    repo.sign,
+                    repo.git_url,
                     &sha[..sha.len().min(12)]
                 );
             }
             None => {
                 tracing::warn!(
                     "[upgrade] repo {} — could not resolve git_rev, skipping",
-                    repo.sign
+                    repo.git_url
                 );
             }
         }
@@ -97,7 +97,7 @@ async fn from_remote(repo: &RepoRow) -> Option<String> {
     match resolve_remote_sha(&git_url, "HEAD").await {
         Ok(sha) => Some(sha),
         Err(e) => {
-            tracing::debug!("[upgrade] ls-remote failed for {}: {e}", repo.sign);
+            tracing::debug!("[upgrade] ls-remote failed for {}: {e}", repo.git_url);
             None
         }
     }

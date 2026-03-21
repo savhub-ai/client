@@ -528,15 +528,17 @@ pub fn refresh_flock_stats(conn: &mut PgConnection, flock_id: Uuid) -> Result<()
 // --- Skill Installs ---
 
 pub fn record_skill_install(
-    skill_sign: &str,
+    repo_url: &str,
+    skill_path: &str,
     user_id: Option<Uuid>,
     client_type: &str,
 ) -> Result<AdminActionResponse, AppError> {
     use crate::schema::{skill_installs, skills as skills_table};
 
     let mut conn = db_conn()?;
+    // Try by slug first, then fall back to sign-based lookup (repo_sign/path)
     let skill = skills_table::table
-        .filter(skills_table::sign.eq(skill_sign))
+        .filter(skills_table::slug.eq(skill_sign))
         .filter(skills_table::soft_deleted_at.is_null())
         .select(crate::models::SkillRow::as_select())
         .first::<crate::models::SkillRow>(&mut conn)

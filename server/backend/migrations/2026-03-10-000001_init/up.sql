@@ -21,7 +21,6 @@ CREATE TABLE user_tokens (
 
 CREATE TABLE repos (
     id UUID PRIMARY KEY,
-    sign TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     git_url TEXT NOT NULL UNIQUE,
@@ -39,7 +38,6 @@ CREATE TABLE repos (
 
 CREATE TABLE flocks (
     id UUID PRIMARY KEY,
-    sign TEXT NOT NULL UNIQUE,
     slug TEXT NOT NULL,
     name TEXT NOT NULL,
     path TEXT,
@@ -67,7 +65,6 @@ CREATE TABLE flocks (
 
 CREATE TABLE skills (
     id UUID PRIMARY KEY,
-    sign TEXT NOT NULL UNIQUE,
     slug TEXT NOT NULL,
     name TEXT NOT NULL,
     path TEXT NOT NULL,

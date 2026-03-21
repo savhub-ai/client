@@ -274,6 +274,19 @@ fn load_skill_items(
             .filter_map(|row| row.latest_version_id)
             .collect::<Vec<_>>(),
     )?;
+    // Load repos for git_url (needed to derive sign)
+    let repo_ids: Vec<Uuid> = skill_rows
+        .iter()
+        .map(|row| row.repo_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    let repo_rows = repos::table
+        .filter(repos::id.eq_any(&repo_ids))
+        .select(RepoRow::as_select())
+        .load::<RepoRow>(conn)?;
+    let repo_map: HashMap<Uuid, RepoRow> = repo_rows.into_iter().map(|r| (r.id, r)).collect();
+
     let skill_map = skill_rows
         .into_iter()
         .map(|row| (row.id, row))
@@ -293,7 +306,8 @@ fn load_skill_items(
             let latest = row
                 .latest_version_id
                 .and_then(|id| latest_versions.get(&id));
-            Ok(skill_item_from_rows(row, owner, latest))
+            let git_url = repo_map.get(&row.repo_id).map(|r| r.git_url.as_str()).unwrap_or_default();
+            Ok(skill_item_from_rows(row, git_url, owner, latest))
         })
         .collect()
 }

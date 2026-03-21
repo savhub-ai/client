@@ -149,7 +149,7 @@ fn hydrate_history_items(
                     .get(&row.resource_id)
                     .map(|flock| {
                         (
-                            flock.sign.clone(),
+                            flock.slug.clone(),
                             flock.name.clone(),
                             users
                                 .get(&flock.imported_by_user_id)

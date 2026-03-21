@@ -6,7 +6,7 @@ use diesel::prelude::*;
 use crate::auth::{AuthContext, RequestUser};
 use crate::error::AppError;
 use crate::models::{RepoRow, SkillCommentRow, SkillRow, SkillVersionRow};
-use crate::schema::{skill_comments, skill_stars, skill_versions, skills};
+use crate::schema::{repos, skill_comments, skill_stars, skill_versions, skills};
 use shared::{
     CommentDto, FileContentResponse, FlockSummary, PagedResponse, ResolveResponse, ResolvedVersion,
     ResourceKind, SearchResponse, SearchResult, SkillDetailResponse, SkillListItem, WhoAmIResponse,
@@ -41,16 +41,11 @@ pub fn list_skills(
 
     let mut conn = db_conn()?;
 
-    // When `sign` is provided, filter by it and return a single-item page.
+    // When `sign` is provided, look up the skill by repo git_url + path.
     if let Some(ref sign_value) = sign {
         let sign_value = sign_value.trim();
         if !sign_value.is_empty() {
-            let row = dsl::skills
-                .filter(dsl::sign.eq(sign_value))
-                .filter(dsl::soft_deleted_at.is_null())
-                .select(SkillRow::as_select())
-                .first::<SkillRow>(&mut conn)
-                .optional()?;
+            let row = find_skill_by_sign(&mut conn, sign_value)?;
             return match row {
                 Some(row) => {
                     if !viewer_is_staff(viewer) && row.moderation_status != "active" {
@@ -59,6 +54,10 @@ pub fn list_skills(
                             next_cursor: None,
                         });
                     }
+                    let repo = repos::table
+                        .find(row.repo_id)
+                        .select(RepoRow::as_select())
+                        .first::<RepoRow>(&mut conn)?;
                     let owners = load_skill_owners(&mut conn, &[&row])?;
                     let latest = row
                         .latest_version_id
@@ -70,7 +69,7 @@ pub fn list_skills(
                         .ok_or_else(|| AppError::Internal("missing skill owner".to_string()))?;
                     let lv = row.latest_version_id.and_then(|id| latest.get(&id));
                     Ok(PagedResponse {
-                        items: vec![skill_item_from_rows(&row, owner, lv)],
+                        items: vec![skill_item_from_rows(&row, &repo.git_url, owner, lv)],
                         next_cursor: None,
                     })
                 }
@@ -100,6 +99,9 @@ pub fn list_skills(
     if let Some(fid) = flock_id {
         query = query.filter(dsl::flock_id.eq(fid));
     }
+
+    // Load repo map for all skills (needed to derive sign)
+    let repo_map = load_repo_map(&mut conn)?;
 
     if search_query.is_some() {
         // When searching, load all rows (no limit/offset) so we can score and sort in-memory.
@@ -161,7 +163,8 @@ pub fn list_skills(
                     .get(&row.flock_id)
                     .ok_or_else(|| AppError::Internal("missing skill owner".to_string()))?;
                 let latest = row.latest_version_id.and_then(|id| latest_map.get(&id));
-                Ok(skill_item_from_rows(row, owner, latest))
+                let git_url = repo_map.get(&row.repo_id).map(|r| r.git_url.as_str()).unwrap_or_default();
+                Ok(skill_item_from_rows(row, git_url, owner, latest))
             })
             .collect::<Result<Vec<_>, AppError>>()?;
 
@@ -204,7 +207,8 @@ pub fn list_skills(
                     .get(&row.flock_id)
                     .ok_or_else(|| AppError::Internal("missing skill owner".to_string()))?;
                 let latest = row.latest_version_id.and_then(|id| latest.get(&id));
-                Ok(skill_item_from_rows(row, owner, latest))
+                let git_url = repo_map.get(&row.repo_id).map(|r| r.git_url.as_str()).unwrap_or_default();
+                Ok(skill_item_from_rows(row, git_url, owner, latest))
             })
             .collect::<Result<Vec<_>, AppError>>()?;
 
@@ -378,6 +382,10 @@ fn build_skill_detail(
 ) -> Result<SkillDetailResponse, AppError> {
     ensure_skill_visible(&row, viewer)?;
 
+    let repo = repos::table
+        .find(row.repo_id)
+        .select(RepoRow::as_select())
+        .first::<RepoRow>(conn)?;
     let owner = load_skill_owner_via_flock(conn, row.flock_id)?;
     let versions = fetch_skill_versions(conn, row.id, viewer)?;
     let latest = resolve_latest_skill_version(&row, &versions);
@@ -389,7 +397,7 @@ fn build_skill_detail(
     };
 
     Ok(SkillDetailResponse {
-        skill: skill_item_from_rows(&row, &owner, latest),
+        skill: skill_item_from_rows(&row, &repo.git_url, &owner, latest),
         latest_version: latest_detail,
         versions: versions.iter().map(version_summary_from_skill).collect(),
         comments,
@@ -686,4 +694,51 @@ fn push_skill_results(
             owner_handle: owners.get(&row.flock_id).map(|user| user.handle.clone()),
         });
     }
+}
+
+/// Find a skill by its sign (e.g. `github.com/org/repo/path/to/skill`).
+///
+/// Tries progressively longer repo prefixes until a matching repo + skill path is found.
+fn find_skill_by_sign(
+    conn: &mut PgConnection,
+    sign: &str,
+) -> Result<Option<SkillRow>, AppError> {
+    let Some((domain, rest)) = sign.split_once('/') else {
+        return Ok(None);
+    };
+    let segments: Vec<&str> = rest.split('/').collect();
+    // Try progressively longer repo path_slugs
+    for i in 1..segments.len() {
+        let path_slug = segments[..i].join("/");
+        let skill_path = segments[i..].join("/");
+        let git_url = format!("https://{domain}/{path_slug}.git");
+        let repo = repos::table
+            .filter(repos::git_url.eq(&git_url))
+            .select(RepoRow::as_select())
+            .first::<RepoRow>(conn)
+            .optional()?;
+        if let Some(repo) = repo {
+            let skill = skills::table
+                .filter(skills::repo_id.eq(repo.id))
+                .filter(skills::path.eq(&skill_path))
+                .filter(skills::soft_deleted_at.is_null())
+                .select(SkillRow::as_select())
+                .first::<SkillRow>(conn)
+                .optional()?;
+            if skill.is_some() {
+                return Ok(skill);
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Load all repos into a map keyed by id.
+fn load_repo_map(
+    conn: &mut PgConnection,
+) -> Result<HashMap<uuid::Uuid, RepoRow>, AppError> {
+    let rows = repos::table
+        .select(RepoRow::as_select())
+        .load::<RepoRow>(conn)?;
+    Ok(rows.into_iter().map(|r| (r.id, r)).collect())
 }

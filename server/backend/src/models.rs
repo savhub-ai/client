@@ -77,7 +77,6 @@ pub struct NewUserTokenRow {
 #[diesel(table_name = repos)]
 pub struct RepoRow {
     pub id: Uuid,
-    pub sign: String,
     pub name: String,
     pub description: String,
     pub git_url: String,
@@ -97,7 +96,6 @@ pub struct RepoRow {
 #[diesel(table_name = repos)]
 pub struct NewRepoRow {
     pub id: Uuid,
-    pub sign: String,
     pub name: String,
     pub description: String,
     pub git_url: String,
@@ -116,7 +114,6 @@ pub struct NewRepoRow {
 #[derive(Debug, Default, Clone, AsChangeset)]
 #[diesel(table_name = repos)]
 pub struct RepoChangeset {
-    pub sign: Option<String>,
     pub name: Option<String>,
     pub description: Option<String>,
     pub git_url: Option<String>,
@@ -136,7 +133,6 @@ pub struct RepoChangeset {
 #[diesel(belongs_to(UserRow, foreign_key = imported_by_user_id))]
 pub struct FlockRow {
     pub id: Uuid,
-    pub sign: String,
     pub slug: String,
     pub name: String,
     pub repo_id: Uuid,
@@ -164,7 +160,6 @@ pub struct FlockRow {
 #[diesel(table_name = flocks)]
 pub struct NewFlockRow {
     pub id: Uuid,
-    pub sign: String,
     pub slug: String,
     pub name: String,
     pub repo_id: Uuid,
@@ -190,7 +185,6 @@ pub struct NewFlockRow {
 #[derive(Debug, Default, Clone, AsChangeset)]
 #[diesel(table_name = flocks)]
 pub struct FlockChangeset {
-    pub sign: Option<String>,
     pub name: Option<String>,
     pub keywords: Option<Vec<Option<String>>>,
     pub description: Option<String>,
@@ -215,7 +209,6 @@ pub struct FlockChangeset {
 #[diesel(belongs_to(FlockRow, foreign_key = flock_id))]
 pub struct SkillRow {
     pub id: Uuid,
-    pub sign: String,
     pub slug: String,
     pub name: String,
     pub path: String,
@@ -253,7 +246,6 @@ pub struct SkillRow {
 #[diesel(table_name = skills)]
 pub struct NewSkillRow {
     pub id: Uuid,
-    pub sign: String,
     pub slug: String,
     pub name: String,
     pub path: String,
@@ -290,7 +282,6 @@ pub struct NewSkillRow {
 #[derive(Debug, Default, Clone, AsChangeset)]
 #[diesel(table_name = skills)]
 pub struct SkillChangeset {
-    pub sign: Option<String>,
     pub slug: Option<String>,
     pub name: Option<String>,
     pub path: Option<String>,

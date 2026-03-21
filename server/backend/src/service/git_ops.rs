@@ -102,7 +102,6 @@ pub(crate) fn apply_repo_redirect(
 
     diesel::update(repos::table.find(repo_id))
         .set(RepoChangeset {
-            sign: Some(new_sign.clone()),
             git_url: Some(new_url.clone()),
             updated_at: Some(chrono::Utc::now()),
             ..Default::default()
@@ -111,32 +110,6 @@ pub(crate) fn apply_repo_redirect(
         .map_err(|error| {
             AppError::Internal(format!("failed to update repo URL after redirect: {error}"))
         })?;
-
-    diesel::sql_query(
-        "UPDATE flocks SET sign = REPLACE(sign, $1, $2), updated_at = NOW() \
-         WHERE repo_id = $3 AND sign LIKE $4",
-    )
-    .bind::<diesel::sql_types::Text, _>(format!("{old_sign}/"))
-    .bind::<diesel::sql_types::Text, _>(format!("{new_sign}/"))
-    .bind::<diesel::sql_types::Uuid, _>(repo_id)
-    .bind::<diesel::sql_types::Text, _>(format!("{old_sign}/%"))
-    .execute(conn)
-    .map_err(|error| {
-        AppError::Internal(format!("failed to update flock signs after redirect: {error}"))
-    })?;
-
-    diesel::sql_query(
-        "UPDATE skills SET sign = REPLACE(sign, $1, $2), updated_at = NOW() \
-         WHERE repo_id = $3 AND sign LIKE $4",
-    )
-    .bind::<diesel::sql_types::Text, _>(format!("{old_sign}/"))
-    .bind::<diesel::sql_types::Text, _>(format!("{new_sign}/"))
-    .bind::<diesel::sql_types::Uuid, _>(repo_id)
-    .bind::<diesel::sql_types::Text, _>(format!("{old_sign}/%"))
-    .execute(conn)
-    .map_err(|error| {
-        AppError::Internal(format!("failed to update skill signs after redirect: {error}"))
-    })?;
 
     Ok(())
 }

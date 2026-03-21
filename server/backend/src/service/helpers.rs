@@ -105,6 +105,21 @@ pub struct DownloadResult {
     pub bytes: Vec<u8>,
 }
 
+/// Derive the old-style repo "sign" from its normalized git_url.
+///
+/// E.g. `https://github.com/org/repo.git` → `github.com/org/repo`
+pub fn derive_repo_sign(git_url: &str) -> String {
+    let (domain, path) = parse_git_url_parts(git_url);
+    format!("{domain}/{path}")
+}
+
+/// Reconstruct a normalized git_url from domain and path_slug.
+///
+/// E.g. `("github.com", "org/repo")` → `https://github.com/org/repo.git`
+pub fn sign_to_git_url(domain: &str, path_slug: &str) -> String {
+    format!("https://{domain}/{path_slug}.git")
+}
+
 pub fn db_conn() -> Result<crate::db::PgPooledConnection, AppError> {
     app_state()
         .pool
@@ -126,15 +141,15 @@ pub fn fetch_skill_by_slug(
 
 pub fn fetch_flock_by_slugs(
     conn: &mut PgConnection,
-    repo_sign: &str,
+    repo_url: &str,
     flock_slug: &str,
 ) -> Result<FlockRow, AppError> {
     let repo_id = repos::table
-        .filter(repos::sign.eq(repo_sign))
+        .filter(repos::git_url.eq(&repo_url))
         .select(repos::id)
         .first::<Uuid>(conn)
         .optional()?
-        .ok_or_else(|| AppError::NotFound(format!("repo `{repo_sign}` does not exist")))?;
+        .ok_or_else(|| AppError::NotFound(format!("repo `{repo_url}` does not exist")))?;
     flocks::table
         .filter(flocks::repo_id.eq(repo_id))
         .filter(flocks::slug.eq(flock_slug))
@@ -143,7 +158,7 @@ pub fn fetch_flock_by_slugs(
         .optional()?
         .ok_or_else(|| {
             AppError::NotFound(format!(
-                "flock `{flock_slug}` does not exist under repo `{repo_sign}`"
+                "flock `{flock_slug}` does not exist under repo `{repo_url}`"
             ))
         })
 }
@@ -213,12 +228,12 @@ pub fn user_summary_from_row(row: &UserRow) -> UserSummary {
 
 pub fn skill_item_from_rows(
     row: &SkillRow,
+    repo_url: &str,
     owner: &UserRow,
     latest: Option<&SkillVersionRow>,
 ) -> SkillListItem {
     SkillListItem {
         id: row.id,
-        sign: row.sign.clone(),
         slug: row.slug.clone(),
         path: row.path.clone(),
         display_name: row.name.clone(),

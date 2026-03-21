@@ -53,7 +53,6 @@ diesel::table! {
 diesel::table! {
     flocks (id) {
         id -> Uuid,
-        sign -> Text,
         slug -> Text,
         name -> Text,
         path -> Nullable<Text>,
@@ -134,7 +133,6 @@ diesel::table! {
 diesel::table! {
     repos (id) {
         id -> Uuid,
-        sign -> Text,
         name -> Text,
         description -> Text,
         git_url -> Text,
@@ -259,7 +257,6 @@ diesel::table! {
 diesel::table! {
     skills (id) {
         id -> Uuid,
-        sign -> Text,
         slug -> Text,
         name -> Text,
         path -> Text,

@@ -275,7 +275,7 @@ async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
                 ..Default::default()
             })
             .execute(&mut conn)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e: diesel::result::Error| e.to_string())?;
         return Ok(());
     }
 
