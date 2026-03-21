@@ -2117,24 +2117,11 @@ fn normalize_remote_text(value: Option<String>) -> Option<String> {
 }
 
 fn repo_sign_from_skill_detail(detail: &SkillDetailResponse) -> Result<String> {
-    let sign = detail.skill.sign.trim();
-    let skill_path = detail.skill.path.trim().trim_matches('/');
-    if sign.is_empty() {
-        bail!("skill `{}` is missing sign metadata", detail.skill.slug);
+    let repo_url = detail.skill.repo_url.trim();
+    if repo_url.is_empty() {
+        bail!("skill `{}` is missing repo_url metadata", detail.skill.slug);
     }
-    if skill_path.is_empty() {
-        return Ok(sign.to_string());
-    }
-    let suffix = format!("/{skill_path}");
-    sign.strip_suffix(&suffix)
-        .map(|value| value.to_string())
-        .ok_or_else(|| {
-            anyhow!(
-                "failed to derive repo sign from skill sign `{}` and path `{}`",
-                detail.skill.sign,
-                detail.skill.path
-            )
-        })
+    Ok(repo_url.to_string())
 }
 
 async fn resolve_remote_skill_summary(client: &ApiClient, slug: &str) -> Result<SkillListItem> {

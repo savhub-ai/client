@@ -568,9 +568,9 @@ fn normalize_git_commit(value: &str) -> Option<String> {
 pub struct FetchedSkillMetadata {
     pub remote_id: Option<String>,
     pub remote_slug: Option<String>,
-    pub sign: Option<String>,
+    pub repo_url: Option<String>,
     pub path: Option<String>,
-    pub flock_sign: Option<String>,
+    pub flock_slug: Option<String>,
     pub git_rev: Option<String>,
 }
 
@@ -594,9 +594,9 @@ pub fn update_lockfile_with_metadata(
             fetched_at: chrono::Utc::now().timestamp(),
             remote_id: metadata.remote_id.clone(),
             remote_slug: metadata.remote_slug.clone(),
-            sign: metadata.sign.clone(),
+            repo_url: metadata.repo_url.clone(),
             path: metadata.path.clone(),
-            flock_sign: metadata.flock_sign.clone(),
+            flock_slug: metadata.flock_slug.clone(),
             git_rev: metadata.git_rev.clone(),
         },
     );
@@ -634,31 +634,31 @@ pub fn read_fetched_skill_entries(
         .unwrap_or_default()
 }
 
-/// Count how many skills belong to a given flock_sign in the lockfile.
-pub fn count_fetched_by_flock_sign(workdir: &Path, flock_sign: &str) -> usize {
+/// Count how many skills belong to a given flock_slug in the lockfile.
+pub fn count_fetched_by_flock_slug(workdir: &Path, flock_slug: &str) -> usize {
     let entries = read_fetched_skill_entries(workdir);
     entries
         .values()
-        .filter(|entry| entry.flock_sign.as_deref() == Some(flock_sign))
+        .filter(|entry| entry.flock_slug.as_deref() == Some(flock_slug))
         .count()
 }
 
-/// Collect the slugs of all fetched skills that belong to a given flock_sign.
-pub fn fetched_slugs_by_flock_sign(workdir: &Path, flock_sign: &str) -> Vec<String> {
+/// Collect the slugs of all fetched skills that belong to a given flock_slug.
+pub fn fetched_slugs_by_flock_slug(workdir: &Path, flock_slug: &str) -> Vec<String> {
     let entries = read_fetched_skill_entries(workdir);
     entries
         .into_iter()
-        .filter(|(_, entry)| entry.flock_sign.as_deref() == Some(flock_sign))
+        .filter(|(_, entry)| entry.flock_slug.as_deref() == Some(flock_slug))
         .map(|(slug, _)| slug)
         .collect()
 }
 
-/// Return the set of flock_sign values that have at least one fetched skill.
-pub fn fetched_flock_signs(workdir: &Path) -> std::collections::HashSet<String> {
+/// Return the set of flock_slug values that have at least one fetched skill.
+pub fn fetched_flock_slugs(workdir: &Path) -> std::collections::HashSet<String> {
     let entries = read_fetched_skill_entries(workdir);
     entries
         .values()
-        .filter_map(|entry| entry.flock_sign.clone())
+        .filter_map(|entry| entry.flock_slug.clone())
         .collect()
 }
 

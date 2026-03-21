@@ -239,6 +239,7 @@ pub fn skill_item_from_rows(
         display_name: row.name.clone(),
         summary: row.description.clone(),
         repo_id: row.repo_id.to_string(),
+        repo_url: repo_url.to_string(),
         owner: user_summary_from_row(owner),
         tags: parse_tag_map(&row.tags),
         stats: CatalogStats {

@@ -28,6 +28,16 @@ const AUTH_TOKEN_STORAGE_KEY: &str = "savhub.auth_token";
 const AUTH_SESSIONS_STORAGE_KEY: &str = "savhub.auth_sessions";
 const LANG_STORAGE_KEY: &str = "savhub.lang";
 const SCROLL_PAGE_SIZE: i64 = 20;
+
+/// Derive a human-readable repo slug from git_url (e.g. `https://github.com/org/repo.git` → `github.com/org/repo`).
+fn derive_repo_slug(git_url: &str) -> String {
+    let url = git_url.trim().trim_end_matches('/').trim_end_matches(".git");
+    let url = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url);
+    url.to_string()
+}
 const ADMIN_MODE_STORAGE_KEY: &str = "savhub.admin_mode";
 const CLIENT_REPO_URL: &str = "https://github.com/savhub-ai/savhub";
 const CLIENT_RELEASES_URL: &str = "https://github.com/savhub-ai/savhub/releases";
@@ -1137,7 +1147,7 @@ fn FlockListRow(flock: FlockSummary) -> Element {
     let t = use_context::<I18nContext>().t();
     let updated = relative_time_i18n(flock.updated_at, t);
 
-    let flock_sign = format!("{}/{}", flock.repo_sign, flock.slug);
+    let flock_sign = format!("{}/{}", flock.repo_url, flock.slug);
     rsx! {
         div { class: "list-item",
             div { class: "list-item-main",
@@ -1206,8 +1216,7 @@ fn SkillListRow(skill: SkillListItem) -> Element {
                     { render_security_badge(&skill.security_status, t) }
                 }
                 {
-                    let sign = if skill.sign.is_empty() { format!("/{}", skill.slug) } else { skill.sign.clone() };
-                    render_copy_sign(&sign)
+                    render_copy_sign(&skill.slug)
                 }
                 if !summary.is_empty() {
                     p { class: "list-item-summary", "{summary}" }
@@ -1405,7 +1414,7 @@ fn RepoListRow(repo: RepoSummary, #[props(default = false)] is_admin: bool) -> E
     let toast = use_context::<ToastContext>();
     let i18n_ctx = use_context::<I18nContext>();
     let updated = relative_time_i18n(repo.updated_at, i18n_ctx.t());
-    let repo_slug = repo.sign.clone();
+    let repo_slug = derive_repo_slug(&repo.git_url);
     let git_url = repo.git_url.clone();
     let git_url_display = git_url.clone();
     let mut reindex_loading = use_signal(|| false);
@@ -1658,7 +1667,7 @@ fn RepoPage(lang: String, domain: String, owner: String, name: String) -> Elemen
                     div { class: "detail-head",
                         div {
                             h1 { "{payload.repo.name}" }
-                            a { class: "muted", href: "{payload.repo.git_url}", target: "_blank", rel: "noreferrer", "{payload.repo.sign}" }
+                            a { class: "muted", href: "{payload.repo.git_url}", target: "_blank", rel: "noreferrer", "{payload.repo.git_url}" }
                         }
                         {
                             let token_val = api.token.read().clone();
@@ -1796,7 +1805,7 @@ fn FlockPage(lang: String, id: String) -> Element {
                 .iter()
                 .map(|(label, value)| (label.clone(), value.clone()))
                 .collect::<Vec<_>>();
-            let repo_id_str = payload.flock.repo_sign.clone();
+            let repo_id_str = payload.flock.repo_url.clone();
             let repo_slug_bc = repo_id_str.clone();
             let repo_name_bc = repo_id_str.clone();
             let star_repo = repo_id_str.clone();
@@ -1845,7 +1854,7 @@ fn FlockPage(lang: String, id: String) -> Element {
                                 { render_security_badge(&payload.flock.security_status, t) }
                             }
                             {
-                                let sign = format!("{}/{}", payload.flock.repo_sign, payload.flock.slug);
+                                let sign = format!("{}/{}", payload.flock.repo_url, payload.flock.slug);
                                 render_copy_sign(&sign)
                             }
                         }
@@ -2095,8 +2104,7 @@ fn SkillCard(skill: SkillListItem) -> Element {
                         Link { to: Route::SkillPage { lang: url_lang(), id: skill.id.to_string() }, "{skill.display_name}" }
                         { render_security_badge(&skill.security_status, t) }
                         {
-                            let sign = if skill.sign.is_empty() { format!("/{}", skill.slug) } else { skill.sign.clone() };
-                            render_copy_icon(&sign)
+                            render_copy_icon(&skill.slug)
                         }
                     }
                 }
@@ -2122,7 +2130,7 @@ fn SkillCard(skill: SkillListItem) -> Element {
 #[component]
 fn RepoCard(repo: savhub_shared::RepoSummary) -> Element {
     let t = use_context::<I18nContext>().t();
-    let slug = repo.sign.clone();
+    let slug = derive_repo_slug(&repo.git_url);
     rsx! {
         article { class: "card",
             div { class: "card-head",
@@ -2144,7 +2152,7 @@ fn RepoCard(repo: savhub_shared::RepoSummary) -> Element {
 #[component]
 fn FlockCard(flock: savhub_shared::FlockSummary) -> Element {
     let t = use_context::<I18nContext>().t();
-    let flock_sign = format!("{}/{}", flock.repo_sign, flock.slug);
+    let flock_sign = format!("{}/{}", flock.repo_url, flock.slug);
     rsx! {
         article { class: "card",
             div { class: "card-head",
@@ -3043,8 +3051,7 @@ fn SkillPage(lang: String, id: String) -> Element {
                                 { render_security_badge(&payload.skill.security_status, t) }
                             }
                             {
-                                let sign = if payload.skill.sign.is_empty() { format!("/{}", payload.skill.slug) } else { payload.skill.sign.clone() };
-                                render_copy_sign(&sign)
+                                render_copy_sign(&payload.skill.slug)
                             }
                         }
                         div { class: "detail-actions",

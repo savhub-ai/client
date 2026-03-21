@@ -484,6 +484,8 @@ pub struct SkillListItem {
     pub display_name: String,
     pub summary: Option<String>,
     pub repo_id: String,
+    #[serde(default)]
+    pub repo_url: String,
     pub owner: UserSummary,
     pub tags: IndexMap<String, String>,
     pub stats: CatalogStats,

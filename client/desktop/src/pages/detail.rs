@@ -96,12 +96,12 @@ fn DetailContent(detail: SkillDetailResponse) -> Element {
         .unwrap_or("");
     let skill_id = detail.skill.id.to_string();
     let skill_slug = detail.skill.slug.clone();
-    let skill_sign = detail.skill.sign.clone();
+    let skill_repo_url = detail.skill.repo_url.clone();
     let skill_path = detail.skill.path.clone();
     let star_skill_id = skill_id.clone();
     let fetch_skill_id = skill_id.clone();
     let fetch_skill_slug = skill_slug.clone();
-    let fetch_skill_sign = skill_sign.clone();
+    let fetch_skill_repo_url = skill_repo_url.clone();
     let fetch_skill_path = skill_path.clone();
 
     let toggle_star = move |_: Event<MouseData>| {
@@ -125,9 +125,9 @@ fn DetailContent(detail: SkillDetailResponse) -> Element {
             local_slug: fetch_skill_slug.clone(),
             id: Some(fetch_skill_id.clone()),
             slug: Some(fetch_skill_slug.clone()),
-            sign: Some(fetch_skill_sign.clone()),
+            repo_url: Some(fetch_skill_repo_url.clone()),
             path: Some(fetch_skill_path.clone()),
-            flock_sign: None,
+            flock_slug: None,
         };
         spawn(async move {
             fetching.set(true);
@@ -197,7 +197,7 @@ fn DetailContent(detail: SkillDetailResponse) -> Element {
                         }
                     }
                     div { style: "font-size: 14px; color: {Theme::MUTED}; margin-bottom: 8px; display: flex; align-items: center; gap: 4px;",
-                        crate::components::copy_sign::CopySign { value: detail.skill.sign.clone() }
+                        crate::components::copy_sign::CopySign { value: detail.skill.slug.clone() }
                     }
                     if !summary.is_empty() {
                         p { style: "font-size: 15px; color: {Theme::TEXT}; max-width: 600px;",

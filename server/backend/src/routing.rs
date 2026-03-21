@@ -335,7 +335,7 @@ async fn list_skills(req: &mut Request, res: &mut Response) {
     let limit = req.query::<i64>("limit").unwrap_or(20);
     let cursor = req.query::<String>("cursor");
     let q = req.query::<String>("q");
-    let sign = req.query::<String>("sign");
+    let skill_locator = req.query::<String>("sign");
     let repo_id = req
         .query::<String>("repo")
         .and_then(|v| uuid::Uuid::parse_str(&v).ok());
@@ -348,7 +348,7 @@ async fn list_skills(req: &mut Request, res: &mut Response) {
         limit,
         cursor,
         q,
-        sign,
+        skill_locator,
         repo_id,
         flock_id,
         auth.as_ref().map(|ctx| &ctx.user),
@@ -617,11 +617,12 @@ async fn restore_skill(req: &mut Request, depot: &Depot, res: &mut Response) {
 
 #[handler]
 async fn collect_install(req: &mut Request, res: &mut Response) {
-    let skill_sign = req.query::<String>("skill").unwrap_or_default();
-    if skill_sign.is_empty() {
+    let repo_url = req.query::<String>("repo").unwrap_or_default();
+    let skill_path = req.query::<String>("path").unwrap_or_default();
+    if repo_url.is_empty() || skill_path.is_empty() {
         render_error(
             res,
-            AppError::BadRequest("skill query parameter is required".to_string()),
+            AppError::BadRequest("repo and path query parameters are required".to_string()),
         );
         return;
     }
@@ -635,7 +636,7 @@ async fn collect_install(req: &mut Request, res: &mut Response) {
     } else {
         &body.client_type
     };
-    match interactions::record_skill_install(&skill_sign, user_id, client_type) {
+    match interactions::record_skill_install(&repo_url, &skill_path, user_id, client_type) {
         Ok(result) => res.render(Json(json!({ "ok": result.ok, "message": result.message }))),
         Err(error) => render_error(res, error),
     }

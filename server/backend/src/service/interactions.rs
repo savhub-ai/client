@@ -536,14 +536,20 @@ pub fn record_skill_install(
     use crate::schema::{skill_installs, skills as skills_table};
 
     let mut conn = db_conn()?;
-    // Try by slug first, then fall back to sign-based lookup (repo_sign/path)
+    let repo = crate::schema::repos::table
+        .filter(crate::schema::repos::git_url.eq(repo_url))
+        .select(crate::models::RepoRow::as_select())
+        .first::<crate::models::RepoRow>(&mut conn)
+        .optional()?
+        .ok_or_else(|| AppError::NotFound(format!("repo `{repo_url}` not found")))?;
     let skill = skills_table::table
-        .filter(skills_table::slug.eq(skill_sign))
+        .filter(skills_table::repo_id.eq(repo.id))
+        .filter(skills_table::path.eq(skill_path))
         .filter(skills_table::soft_deleted_at.is_null())
         .select(crate::models::SkillRow::as_select())
         .first::<crate::models::SkillRow>(&mut conn)
         .optional()?
-        .ok_or_else(|| AppError::NotFound(format!("skill `{skill_sign}` not found")))?;
+        .ok_or_else(|| AppError::NotFound(format!("skill `{skill_path}` not found in repo `{repo_url}`")))?;
 
     conn.transaction::<_, AppError, _>(|conn| {
         diesel::insert_into(skill_installs::table)

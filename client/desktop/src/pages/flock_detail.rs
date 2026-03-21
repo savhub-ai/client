@@ -78,7 +78,7 @@ pub fn FlockDetailPage(slug: String) -> Element {
     };
 
     let all_skills = payload.skills.clone();
-    let batch_repo_sign = payload.flock.repo_sign.clone();
+    let batch_repo_sign = payload.flock.repo_url.clone();
     let batch_flock_slug = payload.flock.slug.clone();
     let do_all = move |_: MouseEvent| {
         let skills = all_skills.clone();
@@ -112,7 +112,6 @@ pub fn FlockDetailPage(slug: String) -> Element {
                         }
                     }
                 } else {
-                    let flock_sign = format!("{repo_sign}/{flock_slug}");
                     match api::fetch_remote_skill_with_lookup(
                         &client,
                         &workdir,
@@ -120,9 +119,9 @@ pub fn FlockDetailPage(slug: String) -> Element {
                             local_slug: skill.slug.clone(),
                             id: skill.id.as_ref().map(|id| id.to_string()),
                             slug: Some(skill.slug.clone()),
-                            sign: Some(format!("{repo_sign}/{}", skill.path)),
+                            repo_url: Some(repo_sign.clone()),
                             path: Some(skill.path.clone()),
-                            flock_sign: Some(flock_sign),
+                            flock_slug: Some(flock_slug.clone()),
                         },
                     )
                     .await
@@ -156,9 +155,9 @@ pub fn FlockDetailPage(slug: String) -> Element {
     };
 
     let version_display = payload.flock.version.as_deref().unwrap_or("\u{2014}");
-    let slug_display = format!("{}/{}", payload.flock.repo_sign, payload.flock.slug);
+    let slug_display = format!("{}/{}", payload.flock.repo_url, payload.flock.slug);
     let skills = payload.skills.clone();
-    let repo_sign = payload.flock.repo_sign.clone();
+    let repo_sign = payload.flock.repo_url.clone();
 
     rsx! {
         div { style: "display: flex; flex-direction: column; height: 100%;",
@@ -255,7 +254,6 @@ fn FlockSkillRow(
         .as_ref()
         .map(|id| id.to_string())
         .unwrap_or_else(|| skill.slug.clone());
-    let skill_sign = format!("{repo_sign}/{}", skill.path);
     let is_fetched = fetched.read().contains_key(&skill_slug);
 
     let do_action = move |e: Event<MouseData>| {
@@ -266,9 +264,9 @@ fn FlockSkillRow(
             local_slug: skill_slug.clone(),
             id: remote_skill_id.clone(),
             slug: Some(remote_skill_slug.clone()),
-            sign: Some(skill_sign.clone()),
+            repo_url: Some(repo_sign.clone()),
             path: Some(remote_skill_path.clone()),
-            flock_sign: Some(format!("{repo_sign}/{flock_slug}")),
+            flock_slug: Some(flock_slug.clone()),
         };
         let client = state.api_client();
         let workdir = state.workdir.read().clone();

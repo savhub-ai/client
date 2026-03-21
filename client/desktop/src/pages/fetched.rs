@@ -18,7 +18,7 @@ struct FetchedSkill {
     path: PathBuf,
     remote_id: Option<String>,
     remote_slug: Option<String>,
-    sign: Option<String>,
+    repo_url: Option<String>,
     remote_path: Option<String>,
 }
 
@@ -57,7 +57,7 @@ pub fn FetchedPage() -> Element {
                             path: workdir_bg.join(slug),
                             remote_id: entry.remote_id.clone(),
                             remote_slug: entry.remote_slug.clone(),
-                            sign: entry.sign.clone(),
+                            repo_url: entry.repo_url.clone(),
                             remote_path: entry.path.clone(),
                         }
                     })
@@ -89,9 +89,9 @@ pub fn FetchedPage() -> Element {
                         .remote_slug
                         .clone()
                         .or_else(|| Some(entry.slug.clone())),
-                    sign: entry.sign.clone(),
+                    repo_url: entry.repo_url.clone(),
                     path: entry.remote_path.clone(),
-                    flock_sign: None,
+                    flock_slug: None,
                 };
                 match crate::api::fetch_remote_skill_with_lookup(&client, &workdir, lookup).await {
                     Ok(result) => {
@@ -105,7 +105,7 @@ pub fn FetchedPage() -> Element {
                                 item.fetched_at = fetched_at.clone();
                                 item.remote_id = Some(result.remote_id.clone());
                                 item.remote_slug = Some(result.remote_slug.clone());
-                                item.sign = Some(result.sign.clone());
+                                item.repo_url = Some(result.repo_url.clone());
                                 item.remote_path = Some(result.path.clone());
                             }
                         });

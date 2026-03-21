@@ -18,7 +18,7 @@ const FLOCKS_PAGE_SIZE: usize = 12;
 struct DisplaySkill {
     id: String,
     local_slug: String,
-    sign: String,
+    repo_url: String,
     slug: String,
     path: String,
     name: String,
@@ -39,7 +39,7 @@ impl DisplaySkill {
         Self {
             id: item.id.to_string(),
             local_slug: local_slug.unwrap_or_else(|| item.slug.clone()),
-            sign: item.sign,
+            repo_url: item.repo_url,
             slug: item.slug,
             path: item.path,
             name: item.display_name,
@@ -67,7 +67,7 @@ impl From<FlockSummary> for DisplayFlock {
     fn from(item: FlockSummary) -> Self {
         Self {
             id: item.id.to_string(),
-            repo_sign: item.repo_sign,
+            repo_sign: item.repo_url,
             slug: item.slug,
             name: item.name,
             description: item.description,
@@ -242,7 +242,7 @@ fn fetch_flock_from_explore(
     state: AppState,
     flock: DisplayFlock,
     mut fetched_versions: Signal<BTreeMap<String, String>>,
-    mut fetched_flock_signs: Signal<HashSet<String>>,
+    mut fetched_flock_slugs: Signal<HashSet<String>>,
     mut working: Signal<bool>,
     mut action_error: Signal<Option<String>>,
 ) {
@@ -262,7 +262,8 @@ fn fetch_flock_from_explore(
                 return;
             }
         };
-        let repo_sign = detail.flock.repo_sign.clone();
+        let repo_sign = detail.flock.repo_url.clone();
+        let flock_detail_slug = detail.flock.slug.clone();
         let mut all_ok = true;
 
         for skill in detail.skills {
@@ -273,9 +274,9 @@ fn fetch_flock_from_explore(
                     local_slug: skill.slug.clone(),
                     id: skill.id.as_ref().map(|id| id.to_string()),
                     slug: Some(skill.slug.clone()),
-                    sign: Some(format!("{repo_sign}/{}", skill.path)),
+                    repo_url: Some(repo_sign.clone()),
                     path: Some(skill.path.clone()),
-                    flock_sign: Some(flock_sign.clone()),
+                    flock_slug: Some(flock_detail_slug.clone()),
                 },
             )
             .await
@@ -307,7 +308,7 @@ fn fetch_flock_from_explore(
         }
 
         if all_ok {
-            fetched_flock_signs.with_mut(|signs| {
+            fetched_flock_slugs.with_mut(|signs| {
                 signs.insert(flock_sign);
             });
         }
@@ -319,7 +320,7 @@ fn prune_flock_from_explore(
     state: AppState,
     flock: DisplayFlock,
     mut fetched_versions: Signal<BTreeMap<String, String>>,
-    mut fetched_flock_signs: Signal<HashSet<String>>,
+    mut fetched_flock_slugs: Signal<HashSet<String>>,
     mut working: Signal<bool>,
     mut action_error: Signal<Option<String>>,
 ) {
@@ -333,7 +334,7 @@ fn prune_flock_from_explore(
         let fs_clone = flock_sign.clone();
         let wd = workdir.clone();
         let slugs = tokio::task::spawn_blocking(move || {
-            savhub_local::skills::fetched_slugs_by_flock_sign(&wd, &fs_clone)
+            savhub_local::skills::fetched_slugs_by_flock_slug(&wd, &fs_clone)
         })
         .await
         .unwrap_or_default();
@@ -364,7 +365,7 @@ fn prune_flock_from_explore(
         }
 
         if all_ok {
-            fetched_flock_signs.with_mut(|signs| {
+            fetched_flock_slugs.with_mut(|signs| {
                 signs.remove(&flock_sign);
             });
         }
@@ -381,7 +382,7 @@ pub fn ExplorePage() -> Element {
     let skill_list: Signal<Vec<DisplaySkill>> = use_signal(Vec::new);
     let fetched_skill_total = use_signal(|| 0usize);
     let mut fetched_versions: Signal<BTreeMap<String, String>> = use_signal(BTreeMap::new);
-    let mut fetched_flock_signs: Signal<HashSet<String>> = use_signal(HashSet::new);
+    let mut fetched_flock_slugs: Signal<HashSet<String>> = use_signal(HashSet::new);
     let mut active_filter = use_signal(|| SkillFilter::All);
     let mut active_view = use_signal(|| ViewMode::Cards);
     let mut current_page = use_signal(|| 0usize);
@@ -405,13 +406,13 @@ pub fn ExplorePage() -> Element {
             let wd = workdir.clone();
             let (versions, flock_signs) = tokio::task::spawn_blocking(move || {
                 let v = savhub_local::skills::read_fetched_skill_versions(&wd);
-                let f = savhub_local::skills::fetched_flock_signs(&wd);
+                let f = savhub_local::skills::fetched_flock_slugs(&wd);
                 (v, f)
             })
             .await
             .unwrap_or_default();
             fetched_versions.set(versions);
-            fetched_flock_signs.set(flock_signs);
+            fetched_flock_slugs.set(flock_signs);
         });
     });
 
@@ -646,7 +647,7 @@ pub fn ExplorePage() -> Element {
                                 flock: flock.clone(),
                                 flock_skills_label: flock_skills_label,
                                 fetched_versions: fetched_versions,
-                                fetched_flock_signs: fetched_flock_signs,
+                                fetched_flock_slugs: fetched_flock_slugs,
                             }
                         }
                     }
@@ -657,7 +658,7 @@ pub fn ExplorePage() -> Element {
                                 flock: flock.clone(),
                                 flock_skills_label: flock_skills_label,
                                 fetched_versions: fetched_versions,
-                                fetched_flock_signs: fetched_flock_signs,
+                                fetched_flock_slugs: fetched_flock_slugs,
                             }
                         }
                     }
@@ -723,7 +724,7 @@ fn SkillListRow(
     let local_slug = skill.local_slug.clone();
     let skill_id = skill.id.clone();
     let remote_slug = skill.slug.clone();
-    let skill_sign = skill.sign.clone();
+    let skill_repo_url = skill.repo_url.clone();
     let skill_path = skill.path.clone();
     let is_fetched = fetched_versions.read().contains_key(&skill.local_slug);
 
@@ -733,9 +734,9 @@ fn SkillListRow(
             local_slug: local_slug.clone(),
             id: Some(skill_id.clone()),
             slug: Some(remote_slug.clone()),
-            sign: Some(skill_sign.clone()),
+            repo_url: Some(skill_repo_url.clone()),
             path: Some(skill_path.clone()),
-            flock_sign: None,
+            flock_slug: None,
         };
         let local_slug = local_slug.clone();
         let remote_slug = remote_slug.clone();
@@ -810,7 +811,7 @@ fn SkillListRow(
                         }
                     }
                     div { style: "margin-bottom: 6px;",
-                        crate::components::copy_sign::CopySign { value: skill.sign.clone() }
+                        crate::components::copy_sign::CopySign { value: format!("{}/{}", skill.repo_url, skill.path) }
                     }
                     if let Some(desc) = &skill.summary {
                         p { style: "font-size: 13px; color: {Theme::MUTED}; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;",
@@ -858,7 +859,7 @@ fn SkillCard(
     let local_slug = skill.local_slug.clone();
     let skill_id = skill.id.clone();
     let remote_slug = skill.slug.clone();
-    let skill_sign = skill.sign.clone();
+    let skill_repo_url = skill.repo_url.clone();
     let skill_path = skill.path.clone();
     let is_fetched = fetched_versions.read().contains_key(&skill.local_slug);
 
@@ -868,9 +869,9 @@ fn SkillCard(
             local_slug: local_slug.clone(),
             id: Some(skill_id.clone()),
             slug: Some(remote_slug.clone()),
-            sign: Some(skill_sign.clone()),
+            repo_url: Some(skill_repo_url.clone()),
             path: Some(skill_path.clone()),
-            flock_sign: None,
+            flock_slug: None,
         };
         let local_slug = local_slug.clone();
         let remote_slug = remote_slug.clone();
@@ -940,7 +941,7 @@ fn SkillCard(
                         h3 { style: "font-size: 15px; font-weight: 600; color: {Theme::TEXT}; margin-bottom: 2px;",
                             "{skill.name}"
                         }
-                        crate::components::copy_sign::CopySign { value: skill.sign.clone() }
+                        crate::components::copy_sign::CopySign { value: format!("{}/{}", skill.repo_url, skill.path) }
                     }
                     div { style: "display: flex; gap: 4px; align-items: center;",
                         {
@@ -1002,7 +1003,7 @@ fn FlockListRow(
     flock: DisplayFlock,
     flock_skills_label: &'static str,
     fetched_versions: Signal<BTreeMap<String, String>>,
-    fetched_flock_signs: Signal<HashSet<String>>,
+    fetched_flock_slugs: Signal<HashSet<String>>,
 ) -> Element {
     let state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
@@ -1012,7 +1013,7 @@ fn FlockListRow(
     let version_display = flock.version.as_deref().unwrap_or("\u{2014}");
     let slug_display = format!("{}/{}", flock.repo_sign, flock.slug);
     let flock_sign = format!("{}/{}", flock.repo_sign, flock.slug);
-    let is_fetched = fetched_flock_signs.read().contains(&flock_sign);
+    let is_fetched = fetched_flock_slugs.read().contains(&flock_sign);
     let nav = use_navigator();
     let nav_slug = flock.id.clone();
     let flock_action = {
@@ -1024,7 +1025,7 @@ fn FlockListRow(
                     state,
                     flock.clone(),
                     fetched_versions,
-                    fetched_flock_signs,
+                    fetched_flock_slugs,
                     working,
                     action_error,
                 );
@@ -1033,7 +1034,7 @@ fn FlockListRow(
                     state,
                     flock.clone(),
                     fetched_versions,
-                    fetched_flock_signs,
+                    fetched_flock_slugs,
                     working,
                     action_error,
                 );
@@ -1105,7 +1106,7 @@ fn FlockCard(
     flock: DisplayFlock,
     flock_skills_label: &'static str,
     fetched_versions: Signal<BTreeMap<String, String>>,
-    fetched_flock_signs: Signal<HashSet<String>>,
+    fetched_flock_slugs: Signal<HashSet<String>>,
 ) -> Element {
     let state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
@@ -1115,7 +1116,7 @@ fn FlockCard(
     let version_display = flock.version.as_deref().unwrap_or("\u{2014}");
     let slug_display = format!("{}/{}", flock.repo_sign, flock.slug);
     let flock_sign = format!("{}/{}", flock.repo_sign, flock.slug);
-    let is_fetched = fetched_flock_signs.read().contains(&flock_sign);
+    let is_fetched = fetched_flock_slugs.read().contains(&flock_sign);
     let nav = use_navigator();
     let nav_slug = flock.id.clone();
     let flock_action = {
@@ -1127,7 +1128,7 @@ fn FlockCard(
                     state,
                     flock.clone(),
                     fetched_versions,
-                    fetched_flock_signs,
+                    fetched_flock_slugs,
                     working,
                     action_error,
                 );
@@ -1136,7 +1137,7 @@ fn FlockCard(
                     state,
                     flock.clone(),
                     fetched_versions,
-                    fetched_flock_signs,
+                    fetched_flock_slugs,
                     working,
                     action_error,
                 );

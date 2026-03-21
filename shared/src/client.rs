@@ -127,12 +127,11 @@ pub struct LockEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_slug: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sign: Option<String>,
+    pub repo_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
-    /// The flock sign this skill belongs to (e.g. `github.com/owner/repo/flock-slug`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub flock_sign: Option<String>,
+    pub flock_slug: Option<String>,
     /// The git revision (commit SHA) of the repo checkout when this skill was fetched.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git_rev: Option<String>,

@@ -342,8 +342,8 @@ fn registry_skill_from_imported(item: ImportedSkillRecord) -> RegistrySkill {
 fn registry_flock_from_summary(item: FlockSummary) -> RegistryFlock {
     RegistryFlock {
         schema_version: 1,
-        sign: format!("{}/{}", item.repo_sign, item.slug),
-        repo: item.repo_sign,
+        sign: String::new(),
+        repo: item.repo_url,
         slug: item.slug,
         name: item.name,
         description: item.description,
@@ -359,8 +359,8 @@ fn registry_flock_from_summary(item: FlockSummary) -> RegistryFlock {
 fn registry_flock_from_detail(detail: FlockDetailResponse) -> RegistryFlock {
     RegistryFlock {
         schema_version: 1,
-        sign: format!("{}/{}", detail.flock.repo_sign, detail.flock.slug),
-        repo: detail.flock.repo_sign,
+        sign: String::new(),
+        repo: detail.flock.repo_url,
         slug: detail.flock.slug,
         name: detail.flock.name,
         description: detail.flock.description,
@@ -382,7 +382,7 @@ struct RemoteSkillDescriptor {
 
 fn skill_descriptor_from_detail(detail: SkillDetailResponse) -> RemoteSkillDescriptor {
     let skill_path = detail.skill.path.clone();
-    let repo_sign = repo_sign_from_skill(&detail.skill.sign, &skill_path);
+    let repo_sign = detail.skill.repo_url.clone();
     let skill_version = normalize_non_empty(
         detail
             .latest_version
@@ -395,16 +395,6 @@ fn skill_descriptor_from_detail(detail: SkillDetailResponse) -> RemoteSkillDescr
         skill_path,
         skill_version,
     }
-}
-
-fn repo_sign_from_skill(sign: &str, skill_path: &str) -> String {
-    let sign = sign.trim();
-    let skill_path = normalize_skill_repo_path(skill_path);
-    if skill_path.is_empty() {
-        return sign.to_string();
-    }
-    let suffix = format!("/{skill_path}");
-    sign.strip_suffix(&suffix).unwrap_or(sign).to_string()
 }
 
 fn normalize_non_empty(value: Option<String>) -> Option<String> {
@@ -677,7 +667,7 @@ fn find_flock_summary(identifier: &str) -> Result<Option<FlockSummary>> {
         if let Some(flock) = items.into_iter().find(|item| {
             item.slug == identifier
                 || item.id.to_string() == identifier
-                || format!("{}/{}", item.repo_sign, item.slug) == identifier
+                || format!("{}/{}", item.repo_url, item.slug) == identifier
         }) {
             return Ok(Some(flock));
         }
@@ -768,7 +758,7 @@ pub fn list_repo_flock_signs(repo_sign: &str) -> Result<Vec<String>> {
     Ok(detail
         .flocks
         .into_iter()
-        .map(|flock| format!("{}/{}", flock.repo_sign, flock.slug))
+        .map(|flock| format!("{}/{}", flock.repo_url, flock.slug))
         .collect())
 }
 

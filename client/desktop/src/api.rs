@@ -16,10 +16,9 @@ pub struct RemoteSkillLookup {
     pub local_slug: String,
     pub id: Option<String>,
     pub slug: Option<String>,
-    pub sign: Option<String>,
+    pub repo_url: Option<String>,
     pub path: Option<String>,
-    /// The flock sign this skill belongs to, for lockfile tracking.
-    pub flock_sign: Option<String>,
+    pub flock_slug: Option<String>,
 }
 
 impl RemoteSkillLookup {
@@ -38,7 +37,7 @@ pub struct FetchedRemoteSkill {
     pub local_slug: String,
     pub remote_id: String,
     pub remote_slug: String,
-    pub sign: String,
+    pub repo_url: String,
     pub path: String,
     pub version: String,
 }
@@ -173,26 +172,14 @@ fn normalize_remote_text(value: Option<String>) -> Option<String> {
 }
 
 fn repo_sign_from_skill_detail(detail: &SkillDetailResponse) -> Result<String, String> {
-    let sign = detail.skill.sign.trim();
-    let skill_path = detail.skill.path.trim().trim_matches('/');
-    if sign.is_empty() {
+    let repo_url = detail.skill.repo_url.trim();
+    if repo_url.is_empty() {
         return Err(format!(
-            "skill `{}` is missing sign metadata",
+            "skill `{}` is missing repo_url metadata",
             detail.skill.slug
         ));
     }
-    if skill_path.is_empty() {
-        return Ok(sign.to_string());
-    }
-    let suffix = format!("/{skill_path}");
-    sign.strip_suffix(&suffix)
-        .map(|value| value.to_string())
-        .ok_or_else(|| {
-            format!(
-                "failed to derive repo sign from skill sign `{}` and path `{}`",
-                detail.skill.sign, detail.skill.path
-            )
-        })
+    Ok(repo_url.to_string())
 }
 
 pub async fn resolve_remote_skill(
@@ -211,25 +198,29 @@ pub async fn resolve_remote_skill(
         }
     }
 
-    if let Some(sign) = lookup
-        .sign
+    // If we have repo_url + path, search by slug and filter by repo_url match
+    if let Some(repo_url) = lookup
+        .repo_url
         .as_deref()
         .filter(|value| !value.trim().is_empty())
     {
-        let mut url = client.v1_url("/skills").map_err(|e| e.to_string())?;
-        url.query_pairs_mut()
-            .append_pair("limit", "20")
-            .append_pair("sign", sign);
-        let response = client
-            .get_json_url::<PagedResponse<SkillListItem>>(url)
-            .await
-            .map_err(|e| e.to_string())?;
-        if let Some(item) = response
-            .items
-            .into_iter()
-            .find(|item| item.sign.eq_ignore_ascii_case(sign))
-        {
-            return Ok(item);
+        if let Some(path) = lookup.path.as_deref().filter(|v| !v.trim().is_empty()) {
+            let q = path.rsplit('/').next().unwrap_or(path);
+            let mut url = client.v1_url("/skills").map_err(|e| e.to_string())?;
+            url.query_pairs_mut()
+                .append_pair("limit", "20")
+                .append_pair("q", q);
+            let response = client
+                .get_json_url::<PagedResponse<SkillListItem>>(url)
+                .await
+                .map_err(|e| e.to_string())?;
+            if let Some(item) = response
+                .items
+                .into_iter()
+                .find(|item| item.repo_url == repo_url && item.path == path)
+            {
+                return Ok(item);
+            }
         }
     }
 
@@ -269,7 +260,7 @@ pub async fn fetch_remote_skill_with_lookup(
     lookup: RemoteSkillLookup,
 ) -> Result<FetchedRemoteSkill, String> {
     let local_slug = lookup.local_slug.trim().to_string();
-    let flock_sign = lookup.flock_sign.clone();
+    let flock_slug = lookup.flock_slug.clone();
     let skill = resolve_remote_skill(client, lookup).await?;
     let detail = fetch_remote_skill_detail(client, &skill.id.to_string()).await?;
     let repo_sign = repo_sign_from_skill_detail(&detail)?;
@@ -314,9 +305,9 @@ pub async fn fetch_remote_skill_with_lookup(
         &FetchedSkillMetadata {
             remote_id: Some(skill.id.to_string()),
             remote_slug: Some(skill.slug.clone()),
-            sign: Some(skill.sign.clone()),
+            repo_url: Some(skill.repo_url.clone()),
             path: Some(skill.path.clone()),
-            flock_sign: flock_sign.clone(),
+            flock_slug: flock_slug.clone(),
             git_rev: Some(git_rev.clone()),
         },
     );
@@ -325,7 +316,7 @@ pub async fn fetch_remote_skill_with_lookup(
         local_slug: install_slug,
         remote_id: skill.id.to_string(),
         remote_slug: skill.slug,
-        sign: skill.sign,
+        repo_url: skill.repo_url,
         path: skill.path,
         version,
     })
@@ -339,7 +330,7 @@ pub async fn fetch_remote_flock_slug_suggestions(
     let (items, _) = fetch_remote_flock_page(client, Some(query), limit, 0).await?;
     Ok(items
         .into_iter()
-        .map(|item| format!("{}/{}", item.repo_sign, item.slug))
+        .map(|item| format!("{}/{}", item.repo_url, item.slug))
         .collect())
 }
 
@@ -353,7 +344,7 @@ fn collect_skill_queries(lookup: &RemoteSkillLookup) -> Vec<String> {
     push_unique_nonempty(&mut queries, lookup.slug.as_deref());
     push_unique_nonempty(&mut queries, lookup.path.as_deref());
     push_unique_nonempty(&mut queries, lookup.path.as_deref().and_then(path_basename));
-    push_unique_nonempty(&mut queries, lookup.sign.as_deref().and_then(sign_tail));
+    // repo_url is not useful as a search query, skip it
     queries
 }
 
@@ -371,10 +362,6 @@ fn push_unique_nonempty(values: &mut Vec<String>, candidate: Option<&str>) {
 }
 
 fn path_basename(value: &str) -> Option<&str> {
-    value.rsplit('/').find(|segment| !segment.trim().is_empty())
-}
-
-fn sign_tail(value: &str) -> Option<&str> {
     value.rsplit('/').find(|segment| !segment.trim().is_empty())
 }
 
@@ -402,18 +389,18 @@ fn select_best_skill(
 
 fn score_skill_match(item: &SkillListItem, lookup: &RemoteSkillLookup) -> i32 {
     let item_slug = item.slug.to_ascii_lowercase();
-    let item_sign = item.sign.to_ascii_lowercase();
     let item_path = item.path.to_ascii_lowercase();
     let item_path_base = path_basename(&item.path).map(|value| value.to_ascii_lowercase());
     let item_name = item.display_name.to_ascii_lowercase();
+    let item_repo_url = item.repo_url.to_ascii_lowercase();
 
     let local_slug = lookup.local_slug.trim().to_ascii_lowercase();
     let lookup_slug = lookup
         .slug
         .as_deref()
         .map(|value| value.trim().to_ascii_lowercase());
-    let lookup_sign = lookup
-        .sign
+    let lookup_repo_url = lookup
+        .repo_url
         .as_deref()
         .map(|value| value.trim().to_ascii_lowercase());
     let lookup_path = lookup
@@ -425,15 +412,13 @@ fn score_skill_match(item: &SkillListItem, lookup: &RemoteSkillLookup) -> i32 {
         .as_deref()
         .and_then(path_basename)
         .map(str::to_ascii_lowercase);
-    let lookup_sign_tail = lookup
-        .sign
-        .as_deref()
-        .and_then(sign_tail)
-        .map(str::to_ascii_lowercase);
 
     let mut score = 0;
 
-    if lookup_sign.as_deref() == Some(item_sign.as_str()) {
+    // Exact repo_url + path match is the strongest signal
+    if lookup_repo_url.as_deref() == Some(item_repo_url.as_str())
+        && lookup_path.as_deref() == Some(item_path.as_str())
+    {
         score += 1000;
     }
     if lookup_path.as_deref() == Some(item_path.as_str()) {
@@ -445,7 +430,7 @@ fn score_skill_match(item: &SkillListItem, lookup: &RemoteSkillLookup) -> i32 {
     if lookup_path_base.as_deref() == item_path_base.as_deref() {
         score += 500;
     }
-    if lookup_sign_tail.as_deref() == item_path_base.as_deref() {
+    if lookup_path_base.as_deref() == item_path_base.as_deref() && lookup_path_base.is_some() {
         score += 420;
     }
     if !local_slug.is_empty() {

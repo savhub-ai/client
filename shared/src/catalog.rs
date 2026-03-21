@@ -149,8 +149,6 @@ pub struct ImportedSkillMetadata {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepoDocument {
-    /// Canonical identifier for the repository (e.g. `github.com/owner/repo`).
-    pub sign: String,
     pub name: String,
     pub description: String,
     pub git_url: String,
@@ -168,9 +166,6 @@ pub struct RepoDocument {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FlockDocument {
-    /// Canonical identifier for the flock (e.g. `github.com/owner/repo/flock-slug`).
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub sign: String,
     pub repo: String,
     pub name: String,
     pub description: String,
@@ -242,7 +237,6 @@ pub struct RepoSummary {
     pub git_rev: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git_branch: Option<String>,
-    pub sign: String,
     pub visibility: RegistryVisibility,
     pub verified: bool,
     pub flock_count: i64,
@@ -254,7 +248,7 @@ pub struct RepoSummary {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FlockSummary {
     pub id: Uuid,
-    pub repo_sign: String,
+    pub repo_url: String,
     pub slug: String,
     pub name: String,
     pub description: String,
@@ -334,9 +328,6 @@ fn is_safe_relative_path(value: &str) -> bool {
 }
 
 pub fn validate_repo_document(document: &RepoDocument) -> Result<(), String> {
-    if document.sign.trim().is_empty() {
-        return Err("repo sign is required".to_string());
-    }
     if document.name.trim().is_empty() {
         return Err("repo name is required".to_string());
     }

@@ -32,7 +32,7 @@ pub fn list_skills(
     limit: i64,
     cursor: Option<String>,
     q: Option<String>,
-    sign: Option<String>,
+    skill_locator: Option<String>,
     repo_id: Option<uuid::Uuid>,
     flock_id: Option<uuid::Uuid>,
     viewer: Option<&RequestUser>,
@@ -41,9 +41,9 @@ pub fn list_skills(
 
     let mut conn = db_conn()?;
 
-    // When `sign` is provided, look up the skill by repo git_url + path.
-    if let Some(ref sign_value) = sign {
-        let sign_value = sign_value.trim();
+    // When a locator is provided, look up the skill by repo git_url + path.
+    if let Some(ref locator_value) = skill_locator {
+        let sign_value = locator_value.trim();
         if !sign_value.is_empty() {
             let row = find_skill_by_sign(&mut conn, sign_value)?;
             return match row {

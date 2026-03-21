@@ -347,11 +347,6 @@ fn persist_flock_import(
         )));
     }
 
-    // Ensure flock sign is set
-    if document.sign.is_empty() {
-        document.sign = format!("{}/{}", repo_sign_str, flock_slug);
-    }
-
     if document.metadata.maintainers.is_empty() {
         document
             .metadata
@@ -762,7 +757,6 @@ fn repo_summary_from_row(row: &RepoRow, flock_count: i64, skill_count: i64) -> R
         git_url: row.git_url.clone(),
         git_rev: Some(row.git_rev.clone()),
         git_branch: row.git_branch.clone(),
-        sign: derive_repo_sign(&row.git_url),
         visibility: parse_visibility(&row.visibility),
         verified: row.verified,
         flock_count,
@@ -783,7 +777,7 @@ pub(crate) fn flock_summary_from_row(
         .ok_or_else(|| AppError::Internal("missing flock importer".to_string()))?;
     Ok(FlockSummary {
         id: row.id,
-        repo_sign: derive_repo_sign(&repo.git_url),
+        repo_url: repo.git_url.clone(),
         slug: row.slug.clone(),
         name: row.name.clone(),
         description: row.description.clone(),
@@ -811,7 +805,6 @@ pub(crate) fn flock_summary_from_row(
 
 fn repo_document_from_row(row: &RepoRow) -> Result<RepoDocument, AppError> {
     Ok(RepoDocument {
-        sign: derive_repo_sign(&row.git_url),
         name: row.name.clone(),
         description: row.description.clone(),
         git_url: row.git_url.clone(),
@@ -831,7 +824,6 @@ fn flock_document_from_row(repo: &RepoRow, row: &FlockRow) -> Result<FlockDocume
         CatalogSource::Registry { path } => Some(path.clone()).filter(|p| p != "."),
     });
     Ok(FlockDocument {
-        sign: format!("{}/{}", derive_repo_sign(&repo.git_url), row.slug),
         repo: repo.git_url.clone(),
         name: row.name.clone(),
         description: row.description.clone(),
