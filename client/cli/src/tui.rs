@@ -35,10 +35,39 @@ pub struct ApplySelection {
     pub skipped_flocks: Vec<String>,
 }
 
-/// Extract the repository part from a flock sign.
-///
-/// `github.com/owner/repo/flock-slug` -> `github.com/owner/repo`
-/// `github.com/owner/repo`            -> `github.com/owner/repo`
+// ── Self-contained render row ──
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Section {
+    Install,
+    Remove,
+}
+
+#[derive(Clone)]
+enum RowKind {
+    SectionHeader { label: &'static str, color: Color },
+    Separator,
+    RepoGroup { label: String },
+    Selector { index: usize, checked: bool, label: String },
+    Flock { slug: String, checked: bool, display: String, skill_count: usize },
+    RemovedSelector { label: String },
+    RemovedFlock { display: String },
+}
+
+#[derive(Clone)]
+struct Row {
+    kind: RowKind,
+    section: Section,
+}
+
+impl Row {
+    fn is_interactive(&self) -> bool {
+        matches!(self.kind, RowKind::Selector { .. } | RowKind::Flock { .. })
+    }
+}
+
+// ── Helpers ──
+
 fn repo_group(flock_sign: &str) -> &str {
     let mut end = 0;
     let mut slashes = 0;
@@ -57,15 +86,12 @@ fn repo_group(flock_sign: &str) -> &str {
     }
 }
 
-/// Short display name for a flock: strip repo prefix if present.
 fn flock_display(slug: &str) -> &str {
     slug.strip_prefix(repo_group(slug))
         .and_then(|s| s.strip_prefix('/'))
         .unwrap_or(slug)
 }
 
-/// Group flocks by repository, preserving original order.
-/// Returns `[(repo_label, [(flock_sign)])]`.
 fn group_flocks_by_repo(flocks: &[String]) -> Vec<(String, Vec<String>)> {
     let mut groups: Vec<(String, Vec<String>)> = Vec::new();
     for flock in flocks {
@@ -79,60 +105,6 @@ fn group_flocks_by_repo(flocks: &[String]) -> Vec<(String, Vec<String>)> {
     groups
 }
 
-// Row types
-#[derive(Clone)]
-enum Row {
-    SectionHeader(&'static str, Color),
-    Separator,
-    RepoGroup(String),
-    Selector(usize),
-    Flock(String),
-    RemovedSelector(usize),
-    RemovedFlock(String),
-}
-
-fn is_interactive(row: &Row) -> bool {
-    matches!(row, Row::Selector(_) | Row::Flock(_))
-}
-
-/// Find the first interactive row index, or `None`.
-fn first_interactive(rows: &[Row]) -> Option<usize> {
-    rows.iter().position(|r| is_interactive(r))
-}
-
-/// Find the last interactive row index, or `None`.
-fn last_interactive(rows: &[Row]) -> Option<usize> {
-    rows.iter().rposition(|r| is_interactive(r))
-}
-
-/// Move cursor up to the nearest interactive row. Returns the original
-/// position if no interactive row exists above.
-fn move_up(rows: &[Row], cursor: usize) -> usize {
-    if cursor == 0 {
-        return cursor;
-    }
-    let mut pos = cursor - 1;
-    while pos > 0 && !is_interactive(&rows[pos]) {
-        pos -= 1;
-    }
-    if is_interactive(&rows[pos]) { pos } else { cursor }
-}
-
-/// Move cursor down to the nearest interactive row. Returns the original
-/// position if no interactive row exists below.
-fn move_down(rows: &[Row], cursor: usize) -> usize {
-    let last = rows.len().saturating_sub(1);
-    if cursor >= last {
-        return cursor;
-    }
-    let mut pos = cursor + 1;
-    while pos < last && !is_interactive(&rows[pos]) {
-        pos += 1;
-    }
-    if is_interactive(&rows[pos]) { pos } else { cursor }
-}
-
-/// Recompute derived flocks from checked selectors.
 fn compute_derived(selectors: &[MatchedSelector]) -> Vec<String> {
     let mut flocks = Vec::new();
     for sel in selectors {
@@ -152,14 +124,243 @@ fn is_flock_checked(flock: &str, overrides: &HashMap<String, bool>) -> bool {
     overrides.get(flock).copied().unwrap_or(true)
 }
 
+// ── Navigation ──
+
+fn first_interactive(rows: &[Row]) -> Option<usize> {
+    rows.iter().position(|r| r.is_interactive())
+}
+
+fn last_interactive(rows: &[Row]) -> Option<usize> {
+    rows.iter().rposition(|r| r.is_interactive())
+}
+
+fn move_up(rows: &[Row], cursor: usize) -> usize {
+    if cursor == 0 {
+        return cursor;
+    }
+    let mut pos = cursor - 1;
+    while pos > 0 && !rows[pos].is_interactive() {
+        pos -= 1;
+    }
+    if rows[pos].is_interactive() { pos } else { cursor }
+}
+
+fn move_down(rows: &[Row], cursor: usize) -> usize {
+    let last = rows.len().saturating_sub(1);
+    if cursor >= last {
+        return cursor;
+    }
+    let mut pos = cursor + 1;
+    while pos < last && !rows[pos].is_interactive() {
+        pos += 1;
+    }
+    if rows[pos].is_interactive() { pos } else { cursor }
+}
+
+/// Jump to the first interactive row of the other section.
+fn jump_section(rows: &[Row], cursor: usize) -> usize {
+    let current_section = rows.get(cursor).map(|r| r.section);
+    // Find first interactive row in a different section
+    if let Some(target) = rows.iter().enumerate().find(|(_, r)| {
+        r.is_interactive() && Some(r.section) != current_section
+    }) {
+        return target.0;
+    }
+    cursor
+}
+
+// ── Row building ──
+
+fn build_rows(
+    selectors: &[MatchedSelector],
+    flock_overrides: &HashMap<String, bool>,
+    flock_skill_counts: &HashMap<String, usize>,
+    unmatched: &[UnmatchedSelector],
+) -> Vec<Row> {
+    let derived_flocks = compute_derived(selectors);
+    let grouped = group_flocks_by_repo(&derived_flocks);
+    let mut rows = Vec::new();
+
+    // -- Install section --
+    if !selectors.is_empty() {
+        rows.push(Row {
+            kind: RowKind::SectionHeader { label: "  Install", color: Color::Green },
+            section: Section::Install,
+        });
+        for (i, sel) in selectors.iter().enumerate() {
+            rows.push(Row {
+                kind: RowKind::Selector {
+                    index: i,
+                    checked: sel.checked,
+                    label: sel.label.clone(),
+                },
+                section: Section::Install,
+            });
+        }
+        if !derived_flocks.is_empty() {
+            rows.push(Row {
+                kind: RowKind::Separator,
+                section: Section::Install,
+            });
+            for (repo, flocks) in &grouped {
+                rows.push(Row {
+                    kind: RowKind::RepoGroup { label: repo.clone() },
+                    section: Section::Install,
+                });
+                for f in flocks {
+                    let on = is_flock_checked(f, flock_overrides);
+                    let count = flock_skill_counts.get(f.as_str()).copied().unwrap_or(0);
+                    rows.push(Row {
+                        kind: RowKind::Flock {
+                            slug: f.clone(),
+                            checked: on,
+                            display: flock_display(f).to_string(),
+                            skill_count: count,
+                        },
+                        section: Section::Install,
+                    });
+                }
+            }
+        }
+    }
+
+    // -- Remove section --
+    if !unmatched.is_empty() {
+        if !rows.is_empty() {
+            rows.push(Row {
+                kind: RowKind::Separator,
+                section: Section::Remove,
+            });
+        }
+        rows.push(Row {
+            kind: RowKind::SectionHeader { label: "  Remove", color: Color::Red },
+            section: Section::Remove,
+        });
+        for u in unmatched {
+            rows.push(Row {
+                kind: RowKind::RemovedSelector { label: u.name.clone() },
+                section: Section::Remove,
+            });
+            for f in &u.flocks {
+                rows.push(Row {
+                    kind: RowKind::RemovedFlock { display: flock_display(f).to_string() },
+                    section: Section::Remove,
+                });
+            }
+        }
+    }
+
+    rows
+}
+
+// ── Context info for help bar ──
+
+fn context_info(rows: &[Row], cursor: usize) -> String {
+    let Some(row) = rows.get(cursor) else {
+        return String::new();
+    };
+    match &row.kind {
+        RowKind::Selector { label, checked, .. } => {
+            let state = if *checked { "on" } else { "off" };
+            format!(" Selector: {label} [{state}]")
+        }
+        RowKind::Flock { slug, skill_count, checked, .. } => {
+            let state = if *checked { "on" } else { "off" };
+            format!(" Flock: {slug} -- {skill_count} skills [{state}]")
+        }
+        _ => String::new(),
+    }
+}
+
+// ── Rendering ──
+
+fn render_row(row: &Row, term_width: u16) -> ListItem<'static> {
+    match &row.kind {
+        RowKind::SectionHeader { label, color } => {
+            let rule_len = (term_width as usize).saturating_sub(label.len() + 4);
+            ListItem::new(Line::from(vec![
+                Span::styled(
+                    format!(" -- {label} "),
+                    Style::default().fg(*color).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "-".repeat(rule_len),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]))
+        }
+        RowKind::Separator => ListItem::new(Line::from(Span::raw(""))),
+        RowKind::RepoGroup { label } => ListItem::new(Line::from(Span::styled(
+            format!("    {label}"),
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        ))),
+        RowKind::Selector { checked, label, .. } => {
+            let (marker, mc, lc) = if *checked {
+                ("*", Color::Green, Color::White)
+            } else {
+                (" ", Color::DarkGray, Color::DarkGray)
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(
+                    format!("  [{marker}] "),
+                    Style::default().fg(mc).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(label.clone(), Style::default().fg(lc)),
+            ]))
+        }
+        RowKind::Flock { checked, display, skill_count, .. } => {
+            let (marker, mc, lc) = if *checked {
+                ("+", Color::Cyan, Color::White)
+            } else {
+                ("-", Color::Red, Color::DarkGray)
+            };
+            let label = format!("{display} ({skill_count} skills)");
+            ListItem::new(Line::from(vec![
+                Span::styled(
+                    format!("      [{marker}] "),
+                    Style::default().fg(mc).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(label, Style::default().fg(lc)),
+            ]))
+        }
+        RowKind::RemovedSelector { label } => ListItem::new(Line::from(vec![
+            Span::styled(
+                "  [x] ",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                label.clone(),
+                Style::default().fg(Color::DarkGray).add_modifier(Modifier::CROSSED_OUT),
+            ),
+        ])),
+        RowKind::RemovedFlock { display } => ListItem::new(Line::from(vec![
+            Span::styled(
+                "      [x] ",
+                Style::default().fg(Color::Rgb(120, 50, 50)),
+            ),
+            Span::styled(
+                display.clone(),
+                Style::default().fg(Color::Rgb(120, 80, 80)).add_modifier(Modifier::CROSSED_OUT),
+            ),
+        ])),
+    }
+}
+
+fn help_key(key: &str, desc: &str) -> Vec<Span<'static>> {
+    vec![
+        Span::styled(
+            format!(" {key}"),
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(format!(" {desc} "), Style::default().fg(Color::DarkGray)),
+    ]
+}
+
+// ── Main entry point ──
+
 /// Show an interactive TUI for `savhub apply`.
 ///
-/// Selectors are directly toggleable. Flocks are derived from checked
-/// selectors and can also be individually toggled.
-///
-/// `flock_skill_counts` maps flock sign -> number of skills (pre-computed,
-/// no IO during rendering).
-///
+/// `flock_skill_counts` maps flock sign -> number of skills (pre-computed).
 /// Returns `None` if cancelled.
 pub fn apply_select(
     selectors: &mut [MatchedSelector],
@@ -176,10 +377,7 @@ pub fn apply_select(
         }));
     }
 
-    // Derived flocks with user overrides
     let mut flock_overrides: HashMap<String, bool> = HashMap::new();
-
-    // Initialize overrides from existing skip sets
     for f in flock_skip_set {
         flock_overrides.insert(f.clone(), false);
     }
@@ -192,54 +390,25 @@ pub fn apply_select(
 
     let mut cursor = 0usize;
     let mut cancelled = false;
+    let mut dirty = true; // rebuild rows only when state changes
+    let mut rows: Vec<Row> = Vec::new();
 
     loop {
-        let derived_flocks = compute_derived(selectors);
-        let grouped = group_flocks_by_repo(&derived_flocks);
-
-        // Build row list
-        let mut rows: Vec<Row> = Vec::new();
-
-        // -- Install section --
-        if !selectors.is_empty() {
-            rows.push(Row::SectionHeader("  Install", Color::Green));
-            for i in 0..selectors.len() {
-                rows.push(Row::Selector(i));
-            }
-            if !derived_flocks.is_empty() {
-                rows.push(Row::Separator);
-                for (repo, flocks) in &grouped {
-                    rows.push(Row::RepoGroup(repo.clone()));
-                    for f in flocks {
-                        rows.push(Row::Flock(f.clone()));
-                    }
-                }
-            }
+        if dirty {
+            rows = build_rows(selectors, &flock_overrides, flock_skill_counts, unmatched);
+            dirty = false;
         }
 
-        // -- Remove section --
-        if !unmatched.is_empty() {
-            if !rows.is_empty() {
-                rows.push(Row::Separator);
-            }
-            rows.push(Row::SectionHeader("  Remove", Color::Red));
-            for (ui, u) in unmatched.iter().enumerate() {
-                rows.push(Row::RemovedSelector(ui));
-                for f in &u.flocks {
-                    rows.push(Row::RemovedFlock(f.clone()));
-                }
-            }
-        }
-
-        // Clamp cursor to nearest interactive row
+        // Clamp cursor
         if cursor >= rows.len() {
             cursor = rows.len().saturating_sub(1);
         }
-        if !rows.is_empty() && !is_interactive(&rows[cursor]) {
+        if !rows.is_empty() && !rows[cursor].is_interactive() {
             cursor = first_interactive(&rows).unwrap_or(0);
         }
 
         // Counts for title
+        let derived_flocks = compute_derived(selectors);
         let add_sel = selectors.iter().filter(|s| s.checked).count();
         let add_flock = derived_flocks
             .iter()
@@ -251,24 +420,23 @@ pub fn apply_select(
             .map(|f| flock_skill_counts.get(f.as_str()).copied().unwrap_or(0))
             .sum();
         let rm_sel = unmatched.len();
+        let ctx = context_info(&rows, cursor);
 
-        let rows_snapshot = rows.clone();
+        let rows_ref = &rows;
 
         terminal.draw(|frame| {
             let area = frame.area();
             let chunks = Layout::vertical([
                 Constraint::Length(3),
                 Constraint::Min(1),
-                Constraint::Length(2),
+                Constraint::Length(3),
             ])
             .split(area);
 
             // -- Title bar --
             let mut title_spans = vec![Span::styled(
                 " savhub apply ",
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
             )];
             if add_sel > 0 || add_flock > 0 {
                 title_spans.push(Span::styled(
@@ -290,95 +458,9 @@ pub fn apply_select(
             frame.render_widget(title, chunks[0]);
 
             // -- Main list --
-            let list_items: Vec<ListItem> = rows_snapshot
+            let list_items: Vec<ListItem> = rows_ref
                 .iter()
-                .map(|row| match row {
-                    Row::SectionHeader(label, color) => ListItem::new(Line::from(vec![
-                        Span::styled(
-                            format!(" -- {label} "),
-                            Style::default().fg(*color).add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(
-                            "-".repeat(area.width.saturating_sub(14) as usize),
-                            Style::default().fg(Color::DarkGray),
-                        ),
-                    ])),
-                    Row::Separator => {
-                        ListItem::new(Line::from(Span::styled("", Style::default())))
-                    }
-                    Row::RepoGroup(repo) => ListItem::new(Line::from(Span::styled(
-                        format!("    {repo}"),
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD),
-                    ))),
-                    Row::Selector(i) => {
-                        let sel = &selectors[*i];
-                        let (marker, mc, lc) = if sel.checked {
-                            ("[+]", Color::Green, Color::White)
-                        } else {
-                            ("[-]", Color::Red, Color::DarkGray)
-                        };
-                        ListItem::new(Line::from(vec![
-                            Span::styled(
-                                format!("   {marker} "),
-                                Style::default().fg(mc).add_modifier(Modifier::BOLD),
-                            ),
-                            Span::styled(&sel.label, Style::default().fg(lc)),
-                        ]))
-                    }
-                    Row::Flock(slug) => {
-                        let on = is_flock_checked(slug, &flock_overrides);
-                        let count = flock_skill_counts
-                            .get(slug.as_str())
-                            .copied()
-                            .unwrap_or(0);
-                        let (marker, mc, lc) = if on {
-                            ("[+]", Color::Green, Color::White)
-                        } else {
-                            ("[-]", Color::Red, Color::DarkGray)
-                        };
-                        let display = flock_display(slug);
-                        let label = format!("{display} ({count} skills)");
-                        ListItem::new(Line::from(vec![
-                            Span::styled(
-                                format!("      {marker} "),
-                                Style::default().fg(mc).add_modifier(Modifier::BOLD),
-                            ),
-                            Span::styled(label, Style::default().fg(lc)),
-                        ]))
-                    }
-                    Row::RemovedSelector(i) => {
-                        let u = &unmatched[*i];
-                        ListItem::new(Line::from(vec![
-                            Span::styled(
-                                "   [x] ",
-                                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                            ),
-                            Span::styled(
-                                &u.name,
-                                Style::default()
-                                    .fg(Color::DarkGray)
-                                    .add_modifier(Modifier::CROSSED_OUT),
-                            ),
-                        ]))
-                    }
-                    Row::RemovedFlock(slug) => {
-                        let display = flock_display(slug);
-                        ListItem::new(Line::from(vec![
-                            Span::styled(
-                                "      [x] ",
-                                Style::default().fg(Color::Rgb(120, 50, 50)),
-                            ),
-                            Span::styled(
-                                display,
-                                Style::default()
-                                    .fg(Color::Rgb(120, 80, 80))
-                                    .add_modifier(Modifier::CROSSED_OUT),
-                            ),
-                        ]))
-                    }
-                })
+                .map(|row| render_row(row, area.width))
                 .collect();
 
             let mut list_state = ListState::default();
@@ -386,61 +468,25 @@ pub fn apply_select(
 
             let list = List::new(list_items)
                 .highlight_style(Style::default().bg(Color::Rgb(40, 60, 35)))
-                .highlight_symbol(">");
+                .highlight_symbol("> ");
             frame.render_stateful_widget(list, chunks[1], &mut list_state);
 
-            // -- Help bar --
-            let help = Paragraph::new(Line::from(vec![
-                Span::styled(
-                    " Space",
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(" toggle  ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    "a",
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(" all  ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    "n",
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(" none  ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    "Enter",
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(" confirm  ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    "Esc",
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(" cancel  ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    "Home",
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled("/", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    "End",
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(" jump", Style::default().fg(Color::DarkGray)),
-            ]));
+            // -- Help bar (2 lines: keys + context) --
+            let mut key_spans = Vec::new();
+            key_spans.extend(help_key("Space", "toggle"));
+            key_spans.extend(help_key("a", "all"));
+            key_spans.extend(help_key("n", "none"));
+            key_spans.extend(help_key("Tab", "section"));
+            key_spans.extend(help_key("Enter", "confirm"));
+            key_spans.extend(help_key("Esc", "cancel"));
+            key_spans.extend(help_key("Home/End", "jump"));
+
+            let ctx_line = if ctx.is_empty() {
+                Line::from(Span::raw(""))
+            } else {
+                Line::from(Span::styled(ctx, Style::default().fg(Color::DarkGray)))
+            };
+            let help = Paragraph::new(vec![Line::from(key_spans), ctx_line]);
             frame.render_widget(help, chunks[2]);
         })?;
 
@@ -470,27 +516,36 @@ pub fn apply_select(
                         cursor = pos;
                     }
                 }
-                KeyCode::Char(' ') => match &rows[cursor] {
-                    Row::Selector(i) => {
-                        selectors[*i].checked = !selectors[*i].checked;
+                KeyCode::Tab | KeyCode::BackTab => {
+                    cursor = jump_section(&rows, cursor);
+                }
+                KeyCode::Char(' ') => {
+                    match &rows[cursor].kind {
+                        RowKind::Selector { index, .. } => {
+                            selectors[*index].checked = !selectors[*index].checked;
+                            dirty = true;
+                        }
+                        RowKind::Flock { slug, .. } => {
+                            let current = is_flock_checked(slug, &flock_overrides);
+                            flock_overrides.insert(slug.clone(), !current);
+                            dirty = true;
+                        }
+                        _ => {}
                     }
-                    Row::Flock(slug) => {
-                        let current = is_flock_checked(slug, &flock_overrides);
-                        flock_overrides.insert(slug.clone(), !current);
-                    }
-                    _ => {}
-                },
+                }
                 KeyCode::Char('a') => {
                     for sel in selectors.iter_mut() {
                         sel.checked = true;
                     }
                     flock_overrides.values_mut().for_each(|v| *v = true);
+                    dirty = true;
                 }
                 KeyCode::Char('n') => {
                     for sel in selectors.iter_mut() {
                         sel.checked = false;
                     }
                     flock_overrides.values_mut().for_each(|v| *v = false);
+                    dirty = true;
                 }
                 _ => {}
             }
