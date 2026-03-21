@@ -1,4 +1,5 @@
 mod bundle_meta;
+mod client;
 mod registry;
 
 use chrono::{DateTime, Utc};
@@ -8,6 +9,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 pub use bundle_meta::*;
+pub use client::*;
 pub use registry::*;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

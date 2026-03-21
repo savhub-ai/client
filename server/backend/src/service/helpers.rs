@@ -11,14 +11,13 @@ use zip::write::SimpleFileOptions;
 use crate::auth::{RequestUser, parse_role};
 use crate::error::AppError;
 use crate::markdown::render_markdown;
-use crate::models::{
-    AuditLogRow, FlockRow, NewAuditLogRow, SkillRow, SkillVersionRow, StoredBundleFile, UserRow,
-};
+use crate::models::{AuditLogRow, FlockRow, NewAuditLogRow, SkillRow, SkillVersionRow, UserRow};
 use crate::schema::{audit_logs, flocks, repos, skill_versions, skills, users};
 use crate::state::app_state;
 use shared::{
     AuditLogEntry, CatalogStats, ModerationStatus, ResourceFileSummary, SkillBadges, SkillListItem,
-    UserRole, UserSummary, VersionDetail, VersionSummary, bundle_metadata_from_json,
+    StoredBundleFile, UserRole, UserSummary, VersionDetail, VersionSummary,
+    bundle_metadata_from_json,
 };
 
 /// Normalize a git URL to a canonical HTTPS form.

@@ -1,35 +1,14 @@
-use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use savhub_shared::{BundleMetadata, PublishBundleFile, ResourceKind, load_bundle_metadata};
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use walkdir::{DirEntry, WalkDir};
 use zip::ZipArchive;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LockEntry {
-    pub version: String,
-    pub fetched_at: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Lockfile {
-    pub version: u8,
-    pub skills: BTreeMap<String, LockEntry>,
-}
-
-impl Default for Lockfile {
-    fn default() -> Self {
-        Self {
-            version: 1,
-            skills: BTreeMap::new(),
-        }
-    }
-}
+pub use savhub_shared::{LockEntry, Lockfile};
 
 #[derive(Debug, Clone)]
 pub struct LocalSkillFile {

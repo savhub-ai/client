@@ -23,9 +23,7 @@ use savhub_local::presets::{
     disable_project_skill, enable_repo_skill_in_project, read_project_added_skills,
     write_project_added_skills,
 };
-use savhub_local::registry::{
-    RemoteSkillFetchSpec, fetch_version_label, install_remote_skill_from_repo,
-};
+use savhub_local::registry::{fetch_version_label, install_remote_skill_from_repo};
 use savhub_local::skills::{
     LockEntry as ProjectLockEntry, RepoSkillOrigin, read_skill_version_info,
     write_repo_skill_origin,
@@ -33,10 +31,10 @@ use savhub_local::skills::{
 use savhub_shared::{
     BanUserRequest, BanUserResponse, DeleteResponse, FileContentResponse, IndexRequest,
     MAX_BUNDLE_BYTES, ModerationStatus, ModerationUpdateRequest, PagedResponse, PublishBundleFile,
-    PublishResponse, RepoDetailResponse, ResolveResponse, RoleUpdateResponse, SearchResponse,
-    SetUserRoleRequest, SkillDetailResponse, SkillListItem, ToggleStarResponse, UserListResponse,
-    UserRole, UserSummary, WhoAmIResponse, is_slug, normalize_bundle_files, normalize_tags,
-    total_bundle_bytes,
+    PublishResponse, RemoteSkillFetchSpec, RepoDetailResponse, ResolveResponse, RoleUpdateResponse,
+    SearchResponse, SetUserRoleRequest, SkillDetailResponse, SkillListItem, ToggleStarResponse,
+    UserListResponse, UserRole, UserSummary, WhoAmIResponse, is_slug, normalize_bundle_files,
+    normalize_tags, total_bundle_bytes,
 };
 use semver::Version;
 use serde_json::json;
@@ -1036,6 +1034,7 @@ async fn cmd_fetch(opts: &GlobalOpts, args: FetchArgs) -> Result<()> {
         ProjectLockEntry {
             version: resolved.display_version.clone(),
             fetched_at: now,
+            ..ProjectLockEntry::default()
         },
     );
     write_project_added_skills(&opts.workdir, &lockfile)?;
@@ -1120,6 +1119,7 @@ async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
                         .get(&slug)
                         .map(|entry| entry.fetched_at)
                         .unwrap_or(now),
+                    ..ProjectLockEntry::default()
                 },
             );
             continue;
@@ -1172,6 +1172,7 @@ async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
             ProjectLockEntry {
                 version: latest.clone(),
                 fetched_at: now,
+                ..ProjectLockEntry::default()
             },
         );
         println!("{slug}: updated -> {latest}");
@@ -1240,6 +1241,7 @@ async fn cmd_update_global(opts: &GlobalOpts, args: &UpdateArgs) -> Result<()> {
                 LockEntry {
                     version: latest.clone(),
                     fetched_at: now,
+                    ..LockEntry::default()
                 },
             );
             println!("{slug}: updated -> {latest}");
@@ -2739,6 +2741,7 @@ fn cmd_flock(_opts: &GlobalOpts, command: FlockCommand) -> Result<()> {
                         ProjectLockEntry {
                             version: "latest".to_string(),
                             fetched_at: now,
+                            ..ProjectLockEntry::default()
                         },
                     );
                     added += 1;

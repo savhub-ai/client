@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
@@ -9,46 +8,14 @@ use savhub_shared::{
     BUNDLE_META_FILE, BundleMetadata, BundleSourceKind, ResourceKind, StoredBundleFile,
     load_bundle_metadata,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use walkdir::{DirEntry, WalkDir};
 use zip::ZipArchive;
 
 use crate::utils::{sanitize_slug, title_case};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LockEntry {
-    pub version: String,
-    pub fetched_at: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Lockfile {
-    pub version: u8,
-    pub skills: BTreeMap<String, LockEntry>,
-}
-
-impl Default for Lockfile {
-    fn default() -> Self {
-        Self {
-            version: 1,
-            skills: BTreeMap::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RepoSkillOrigin {
-    pub version: u8,
-    pub repo: String,
-    pub repo_sign: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub repo_commit: Option<String>,
-    pub slug: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub skill_version: Option<String>,
-    pub fetched_at: i64,
-}
+pub use savhub_shared::{LockEntry, Lockfile, RepoSkillOrigin};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SkillVersionInfo {

@@ -1,6 +1,5 @@
 use chrono::{DateTime, Utc};
 use diesel::{AsChangeset, Associations, Identifiable, Insertable, Queryable, Selectable};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -9,14 +8,6 @@ use crate::schema::{
     security_scans, site_admins, skill_blocks, skill_comments, skill_installs, skill_ratings,
     skill_stars, skill_versions, skills, user_footprints, user_tokens, users,
 };
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StoredBundleFile {
-    pub path: String,
-    pub content: String,
-    pub size: i32,
-    pub sha256: String,
-}
 
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable)]
 #[diesel(table_name = users)]

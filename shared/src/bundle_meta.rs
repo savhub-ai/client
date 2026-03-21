@@ -127,6 +127,7 @@ pub struct BundlePackage {
     pub icon: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredBundleFile {
     pub path: String,
     pub content: String,

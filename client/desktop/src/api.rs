@@ -2,14 +2,11 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use reqwest::{Client, Method, Response, Url};
-use savhub_local::registry::{
-    DataSource, RemoteSkillFetchSpec, SkillEntry, fetch_version_label,
-    install_remote_skill_from_repo,
-};
+use savhub_local::registry::{fetch_version_label, install_remote_skill_from_repo};
 use savhub_local::skills::{RepoSkillOrigin, write_repo_skill_origin};
 use savhub_shared::{
-    FlockDetailResponse, FlockSummary, PagedResponse, RepoDetailResponse, SkillDetailResponse,
-    SkillListItem,
+    DataSource, FlockDetailResponse, FlockSummary, PagedResponse, RemoteSkillFetchSpec,
+    RepoDetailResponse, SkillDetailResponse, SkillEntry, SkillListItem,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;

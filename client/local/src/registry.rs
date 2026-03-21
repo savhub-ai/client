@@ -9,12 +9,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, anyhow};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use reqwest::blocking::{Client, Response};
 use reqwest::{Method, Url};
 use savhub_shared::{
     FlockDetailResponse, FlockSummary, ImportedSkillRecord, PagedResponse, RepoDetailResponse,
-    SecurityStatus, SkillDetailResponse, SkillListItem,
+    SecurityStatus, SecuritySummary, SkillDetailResponse, SkillListItem,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -23,30 +23,13 @@ use serde_json::Value;
 use crate::config::get_config_dir;
 use crate::skills::{RepoSkillOrigin, copy_skill_folder, write_repo_skill_origin};
 
+pub use savhub_shared::{
+    DataSource, FetchedSkillEntry, GitRef, RegistryFlock, RegistrySkill, RegistrySource,
+    RemoteSkillFetchSpec, SkillEntry,
+};
+
 const DEFAULT_API_BASE: &str = "https://savhub.ai/api/v1";
 const PAGE_LIMIT: usize = 100;
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SecuritySummary {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub verdict: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub reason_codes: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub summary: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub engine_version: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub scanned_at: Option<DateTime<Utc>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub scanned_commit: Option<String>,
-}
-
-fn is_default_security(summary: &SecuritySummary) -> bool {
-    *summary == SecuritySummary::default()
-}
 
 #[derive(Debug, Clone, Default, Deserialize)]
 struct UserConfigFile {
@@ -188,147 +171,6 @@ fn parse_api_error(response: Response) -> anyhow::Error {
     } else {
         anyhow!("registry API error {}: {}", status.as_u16(), body.trim())
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct GitRef {
-    pub r#type: String,
-    pub value: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum RegistrySource {
-    Git {
-        url: String,
-        r#ref: GitRef,
-        #[serde(default)]
-        path: Option<String>,
-        #[serde(default)]
-        commit_hash: Option<String>,
-    },
-    Registry {
-        path: String,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SkillEntryPoint {
-    #[serde(default)]
-    pub format: String,
-    #[serde(default)]
-    pub path: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RegistryFlock {
-    #[serde(default)]
-    pub schema_version: u32,
-    #[serde(default)]
-    pub sign: String,
-    #[serde(default, alias = "repo_sign")]
-    pub repo: String,
-    #[serde(default)]
-    pub slug: String,
-    pub name: String,
-    #[serde(default)]
-    pub description: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
-    #[serde(default)]
-    pub status: String,
-    #[serde(default)]
-    pub visibility: Option<String>,
-    #[serde(default)]
-    pub license: String,
-    #[serde(default, skip_serializing_if = "is_default_security")]
-    pub security: SecuritySummary,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RegistrySkill {
-    pub slug: String,
-    #[serde(default)]
-    pub path: String,
-    pub name: String,
-    #[serde(default)]
-    pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
-    #[serde(default)]
-    pub status: String,
-    #[serde(default)]
-    pub license: String,
-    #[serde(default)]
-    pub categories: Vec<String>,
-    #[serde(default)]
-    pub keywords: Vec<String>,
-    #[serde(default, skip_serializing_if = "is_default_security")]
-    pub security: SecuritySummary,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DataSource {
-    Local,
-    Remote,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SkillEntry {
-    pub slug: String,
-    pub name: String,
-    pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
-    pub status: String,
-    pub license: String,
-    pub categories: Vec<String>,
-    pub keywords: Vec<String>,
-    pub source: Option<RegistrySource>,
-    pub stars: Option<u32>,
-    pub starred_by_me: Option<bool>,
-    pub downloads: Option<u64>,
-    pub owner: Option<String>,
-    #[serde(default, skip_serializing_if = "is_default_security")]
-    pub security: SecuritySummary,
-    #[serde(skip)]
-    pub data_source: Option<DataSource>,
-}
-
-impl From<RegistrySkill> for SkillEntry {
-    fn from(skill: RegistrySkill) -> Self {
-        Self {
-            slug: skill.slug,
-            name: skill.name,
-            description: skill.description,
-            version: skill.version,
-            status: skill.status,
-            license: skill.license,
-            categories: skill.categories,
-            keywords: skill.keywords,
-            source: None,
-            stars: None,
-            starred_by_me: None,
-            downloads: None,
-            owner: None,
-            security: skill.security,
-            data_source: Some(DataSource::Remote),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FetchedSkillEntry {
-    pub slug: String,
-    pub fetched_at: String,
-    #[serde(default)]
-    pub repo: String,
-    #[serde(default)]
-    pub path: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub local_path: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -529,15 +371,6 @@ fn registry_flock_from_detail(detail: FlockDetailResponse) -> RegistryFlock {
         license: detail.flock.license,
         security: security_from_status(detail.flock.security_status),
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct RemoteSkillFetchSpec {
-    pub repo_sign: String,
-    pub skill_path: String,
-    pub git_url: String,
-    pub git_rev: String,
-    pub skill_version: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -1026,14 +859,4 @@ pub fn fetch_skills_batch(slugs: &[String]) -> Result<Vec<FetchedSkillInfo>> {
 
     write_fetched_skills_file(&fetched_entries)?;
     Ok(results)
-}
-
-#[allow(dead_code)]
-pub fn fetch_skill_from_registry(sign: &str) -> Result<PathBuf> {
-    let slug = sign.rsplit('/').next().unwrap_or(sign).to_string();
-    fetch_skills_batch(&[slug])?
-        .into_iter()
-        .next()
-        .map(|item| item.local_path)
-        .ok_or_else(|| anyhow!("skill '{sign}' could not be fetched"))
 }

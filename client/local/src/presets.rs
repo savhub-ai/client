@@ -422,6 +422,7 @@ fn project_added_skills_to_lockfile(skills: &[ProjectAddedSkill]) -> Lockfile {
             LockEntry {
                 version: skill.version.unwrap_or_else(|| "latest".to_string()),
                 fetched_at: skill.fetched_at,
+                ..LockEntry::default()
             },
         );
     }

@@ -1,8 +1,7 @@
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use dioxus::prelude::*;
-use serde::{Deserialize, Serialize};
+use savhub_shared::Lockfile;
 
 use crate::components::pagination::{self, PaginationControls};
 use crate::i18n;
@@ -10,26 +9,6 @@ use crate::state::AppState;
 use crate::theme::Theme;
 
 const FETCHED_SKILLS_PAGE_SIZE: usize = 10;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct LockEntry {
-    version: String,
-    fetched_at: i64,
-    #[serde(default)]
-    remote_id: Option<String>,
-    #[serde(default)]
-    remote_slug: Option<String>,
-    #[serde(default)]
-    sign: Option<String>,
-    #[serde(default)]
-    path: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Lockfile {
-    version: u8,
-    skills: BTreeMap<String, LockEntry>,
-}
 
 #[derive(Debug, Clone, PartialEq)]
 struct FetchedSkill {
