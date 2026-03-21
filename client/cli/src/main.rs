@@ -1,7 +1,3 @@
-mod api;
-mod clients;
-mod config;
-mod skills;
 mod tui;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -13,11 +9,11 @@ use std::time::{Duration, Instant};
 use std::{fs, thread};
 
 use anyhow::{Context, Result, anyhow, bail};
-use api::ApiClient;
 use chrono::{DateTime, Utc};
 use clap::{ArgAction, Args, Parser, Subcommand};
-use config::{read_global_config, write_global_config};
 use dialoguer::{Confirm, Select};
+use savhub_local::api::ApiClient;
+use savhub_local::config::{read_global_config, write_global_config};
 use savhub_local::presets::{
     EnableProjectRepoSkillResult, ProjectSkillConflictChoice, ResolvedSkillSources,
     disable_project_skill, enable_repo_skill_in_project, read_project_added_skills,
@@ -25,9 +21,11 @@ use savhub_local::presets::{
 };
 use savhub_local::registry::{fetch_version_label, install_remote_skill_from_repo};
 use savhub_local::skills::{
-    LockEntry as ProjectLockEntry, RepoSkillOrigin, read_skill_version_info,
-    write_repo_skill_origin,
+    LockEntry, RepoSkillOrigin, SkillFolder, compute_fingerprint, ensure_skill_marker,
+    find_skill_folders, inspect_zip, list_publishable_files, load_local_skill_metadata,
+    read_lockfile, read_skill_version_info, write_lockfile, write_repo_skill_origin,
 };
+use savhub_local::utils::sanitize_slug;
 use savhub_shared::{
     BanUserRequest, BanUserResponse, DeleteResponse, FileContentResponse, IndexRequest,
     MAX_BUNDLE_BYTES, ModerationStatus, ModerationUpdateRequest, PagedResponse, PublishBundleFile,
@@ -38,11 +36,6 @@ use savhub_shared::{
 };
 use semver::Version;
 use serde_json::json;
-use skills::{
-    LockEntry, SkillFolder, compute_fingerprint, ensure_skill_marker, find_skill_folders,
-    inspect_zip, list_publishable_files, load_local_skill_metadata, read_lockfile, sanitize_slug,
-    write_lockfile,
-};
 
 const DEFAULT_SITE: &str = "https://savhub.ai";
 
@@ -1031,10 +1024,10 @@ async fn cmd_fetch(opts: &GlobalOpts, args: FetchArgs) -> Result<()> {
     let mut lockfile = read_project_added_skills(&opts.workdir)?;
     lockfile.skills.insert(
         slug.clone(),
-        ProjectLockEntry {
+        LockEntry {
             version: resolved.display_version.clone(),
             fetched_at: now,
-            ..ProjectLockEntry::default()
+            ..LockEntry::default()
         },
     );
     write_project_added_skills(&opts.workdir, &lockfile)?;
@@ -1112,14 +1105,14 @@ async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
             println!("{slug}: already at {latest}");
             lockfile.skills.insert(
                 slug.clone(),
-                ProjectLockEntry {
+                LockEntry {
                     version: latest.clone(),
                     fetched_at: lockfile
                         .skills
                         .get(&slug)
                         .map(|entry| entry.fetched_at)
                         .unwrap_or(now),
-                    ..ProjectLockEntry::default()
+                    ..LockEntry::default()
                 },
             );
             continue;
@@ -1169,10 +1162,10 @@ async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
         )?;
         lockfile.skills.insert(
             slug.clone(),
-            ProjectLockEntry {
+            LockEntry {
                 version: latest.clone(),
                 fetched_at: now,
-                ..ProjectLockEntry::default()
+                ..LockEntry::default()
             },
         );
         println!("{slug}: updated -> {latest}");
@@ -1183,7 +1176,7 @@ async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
 }
 
 async fn cmd_update_global(opts: &GlobalOpts, args: &UpdateArgs) -> Result<()> {
-    let global_dir = clients::global_skills_dir();
+    let global_dir = savhub_local::clients::global_skills_dir();
     fs::create_dir_all(&global_dir).with_context(|| {
         format!(
             "failed to create global skills dir: {}",
@@ -1251,13 +1244,13 @@ async fn cmd_update_global(opts: &GlobalOpts, args: &UpdateArgs) -> Result<()> {
 
     // Sync to all detected AI clients
     println!("\nSyncing to AI clients...");
-    let detected = clients::detect_clients();
+    let detected = savhub_local::clients::detect_clients();
     let installed: Vec<_> = detected.iter().filter(|c| c.installed).collect();
     if installed.is_empty() {
         println!("No AI clients detected.");
     } else {
         for client in &installed {
-            match clients::sync_skills_to_client(client, &global_dir) {
+            match savhub_local::clients::sync_skills_to_client(client, &global_dir) {
                 Ok(count) => println!(
                     "  {}: synced {} skill(s) -> {}",
                     client.name,
@@ -2738,10 +2731,10 @@ fn cmd_flock(_opts: &GlobalOpts, command: FlockCommand) -> Result<()> {
                 if !lockfile.skills.contains_key(slug) {
                     lockfile.skills.insert(
                         slug.clone(),
-                        ProjectLockEntry {
+                        LockEntry {
                             version: "latest".to_string(),
                             fetched_at: now,
-                            ..ProjectLockEntry::default()
+                            ..LockEntry::default()
                         },
                     );
                     added += 1;

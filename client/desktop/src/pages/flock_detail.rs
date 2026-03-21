@@ -31,7 +31,7 @@ pub fn FlockDetailPage(slug: String) -> Element {
         let flock_id = flock_id.clone();
         spawn(async move {
             let fetched_map = tokio::task::spawn_blocking(move || {
-                crate::skills::read_fetched_skill_versions(&workdir)
+                savhub_local::skills::read_fetched_skill_versions(&workdir)
             })
             .await
             .unwrap_or_default();
@@ -93,11 +93,11 @@ pub fn FlockDetailPage(slug: String) -> Element {
                     let slug = skill.slug.clone();
                     let workdir = workdir.clone();
                     let result = tokio::task::spawn_blocking(move || {
-                        crate::skills::prune_skill(&workdir, &slug)
+                        savhub_local::skills::prune_skill(&workdir, &slug)
                     })
                     .await
                     .map_err(|e| e.to_string())
-                    .and_then(|r| r);
+                    .and_then(|r| r.map_err(|e| e.to_string()));
                     match result {
                         Ok(()) => {
                             fetched.with_mut(|map| {
@@ -272,11 +272,11 @@ fn FlockSkillRow(
                 let workdir = workdir.clone();
                 let slug = skill_slug.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    crate::skills::prune_skill(&workdir, &slug)
+                    savhub_local::skills::prune_skill(&workdir, &slug)
                 })
                 .await
                 .map_err(|e| e.to_string())
-                .and_then(|r| r);
+                .and_then(|r| r.map_err(|e| e.to_string()));
                 match result {
                     Ok(()) => {
                         fetched.with_mut(|map| {

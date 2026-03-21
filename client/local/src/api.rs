@@ -4,11 +4,26 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
+/// The API version this client accepts. Registry must return the same major
+/// version in `/health` → `apiVersion`, otherwise the user is warned.
+pub const CLIENT_API_VERSION: u32 = 1;
+
+/// Result of comparing client and registry API versions.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ApiCompatibility {
+    /// Not yet checked.
+    Unknown,
+    /// Versions are compatible (same major).
+    Compatible { registry_version: u32 },
+    /// Major version mismatch – client must be updated.
+    Incompatible { registry_version: u32 },
+}
+
 #[derive(Clone)]
 pub struct ApiClient {
-    base: String,
+    pub base: String,
     client: Client,
-    token: Option<String>,
+    pub token: Option<String>,
 }
 
 impl ApiClient {
@@ -58,6 +73,15 @@ impl ApiClient {
             .await
     }
 
+    pub async fn put_json<B: Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T> {
+        self.request_json(Method::PUT, self.v1_url(path)?, Some(body))
+            .await
+    }
+
     pub async fn delete_json<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         self.request_json::<(), T>(Method::DELETE, self.v1_url(path)?, None)
             .await
@@ -74,6 +98,55 @@ impl ApiClient {
         } else {
             bail!(parse_error(response).await);
         }
+    }
+
+    /// Check the registry `/health` endpoint and compare `apiVersion` with
+    /// [`CLIENT_API_VERSION`]. Returns the compatibility status.
+    pub async fn check_api_compatibility(&self) -> ApiCompatibility {
+        let Ok(value) = self.get_json::<Value>("/health").await else {
+            return ApiCompatibility::Unknown;
+        };
+        let registry_version = value
+            .get("apiVersion")
+            .and_then(Value::as_u64)
+            .unwrap_or(CLIENT_API_VERSION as u64) as u32;
+
+        if registry_version == CLIENT_API_VERSION {
+            ApiCompatibility::Compatible { registry_version }
+        } else {
+            ApiCompatibility::Incompatible { registry_version }
+        }
+    }
+
+    /// Download the registry zip from GitHub. Returns (zip_bytes, commit_sha).
+    #[allow(dead_code)]
+    pub async fn download_registry_zip(&self, github_repo: &str) -> Result<(Vec<u8>, String)> {
+        let sha_url = format!("https://api.github.com/repos/{github_repo}/commits/main");
+        let sha_resp = self
+            .client
+            .get(&sha_url)
+            .header("User-Agent", "savhub-client")
+            .send()
+            .await?;
+        let sha_json: Value = sha_resp.json().await?;
+        let commit_sha = sha_json
+            .get("sha")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_string();
+
+        let zip_url = format!("https://api.github.com/repos/{github_repo}/zipball/main");
+        let zip_resp = self
+            .client
+            .get(&zip_url)
+            .header("User-Agent", "savhub-client")
+            .send()
+            .await?;
+        if !zip_resp.status().is_success() {
+            bail!("registry download failed: {}", zip_resp.status());
+        }
+        let bytes = zip_resp.bytes().await?.to_vec();
+        Ok((bytes, commit_sha))
     }
 
     async fn request_json<B: Serialize, T: DeserializeOwned>(
@@ -133,39 +206,6 @@ impl ApiClient {
             .send()
             .await
             .map_err(|error| anyhow!("request failed: {error}"))
-    }
-}
-
-impl ApiClient {
-    /// Download the registry zip from GitHub. Returns (zip_bytes, commit_sha).
-    #[allow(dead_code)]
-    pub async fn download_registry_zip(&self, github_repo: &str) -> Result<(Vec<u8>, String)> {
-        let sha_url = format!("https://api.github.com/repos/{github_repo}/commits/main");
-        let sha_resp = self
-            .client
-            .get(&sha_url)
-            .header("User-Agent", "savhub-cli")
-            .send()
-            .await?;
-        let sha_json: Value = sha_resp.json().await?;
-        let commit_sha = sha_json
-            .get("sha")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown")
-            .to_string();
-
-        let zip_url = format!("https://api.github.com/repos/{github_repo}/zipball/main");
-        let zip_resp = self
-            .client
-            .get(&zip_url)
-            .header("User-Agent", "savhub-cli")
-            .send()
-            .await?;
-        if !zip_resp.status().is_success() {
-            bail!("registry download failed: {}", zip_resp.status());
-        }
-        let bytes = zip_resp.bytes().await?.to_vec();
-        Ok((bytes, commit_sha))
     }
 }
 

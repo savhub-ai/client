@@ -487,7 +487,7 @@ fn AccountPane() -> Element {
                             }
                         }
                         Err(e) => {
-                            login_status.set(Some(t.fmt_login_verify_failed(&e)));
+                            login_status.set(Some(t.fmt_login_verify_failed(&e.to_string())));
                         }
                     }
                 }

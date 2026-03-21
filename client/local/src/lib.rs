@@ -1,3 +1,4 @@
+pub mod api;
 pub mod build_info;
 pub mod clients;
 pub mod config;

@@ -559,3 +559,88 @@ fn normalize_git_commit(value: &str) -> Option<String> {
         None
     }
 }
+
+// ---------------------------------------------------------------------------
+// Fetched skill metadata (shared between CLI and desktop)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Default)]
+pub struct FetchedSkillMetadata {
+    pub remote_id: Option<String>,
+    pub remote_slug: Option<String>,
+    pub sign: Option<String>,
+    pub path: Option<String>,
+}
+
+pub fn update_lockfile_with_metadata(
+    workdir: &Path,
+    slug: &str,
+    version: &str,
+    metadata: &FetchedSkillMetadata,
+) {
+    let lock_dir = workdir.join(".savhub");
+    let _ = fs::create_dir_all(&lock_dir);
+    let lock_path = lock_dir.join("lock.json");
+
+    let mut lock = fs::read_to_string(&lock_path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Lockfile>(&raw).ok())
+        .unwrap_or_default();
+
+    lock.skills.insert(
+        slug.to_string(),
+        LockEntry {
+            version: version.to_string(),
+            fetched_at: chrono::Utc::now().timestamp(),
+            remote_id: metadata.remote_id.clone(),
+            remote_slug: metadata.remote_slug.clone(),
+            sign: metadata.sign.clone(),
+            path: metadata.path.clone(),
+        },
+    );
+
+    let _ = fs::write(
+        &lock_path,
+        serde_json::to_string_pretty(&lock).unwrap_or_default(),
+    );
+}
+
+/// Read fetched skill versions from the lockfile.
+pub fn read_fetched_skill_versions(workdir: &Path) -> std::collections::BTreeMap<String, String> {
+    let lock_path = workdir.join(".savhub").join("lock.json");
+    fs::read_to_string(&lock_path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Lockfile>(&raw).ok())
+        .map(|lock| {
+            lock.skills
+                .into_iter()
+                .map(|(slug, entry)| (slug, entry.version))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Remove a fetched skill folder and update the lockfile.
+pub fn prune_skill(workdir: &Path, slug: &str) -> Result<()> {
+    let skill_dir = workdir.join(slug);
+    match fs::remove_dir_all(&skill_dir) {
+        Ok(()) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => bail!("failed to remove skill directory: {err}"),
+    }
+
+    let lock_dir = workdir.join(".savhub");
+    let lock_path = lock_dir.join("lock.json");
+    let mut lock = fs::read_to_string(&lock_path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Lockfile>(&raw).ok())
+        .unwrap_or_default();
+    lock.skills.remove(slug);
+
+    fs::create_dir_all(&lock_dir)?;
+    fs::write(
+        &lock_path,
+        serde_json::to_string_pretty(&lock).unwrap_or_default(),
+    )?;
+    Ok(())
+}

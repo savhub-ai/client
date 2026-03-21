@@ -99,7 +99,7 @@ fn load_skills_page(
         error.set(None);
 
         let fetched_versions = tokio::task::spawn_blocking(move || {
-            crate::skills::read_fetched_skill_versions(&workdir)
+            savhub_local::skills::read_fetched_skill_versions(&workdir)
         })
         .await
         .unwrap_or_default();
@@ -333,7 +333,7 @@ pub fn ExplorePage() -> Element {
         let workdir = state.workdir.read().clone();
         spawn(async move {
             let versions = tokio::task::spawn_blocking(move || {
-                crate::skills::read_fetched_skill_versions(&workdir)
+                savhub_local::skills::read_fetched_skill_versions(&workdir)
             })
             .await
             .unwrap_or_default();
@@ -672,11 +672,11 @@ fn SkillListRow(
                 let workdir = workdir.clone();
                 let local_slug = local_slug.clone();
                 tokio::task::spawn_blocking(move || {
-                    crate::skills::prune_skill(&workdir, &local_slug)
+                    savhub_local::skills::prune_skill(&workdir, &local_slug)
                 })
                 .await
                 .map_err(|e| e.to_string())
-                .and_then(|r| r.map(|_| String::new()))
+                .and_then(|r| r.map(|_| String::new()).map_err(|e| e.to_string()))
             } else {
                 api::fetch_remote_skill_with_lookup(&client, &workdir, lookup)
                     .await
@@ -806,11 +806,11 @@ fn SkillCard(
                 let workdir = workdir.clone();
                 let local_slug = local_slug.clone();
                 tokio::task::spawn_blocking(move || {
-                    crate::skills::prune_skill(&workdir, &local_slug)
+                    savhub_local::skills::prune_skill(&workdir, &local_slug)
                 })
                 .await
                 .map_err(|e| e.to_string())
-                .and_then(|r| r.map(|_| String::new()))
+                .and_then(|r| r.map(|_| String::new()).map_err(|e| e.to_string()))
             } else {
                 api::fetch_remote_skill_with_lookup(&client, &workdir, lookup)
                     .await

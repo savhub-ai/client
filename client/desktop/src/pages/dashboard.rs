@@ -99,7 +99,7 @@ pub fn DashboardPage() -> Element {
                 }
                 Err(error) => {
                     health.set(t.offline.to_string());
-                    health_error.set(Some(error));
+                    health_error.set(Some(error.to_string()));
                 }
             }
 
@@ -438,7 +438,7 @@ fn UserCard(label: &'static str) -> Element {
                                 login_status.set(Some(t.login_succeeded_no_user.to_string()));
                             }
                         }
-                        Err(e) => login_status.set(Some(t.fmt_login_verify_failed(&e))),
+                        Err(e) => login_status.set(Some(t.fmt_login_verify_failed(&e.to_string()))),
                     }
                 }
                 Err(e) => {

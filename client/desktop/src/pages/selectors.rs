@@ -601,7 +601,7 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
         let workdir = state.workdir.read().clone();
         spawn(async move {
             let slugs = tokio::task::spawn_blocking(move || {
-                crate::skills::read_fetched_skill_versions(&workdir)
+                savhub_local::skills::read_fetched_skill_versions(&workdir)
                     .into_keys()
                     .collect::<Vec<_>>()
             })

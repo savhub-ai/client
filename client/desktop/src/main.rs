@@ -8,7 +8,6 @@ mod components;
 mod i18n;
 pub mod icons;
 mod pages;
-mod skills;
 mod state;
 mod theme;
 mod updater;
