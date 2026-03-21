@@ -41,6 +41,16 @@ diesel::table! {
 }
 
 diesel::table! {
+    browse_histories (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        resource_type -> Text,
+        resource_id -> Uuid,
+        viewed_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
     flocks (id) {
         id -> Uuid,
         sign -> Text,
@@ -128,7 +138,7 @@ diesel::table! {
         name -> Text,
         description -> Text,
         git_url -> Text,
-        git_rev -> Nullable<Text>,
+        git_rev -> Text,
         git_branch -> Nullable<Text>,
         license -> Nullable<Text>,
         visibility -> Text,
@@ -230,8 +240,8 @@ diesel::table! {
         repo_id -> Uuid,
         flock_id -> Nullable<Uuid>,
         skill_id -> Nullable<Uuid>,
-        git_rev -> Nullable<Text>,
-        git_branch -> Nullable<Text>,
+        git_rev -> Text,
+        git_branch -> Text,
         version -> Nullable<Text>,
         changelog -> Text,
         tags -> Array<Nullable<Text>>,
@@ -239,10 +249,10 @@ diesel::table! {
         parsed_metadata -> Jsonb,
         search_document -> Text,
         fingerprint -> Text,
+        scan_summary -> Nullable<Jsonb>,
         created_by -> Uuid,
         created_at -> Timestamptz,
         soft_deleted_at -> Nullable<Timestamptz>,
-        scan_summary -> Nullable<Jsonb>,
     }
 }
 
@@ -276,21 +286,11 @@ diesel::table! {
         stats_stars -> Int8,
         stats_versions -> Int8,
         stats_comments -> Int8,
+        stats_installs -> Int8,
+        stats_unique_users -> Int8,
         soft_deleted_at -> Nullable<Timestamptz>,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
-        stats_installs -> Int8,
-        stats_unique_users -> Int8,
-    }
-}
-
-diesel::table! {
-    browse_histories (id) {
-        id -> Uuid,
-        user_id -> Uuid,
-        resource_type -> Text,
-        resource_id -> Uuid,
-        viewed_at -> Timestamptz,
     }
 }
 
@@ -320,6 +320,7 @@ diesel::table! {
 }
 
 diesel::joinable!(audit_logs -> users (actor_user_id));
+diesel::joinable!(browse_histories -> users (user_id));
 diesel::joinable!(flocks -> repos (repo_id));
 diesel::joinable!(flocks -> users (imported_by_user_id));
 diesel::joinable!(index_jobs -> users (requested_by_user_id));
@@ -349,13 +350,13 @@ diesel::joinable!(skill_versions -> skills (skill_id));
 diesel::joinable!(skill_versions -> users (created_by));
 diesel::joinable!(skills -> flocks (flock_id));
 diesel::joinable!(skills -> repos (repo_id));
-diesel::joinable!(browse_histories -> users (user_id));
 diesel::joinable!(user_tokens -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     ai_request_cache,
     ai_usage_logs,
     audit_logs,
+    browse_histories,
     flocks,
     index_jobs,
     index_rules,
@@ -370,7 +371,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     skill_stars,
     skill_versions,
     skills,
-    browse_histories,
     user_tokens,
     users,
 );

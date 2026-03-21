@@ -25,7 +25,7 @@ CREATE TABLE repos (
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     git_url TEXT NOT NULL UNIQUE,
-    git_rev TEXT,
+    git_rev TEXT NOT NULL,
     git_branch TEXT,
     license TEXT,
     visibility TEXT NOT NULL DEFAULT 'public',

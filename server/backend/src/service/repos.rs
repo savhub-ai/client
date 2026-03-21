@@ -199,7 +199,7 @@ pub fn create_repo(
         created_at: now,
         updated_at: now,
         last_indexed_at: None,
-        git_rev: None,
+        git_rev: "main".to_string(),
         git_branch: None,
     };
 
@@ -764,7 +764,7 @@ fn repo_summary_from_row(row: &RepoRow, flock_count: i64, skill_count: i64) -> R
         name: row.name.clone(),
         description: row.description.clone(),
         git_url: row.git_url.clone(),
-        git_rev: row.git_rev.clone(),
+        git_rev: Some(row.git_rev.clone()),
         git_branch: row.git_branch.clone(),
         sign: row.sign.clone(),
         visibility: parse_visibility(&row.visibility),
@@ -819,7 +819,7 @@ fn repo_document_from_row(row: &RepoRow) -> Result<RepoDocument, AppError> {
         name: row.name.clone(),
         description: row.description.clone(),
         git_url: row.git_url.clone(),
-        git_rev: row.git_rev.clone(),
+        git_rev: Some(row.git_rev.clone()),
         git_branch: row.git_branch.clone(),
         visibility: parse_visibility(&row.visibility),
         verified: row.verified,

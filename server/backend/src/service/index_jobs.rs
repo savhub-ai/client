@@ -661,7 +661,7 @@ async fn do_auto_import(
                 created_at: now,
                 updated_at: now,
                 last_indexed_at: None,
-                git_rev: None,
+                git_rev: checkout.head_sha.clone(),
                 git_branch: None,
             };
             diesel::insert_into(repos::table)
@@ -925,7 +925,7 @@ async fn do_auto_import(
     let mut repo_update = crate::models::RepoChangeset {
         updated_at: Some(Utc::now()),
         last_indexed_at: Some(Some(Utc::now())),
-        git_rev: Some(Some(checkout.head_sha.clone())),
+        git_rev: Some(checkout.head_sha.clone()),
         git_branch: Some(Some(job.git_ref.clone())),
         ..Default::default()
     };

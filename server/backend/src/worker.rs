@@ -271,7 +271,7 @@ async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
             .set(crate::models::RepoChangeset {
                 last_indexed_at: Some(Some(Utc::now())),
                 updated_at: Some(Utc::now()),
-                git_rev: Some(Some(current_sha)),
+                git_rev: Some(current_sha),
                 ..Default::default()
             })
             .execute(&mut conn)

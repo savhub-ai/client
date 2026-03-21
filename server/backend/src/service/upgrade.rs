@@ -43,7 +43,7 @@ pub async fn backfill_repo_git_rev(pool: &PgPool) -> Result<(), AppError> {
                 let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
                 diesel::update(repos::table.find(repo.id))
                     .set(RepoChangeset {
-                        git_rev: Some(Some(sha.clone())),
+                        git_rev: Some(sha.clone()),
                         updated_at: Some(Utc::now()),
                         ..Default::default()
                     })
