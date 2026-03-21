@@ -6181,42 +6181,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "savhub-backend"
-version = "0.1.14"
-dependencies = [
- "ammonia",
- "anyhow",
- "chrono",
- "diesel",
- "diesel_migrations",
- "dotenvy",
- "futures-util",
- "indexmap",
- "novel-core",
- "novel-shared",
- "once_cell",
- "pq-sys",
- "pulldown-cmark",
- "regex",
- "reqwest 0.13.2",
- "rust-embed",
- "salvo",
- "savhub-shared",
- "semver",
- "serde",
- "serde-saphyr",
- "serde_json",
- "sha2",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "walkdir",
- "zip",
-]
-
-[[package]]
 name = "savhub-desktop"
 version = "0.1.14"
 dependencies = [
@@ -6525,6 +6489,42 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "server"
+version = "0.1.14"
+dependencies = [
+ "ammonia",
+ "anyhow",
+ "chrono",
+ "diesel",
+ "diesel_migrations",
+ "dotenvy",
+ "futures-util",
+ "indexmap",
+ "novel-core",
+ "novel-shared",
+ "once_cell",
+ "pq-sys",
+ "pulldown-cmark",
+ "regex",
+ "reqwest 0.13.2",
+ "rust-embed",
+ "salvo",
+ "savhub-shared",
+ "semver",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "walkdir",
+ "zip",
 ]
 
 [[package]]

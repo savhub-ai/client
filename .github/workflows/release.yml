@@ -79,14 +79,14 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build release binary
-        run: cargo build --release --locked -p savhub-backend
+        run: cargo build --release --locked -p server
 
       - name: Package release archive
         shell: bash
         run: |
-          PACKAGE_NAME="savhub-backend-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu"
+          PACKAGE_NAME="server-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu"
           mkdir -p "dist/${PACKAGE_NAME}"
-          cp target/release/savhub-backend "dist/${PACKAGE_NAME}/"
+          cp target/release/server "dist/${PACKAGE_NAME}/"
           cp README.md LICENSE .env.example "dist/${PACKAGE_NAME}/"
           tar -C dist -czf "dist/${PACKAGE_NAME}.tar.gz" "${PACKAGE_NAME}"
           sha256sum "dist/${PACKAGE_NAME}.tar.gz" > dist/backend-sha256sums.txt

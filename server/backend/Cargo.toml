@@ -1,5 +1,5 @@
 [package]
-name = "savhub-backend"
+name = "server"
 description = "Backend API server for the Savhub decentralized skills registry"
 version.workspace = true
 edition.workspace = true

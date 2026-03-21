@@ -1,17 +1,20 @@
 //! ratatui-based interactive multi-select for `savhub apply`.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io;
 
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton,
+    MouseEventKind,
+};
 use crossterm::execute;
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Layout};
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
 
 /// A matched selector with its contributed flocks.
 pub struct MatchedSelector {
@@ -47,7 +50,7 @@ enum Section {
 enum RowKind {
     SectionHeader { label: &'static str, color: Color },
     Separator,
-    RepoGroup { label: String },
+    RepoGroup { label: String, collapsed: bool },
     Selector { index: usize, checked: bool, label: String },
     Flock { slug: String, checked: bool, display: String, skill_count: usize },
     RemovedSelector { label: String },
@@ -62,7 +65,28 @@ struct Row {
 
 impl Row {
     fn is_interactive(&self) -> bool {
-        matches!(self.kind, RowKind::Selector { .. } | RowKind::Flock { .. })
+        matches!(
+            self.kind,
+            RowKind::Selector { .. } | RowKind::Flock { .. } | RowKind::RepoGroup { .. }
+        )
+    }
+
+    fn matches_filter(&self, filter: &str) -> bool {
+        if filter.is_empty() {
+            return true;
+        }
+        let q = filter.to_ascii_lowercase();
+        match &self.kind {
+            RowKind::Selector { label, .. } => label.to_ascii_lowercase().contains(&q),
+            RowKind::Flock { slug, display, .. } => {
+                slug.to_ascii_lowercase().contains(&q)
+                    || display.to_ascii_lowercase().contains(&q)
+            }
+            RowKind::RepoGroup { label, .. } => label.to_ascii_lowercase().contains(&q),
+            RowKind::RemovedSelector { label } => label.to_ascii_lowercase().contains(&q),
+            RowKind::RemovedFlock { display } => display.to_ascii_lowercase().contains(&q),
+            _ => true, // headers/separators always visible
+        }
     }
 }
 
@@ -157,10 +181,32 @@ fn move_down(rows: &[Row], cursor: usize) -> usize {
     if rows[pos].is_interactive() { pos } else { cursor }
 }
 
-/// Jump to the first interactive row of the other section.
+fn page_up(rows: &[Row], cursor: usize, page_height: usize) -> usize {
+    let mut pos = cursor;
+    for _ in 0..page_height {
+        let next = move_up(rows, pos);
+        if next == pos {
+            break;
+        }
+        pos = next;
+    }
+    pos
+}
+
+fn page_down(rows: &[Row], cursor: usize, page_height: usize) -> usize {
+    let mut pos = cursor;
+    for _ in 0..page_height {
+        let next = move_down(rows, pos);
+        if next == pos {
+            break;
+        }
+        pos = next;
+    }
+    pos
+}
+
 fn jump_section(rows: &[Row], cursor: usize) -> usize {
     let current_section = rows.get(cursor).map(|r| r.section);
-    // Find first interactive row in a different section
     if let Some(target) = rows.iter().enumerate().find(|(_, r)| {
         r.is_interactive() && Some(r.section) != current_section
     }) {
@@ -175,7 +221,9 @@ fn build_rows(
     selectors: &[MatchedSelector],
     flock_overrides: &HashMap<String, bool>,
     flock_skill_counts: &HashMap<String, usize>,
+    collapsed_repos: &HashSet<String>,
     unmatched: &[UnmatchedSelector],
+    filter: &str,
 ) -> Vec<Row> {
     let derived_flocks = compute_derived(selectors);
     let grouped = group_flocks_by_repo(&derived_flocks);
@@ -188,14 +236,17 @@ fn build_rows(
             section: Section::Install,
         });
         for (i, sel) in selectors.iter().enumerate() {
-            rows.push(Row {
+            let row = Row {
                 kind: RowKind::Selector {
                     index: i,
                     checked: sel.checked,
                     label: sel.label.clone(),
                 },
                 section: Section::Install,
-            });
+            };
+            if row.matches_filter(filter) {
+                rows.push(row);
+            }
         }
         if !derived_flocks.is_empty() {
             rows.push(Row {
@@ -203,22 +254,39 @@ fn build_rows(
                 section: Section::Install,
             });
             for (repo, flocks) in &grouped {
-                rows.push(Row {
-                    kind: RowKind::RepoGroup { label: repo.clone() },
+                let is_collapsed = collapsed_repos.contains(repo);
+                let flock_count = flocks.len();
+                let repo_row = Row {
+                    kind: RowKind::RepoGroup {
+                        label: format!(
+                            "{repo} ({flock_count} flocks){}",
+                            if is_collapsed { " ..." } else { "" }
+                        ),
+                        collapsed: is_collapsed,
+                    },
                     section: Section::Install,
-                });
-                for f in flocks {
-                    let on = is_flock_checked(f, flock_overrides);
-                    let count = flock_skill_counts.get(f.as_str()).copied().unwrap_or(0);
-                    rows.push(Row {
-                        kind: RowKind::Flock {
-                            slug: f.clone(),
-                            checked: on,
-                            display: flock_display(f).to_string(),
-                            skill_count: count,
-                        },
-                        section: Section::Install,
-                    });
+                };
+                if repo_row.matches_filter(filter) || !is_collapsed {
+                    rows.push(repo_row);
+                }
+                if !is_collapsed {
+                    for f in flocks {
+                        let on = is_flock_checked(f, flock_overrides);
+                        let count =
+                            flock_skill_counts.get(f.as_str()).copied().unwrap_or(0);
+                        let flock_row = Row {
+                            kind: RowKind::Flock {
+                                slug: f.clone(),
+                                checked: on,
+                                display: flock_display(f).to_string(),
+                                skill_count: count,
+                            },
+                            section: Section::Install,
+                        };
+                        if flock_row.matches_filter(filter) {
+                            rows.push(flock_row);
+                        }
+                    }
                 }
             }
         }
@@ -237,15 +305,23 @@ fn build_rows(
             section: Section::Remove,
         });
         for u in unmatched {
-            rows.push(Row {
+            let row = Row {
                 kind: RowKind::RemovedSelector { label: u.name.clone() },
                 section: Section::Remove,
-            });
+            };
+            if row.matches_filter(filter) {
+                rows.push(row);
+            }
             for f in &u.flocks {
-                rows.push(Row {
-                    kind: RowKind::RemovedFlock { display: flock_display(f).to_string() },
+                let row = Row {
+                    kind: RowKind::RemovedFlock {
+                        display: flock_display(f).to_string(),
+                    },
                     section: Section::Remove,
-                });
+                };
+                if row.matches_filter(filter) {
+                    rows.push(row);
+                }
             }
         }
     }
@@ -267,6 +343,10 @@ fn context_info(rows: &[Row], cursor: usize) -> String {
         RowKind::Flock { slug, skill_count, checked, .. } => {
             let state = if *checked { "on" } else { "off" };
             format!(" Flock: {slug} -- {skill_count} skills [{state}]")
+        }
+        RowKind::RepoGroup { label, collapsed } => {
+            let state = if *collapsed { "collapsed" } else { "expanded" };
+            format!(" Repo: {label} [{state}] -- Space to toggle")
         }
         _ => String::new(),
     }
@@ -290,10 +370,21 @@ fn render_row(row: &Row, term_width: u16) -> ListItem<'static> {
             ]))
         }
         RowKind::Separator => ListItem::new(Line::from(Span::raw(""))),
-        RowKind::RepoGroup { label } => ListItem::new(Line::from(Span::styled(
-            format!("    {label}"),
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-        ))),
+        RowKind::RepoGroup { label, collapsed } => {
+            let icon = if *collapsed { ">" } else { "v" };
+            ListItem::new(Line::from(vec![
+                Span::styled(
+                    format!("   {icon} "),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    label.clone(),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]))
+        }
         RowKind::Selector { checked, label, .. } => {
             let (marker, mc, lc) = if *checked {
                 ("*", Color::Green, Color::White)
@@ -330,7 +421,9 @@ fn render_row(row: &Row, term_width: u16) -> ListItem<'static> {
             ),
             Span::styled(
                 label.clone(),
-                Style::default().fg(Color::DarkGray).add_modifier(Modifier::CROSSED_OUT),
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::CROSSED_OUT),
             ),
         ])),
         RowKind::RemovedFlock { display } => ListItem::new(Line::from(vec![
@@ -340,7 +433,9 @@ fn render_row(row: &Row, term_width: u16) -> ListItem<'static> {
             ),
             Span::styled(
                 display.clone(),
-                Style::default().fg(Color::Rgb(120, 80, 80)).add_modifier(Modifier::CROSSED_OUT),
+                Style::default()
+                    .fg(Color::Rgb(120, 80, 80))
+                    .add_modifier(Modifier::CROSSED_OUT),
             ),
         ])),
     }
@@ -350,10 +445,38 @@ fn help_key(key: &str, desc: &str) -> Vec<Span<'static>> {
     vec![
         Span::styled(
             format!(" {key}"),
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::styled(format!(" {desc} "), Style::default().fg(Color::DarkGray)),
     ]
+}
+
+fn render_search_overlay(filter: &str, area: Rect, frame: &mut ratatui::Frame<'_>) {
+    let width = 40.min(area.width.saturating_sub(4)) as u16;
+    let x = area.width.saturating_sub(width + 2);
+    let overlay = Rect::new(x, 1, width + 2, 3);
+    let text = format!(" / {filter}_");
+    let p = Paragraph::new(text).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Yellow))
+            .title(" Search "),
+    );
+    frame.render_widget(Clear, overlay);
+    frame.render_widget(p, overlay);
+}
+
+// ── Terminal guard ──
+
+struct TerminalGuard;
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        let _ = terminal::disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+    }
 }
 
 // ── Main entry point ──
@@ -381,21 +504,33 @@ pub fn apply_select(
     for f in flock_skip_set {
         flock_overrides.insert(f.clone(), false);
     }
+    let mut collapsed_repos: HashSet<String> = HashSet::new();
+    let mut filter = String::new();
+    let mut search_mode = false;
 
     terminal::enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+    let _guard = TerminalGuard;
 
     let mut cursor = 0usize;
     let mut cancelled = false;
-    let mut dirty = true; // rebuild rows only when state changes
+    let mut dirty = true;
     let mut rows: Vec<Row> = Vec::new();
+    let mut list_area_height: u16 = 20;
 
     loop {
         if dirty {
-            rows = build_rows(selectors, &flock_overrides, flock_skill_counts, unmatched);
+            rows = build_rows(
+                selectors,
+                &flock_overrides,
+                flock_skill_counts,
+                &collapsed_repos,
+                unmatched,
+                &filter,
+            );
             dirty = false;
         }
 
@@ -421,11 +556,14 @@ pub fn apply_select(
             .sum();
         let rm_sel = unmatched.len();
         let ctx = context_info(&rows, cursor);
+        let is_searching = search_mode;
+        let filter_display = filter.clone();
 
         let rows_ref = &rows;
 
         terminal.draw(|frame| {
             let area = frame.area();
+            list_area_height = area.height.saturating_sub(6);
             let chunks = Layout::vertical([
                 Constraint::Length(3),
                 Constraint::Min(1),
@@ -436,11 +574,15 @@ pub fn apply_select(
             // -- Title bar --
             let mut title_spans = vec![Span::styled(
                 " savhub apply ",
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
             )];
             if add_sel > 0 || add_flock > 0 {
                 title_spans.push(Span::styled(
-                    format!(" +{add_sel} selectors  +{add_flock} flocks ({add_skills} skills)"),
+                    format!(
+                        " +{add_sel} selectors  +{add_flock} flocks ({add_skills} skills)"
+                    ),
                     Style::default().fg(Color::Green),
                 ));
             }
@@ -448,6 +590,12 @@ pub fn apply_select(
                 title_spans.push(Span::styled(
                     format!("  -{rm_sel} selectors"),
                     Style::default().fg(Color::Red),
+                ));
+            }
+            if !filter_display.is_empty() && !is_searching {
+                title_spans.push(Span::styled(
+                    format!("  [filter: {filter_display}]"),
+                    Style::default().fg(Color::Yellow),
                 ));
             }
             let title = Paragraph::new(Line::from(title_spans)).block(
@@ -471,15 +619,15 @@ pub fn apply_select(
                 .highlight_symbol("> ");
             frame.render_stateful_widget(list, chunks[1], &mut list_state);
 
-            // -- Help bar (2 lines: keys + context) --
+            // -- Help bar --
             let mut key_spans = Vec::new();
             key_spans.extend(help_key("Space", "toggle"));
             key_spans.extend(help_key("a", "all"));
             key_spans.extend(help_key("n", "none"));
             key_spans.extend(help_key("Tab", "section"));
+            key_spans.extend(help_key("/", "search"));
             key_spans.extend(help_key("Enter", "confirm"));
             key_spans.extend(help_key("Esc", "cancel"));
-            key_spans.extend(help_key("Home/End", "jump"));
 
             let ctx_line = if ctx.is_empty() {
                 Line::from(Span::raw(""))
@@ -488,39 +636,79 @@ pub fn apply_select(
             };
             let help = Paragraph::new(vec![Line::from(key_spans), ctx_line]);
             frame.render_widget(help, chunks[2]);
+
+            // -- Search overlay --
+            if is_searching {
+                render_search_overlay(&filter_display, area, frame);
+            }
         })?;
 
-        if let Event::Key(key) = event::read()? {
-            if key.kind != KeyEventKind::Press {
-                continue;
-            }
-            match key.code {
-                KeyCode::Char('q') | KeyCode::Esc => {
-                    cancelled = true;
-                    break;
-                }
-                KeyCode::Enter => break,
-                KeyCode::Up | KeyCode::Char('k') => {
-                    cursor = move_up(&rows, cursor);
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    cursor = move_down(&rows, cursor);
-                }
-                KeyCode::Home => {
-                    if let Some(pos) = first_interactive(&rows) {
-                        cursor = pos;
+        match event::read()? {
+            Event::Key(key) if key.kind == KeyEventKind::Press => {
+                if search_mode {
+                    match key.code {
+                        KeyCode::Esc => {
+                            filter.clear();
+                            search_mode = false;
+                            dirty = true;
+                        }
+                        KeyCode::Enter => {
+                            search_mode = false;
+                            // keep filter active
+                        }
+                        KeyCode::Backspace => {
+                            filter.pop();
+                            dirty = true;
+                        }
+                        KeyCode::Char(c) => {
+                            filter.push(c);
+                            dirty = true;
+                        }
+                        _ => {}
                     }
+                    continue;
                 }
-                KeyCode::End => {
-                    if let Some(pos) = last_interactive(&rows) {
-                        cursor = pos;
+
+                match key.code {
+                    KeyCode::Char('q') | KeyCode::Esc => {
+                        if !filter.is_empty() {
+                            filter.clear();
+                            dirty = true;
+                        } else {
+                            cancelled = true;
+                            break;
+                        }
                     }
-                }
-                KeyCode::Tab | KeyCode::BackTab => {
-                    cursor = jump_section(&rows, cursor);
-                }
-                KeyCode::Char(' ') => {
-                    match &rows[cursor].kind {
+                    KeyCode::Enter => break,
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        cursor = move_up(&rows, cursor);
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        cursor = move_down(&rows, cursor);
+                    }
+                    KeyCode::Home => {
+                        if let Some(pos) = first_interactive(&rows) {
+                            cursor = pos;
+                        }
+                    }
+                    KeyCode::End => {
+                        if let Some(pos) = last_interactive(&rows) {
+                            cursor = pos;
+                        }
+                    }
+                    KeyCode::PageUp => {
+                        cursor = page_up(&rows, cursor, list_area_height as usize);
+                    }
+                    KeyCode::PageDown => {
+                        cursor = page_down(&rows, cursor, list_area_height as usize);
+                    }
+                    KeyCode::Tab | KeyCode::BackTab => {
+                        cursor = jump_section(&rows, cursor);
+                    }
+                    KeyCode::Char('/') => {
+                        search_mode = true;
+                    }
+                    KeyCode::Char(' ') => match &rows[cursor].kind {
                         RowKind::Selector { index, .. } => {
                             selectors[*index].checked = !selectors[*index].checked;
                             dirty = true;
@@ -530,30 +718,62 @@ pub fn apply_select(
                             flock_overrides.insert(slug.clone(), !current);
                             dirty = true;
                         }
+                        RowKind::RepoGroup { label, collapsed } => {
+                            // Extract the repo key (before the " (N flocks)" suffix)
+                            let repo_key = label
+                                .find(" (")
+                                .map(|pos| &label[..pos])
+                                .unwrap_or(label)
+                                .to_string();
+                            if *collapsed {
+                                collapsed_repos.remove(&repo_key);
+                            } else {
+                                collapsed_repos.insert(repo_key);
+                            }
+                            dirty = true;
+                        }
                         _ => {}
+                    },
+                    KeyCode::Char('a') => {
+                        for sel in selectors.iter_mut() {
+                            sel.checked = true;
+                        }
+                        flock_overrides.values_mut().for_each(|v| *v = true);
+                        dirty = true;
                     }
-                }
-                KeyCode::Char('a') => {
-                    for sel in selectors.iter_mut() {
-                        sel.checked = true;
+                    KeyCode::Char('n') => {
+                        for sel in selectors.iter_mut() {
+                            sel.checked = false;
+                        }
+                        flock_overrides.values_mut().for_each(|v| *v = false);
+                        dirty = true;
                     }
-                    flock_overrides.values_mut().for_each(|v| *v = true);
-                    dirty = true;
+                    _ => {}
                 }
-                KeyCode::Char('n') => {
-                    for sel in selectors.iter_mut() {
-                        sel.checked = false;
-                    }
-                    flock_overrides.values_mut().for_each(|v| *v = false);
-                    dirty = true;
-                }
-                _ => {}
             }
+            Event::Mouse(mouse) => {
+                if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
+                    // Map click y to list row (title=3 rows, list starts at y=3)
+                    let click_y = mouse.row.saturating_sub(3) as usize;
+                    // The list_state scroll offset determines which row is at the top
+                    // We approximate: click_y + scroll_offset = row index
+                    // Since we don't track offset explicitly, just select the row
+                    let target = click_y;
+                    if target < rows.len() && rows[target].is_interactive() {
+                        cursor = target;
+                        // Double-purpose: click to select, not toggle
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
+    // TerminalGuard handles cleanup on drop (including panic)
+    drop(_guard);
+    // Re-init since guard already cleaned up
+    terminal::enable_raw_mode()?;
     terminal::disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
 
     if cancelled {
         return Ok(None);

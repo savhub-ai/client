@@ -16,7 +16,7 @@ env:
 
 # Run backend
 backend:
-    cargo run -p savhub-backend
+    cargo run -p server
 
 # Run frontend dev server
 frontend:

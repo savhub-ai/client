@@ -19,7 +19,7 @@ const GITHUB_STATE_COOKIE: &str = "savhub_github_state";
 const GITHUB_RETURN_TO_COOKIE: &str = "savhub_github_return_to";
 const GITHUB_TOKEN_NAME: &str = "github-oauth";
 const GITHUB_COOKIE_MAX_AGE_SECS: i64 = 600;
-const SAVHUB_USER_AGENT: &str = "savhub-backend";
+const SAVHUB_USER_AGENT: &str = "savhub-server";
 
 #[derive(Debug, Clone)]
 pub struct AuthRedirect {

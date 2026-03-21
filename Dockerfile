@@ -59,8 +59,8 @@ RUN mkdir -p client/local/src && echo "" > client/local/src/lib.rs
 # Build the backend binary with persistent Cargo caches
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
-    cargo build --release -p savhub-backend \
-    && cp /app/target/release/savhub-backend /app/savhub-backend
+    cargo build --release -p server \
+    && cp /app/target/release/server /app/server
 
 # ── Stage 3: Runtime ──────────────────────────────────────────────────
 FROM debian:bookworm-slim AS runtime
@@ -72,7 +72,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN groupadd --gid 1000 savhub \
     && useradd --uid 1000 --gid savhub --shell /bin/false savhub
 
-COPY --from=backend-builder /app/savhub-backend /app/savhub-backend
+COPY --from=backend-builder /app/server /app/server
 
 # Copy frontend build assets into the static directory
 COPY --from=frontend-builder /app/dist/public /app/static
@@ -88,4 +88,4 @@ EXPOSE 5006
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:5006/api/v1/health || exit 1
 
-ENTRYPOINT ["/app/savhub-backend"]
+ENTRYPOINT ["/app/server"]

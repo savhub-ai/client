@@ -3,10 +3,10 @@ use salvo::cors::{Any, Cors};
 use salvo::http::Method;
 use salvo::prelude::*;
 
-use savhub_backend::config::Config;
-use savhub_backend::db::{new_pool, run_migrations};
-use savhub_backend::seed::ensure_seed_data;
-use savhub_backend::state::init_state;
+use server::config::Config;
+use server::db::{new_pool, run_migrations};
+use server::seed::ensure_seed_data;
+use server::state::init_state;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -77,7 +77,7 @@ async fn main() -> Result<()> {
     {
         let pool = pool.clone();
         tokio::spawn(async move {
-            if let Err(e) = savhub_backend::service::upgrade::backfill_repo_git_rev(&pool).await {
+            if let Err(e) = server::service::upgrade::backfill_repo_git_rev(&pool).await {
                 tracing::error!("backfill_repo_git_rev failed: {e}");
             }
         });
@@ -94,12 +94,12 @@ async fn main() -> Result<()> {
         .allow_headers(Any)
         .into_handler();
 
-    let _worker = savhub_backend::worker::spawn_worker(pool.clone());
+    let _worker = server::worker::spawn_worker(pool.clone());
 
     let acceptor = TcpListener::new(config.bind.clone()).bind().await;
     tracing::info!("savhub backend listening on {}", config.bind);
     Server::new(acceptor)
-        .serve(savhub_backend::routing::router().hoop(cors))
+        .serve(server::routing::router().hoop(cors))
         .await;
     Ok(())
 }
