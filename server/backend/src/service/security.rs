@@ -6,9 +6,11 @@ use uuid::Uuid;
 use crate::auth::{AuthContext, require_staff};
 use crate::error::AppError;
 use crate::models::{FlockChangeset, NewSecurityScanRow, SecurityScanRow, SkillRow};
-use crate::schema::{flocks, security_scans, skills};
+use crate::schema::{flocks, security_scans, skill_versions, skills};
 use shared::{
-    SecurityScanDto, SecurityScanListResponse, SecurityStatus, UpdateSecurityStatusRequest,
+    ScanVerdict, SecurityScanDto, SecurityScanListResponse, SecurityStatus,
+    StaticScanFinding as SharedStaticScanFinding, StaticScanResult as SharedStaticScanResult,
+    UpdateSecurityStatusRequest, VersionScanSummary,
 };
 
 use super::helpers::{
@@ -323,6 +325,16 @@ pub fn run_automated_scans_with_files(
                 .set(skills::security_status.eq(security_status))
                 .execute(conn)?;
 
+            // Write consolidated scan_summary to the skill_version row
+            if let Some(vid) = scan_input.version_id {
+                let scan_summary = build_initial_scan_summary(&static_result);
+                if let Ok(val) = serde_json::to_value(&scan_summary) {
+                    let _ = diesel::update(skill_versions::table.find(vid))
+                        .set(skill_versions::scan_summary.eq(Some(val)))
+                        .execute(conn);
+                }
+            }
+
             // ----- Spawn async LLM evaluation -----
             schedule_llm_eval(skill, flock_id, scan_input, &static_result);
         }
@@ -464,6 +476,7 @@ fn schedule_llm_eval(
     let skill_id = skill.id;
     let skill_slug = skill.slug.clone();
     let static_result_clone = static_result.clone();
+    let version_id = scan_input.version_id;
 
     tokio::spawn(async move {
         match llm_eval::evaluate_skill_with_llm(
@@ -487,10 +500,25 @@ fn schedule_llm_eval(
                     let _ = diesel::update(skills::table.find(skill_id))
                         .set(skills::security_status.eq(final_status))
                         .execute(&mut conn);
-                    // Also update the flock status to the best (least severe) among its skills.
                     let _ = diesel::update(flocks::table.find(flock_id))
                         .set(flocks::security_status.eq(final_status))
                         .execute(&mut conn);
+
+                    // Merge LLM verdict into the version scan_summary
+                    if let Some(vid) = version_id {
+                        let llm_verdict = match result.verdict.as_str() {
+                            "malicious" => ScanVerdict::Malicious,
+                            "suspicious" => ScanVerdict::Suspicious,
+                            "benign" | "clean" => ScanVerdict::Benign,
+                            _ => ScanVerdict::Pending,
+                        };
+                        merge_llm_into_scan_summary(
+                            &mut conn,
+                            vid,
+                            llm_verdict,
+                            Some(&result.verdict),
+                        );
+                    }
                 }
                 tracing::info!(
                     "[security] LLM eval complete for {}: {} → status={}",
@@ -504,6 +532,87 @@ fn schedule_llm_eval(
             }
         }
     });
+}
+
+// ---------------------------------------------------------------------------
+// Scan summary helpers
+// ---------------------------------------------------------------------------
+
+/// Build an initial `VersionScanSummary` from the static scan result alone.
+/// The LLM verdict will be merged in asynchronously later.
+fn build_initial_scan_summary(static_result: &StaticScanResult) -> VersionScanSummary {
+    let static_status = match static_result.verdict {
+        ModerationVerdict::Clean => "clean",
+        ModerationVerdict::Suspicious => "suspicious",
+        ModerationVerdict::Malicious => "malicious",
+    };
+    VersionScanSummary {
+        sha256: None,
+        virustotal: None,
+        llm_analysis: None,
+        static_scan: Some(SharedStaticScanResult {
+            status: static_status.to_string(),
+            engine_version: Some(static_result.engine_version.clone()),
+            summary: Some(static_result.summary.clone()),
+            findings: static_result
+                .findings
+                .iter()
+                .map(|f| SharedStaticScanFinding {
+                    code: f.code.clone(),
+                    severity: format!("{:?}", f.severity).to_lowercase(),
+                    file: Some(f.file.clone()),
+                    line: Some(f.line as i32),
+                    message: Some(f.message.clone()),
+                })
+                .collect(),
+            reason_codes: static_result.reason_codes.clone(),
+            checked_at: Some(Utc::now()),
+        }),
+    }
+}
+
+/// Merge LLM evaluation results into an existing scan_summary on a version row.
+pub fn merge_llm_into_scan_summary(
+    conn: &mut diesel::PgConnection,
+    version_id: Uuid,
+    verdict: ScanVerdict,
+    summary: Option<&str>,
+) {
+    let llm_result = shared::LlmScanResult {
+        verdict,
+        status: match verdict {
+            ScanVerdict::Benign => "clean".to_string(),
+            ScanVerdict::Suspicious => "suspicious".to_string(),
+            ScanVerdict::Malicious => "malicious".to_string(),
+            ScanVerdict::Pending => "pending".to_string(),
+        },
+        confidence: None,
+        model: None,
+        summary: summary.map(ToString::to_string),
+        guidance: None,
+        dimensions: vec![],
+        checked_at: Some(Utc::now()),
+    };
+
+    if let Ok(llm_json) = serde_json::to_value(&llm_result) {
+        // Read existing scan_summary, merge llm_analysis, and write back.
+        let existing: Option<serde_json::Value> = skill_versions::table
+            .find(version_id)
+            .select(skill_versions::scan_summary)
+            .first::<Option<serde_json::Value>>(conn)
+            .ok()
+            .flatten();
+
+        let mut obj = match existing {
+            Some(serde_json::Value::Object(m)) => m,
+            _ => serde_json::Map::new(),
+        };
+        obj.insert("llm_analysis".to_string(), llm_json);
+
+        let _ = diesel::update(skill_versions::table.find(version_id))
+            .set(skill_versions::scan_summary.eq(Some(serde_json::Value::Object(obj))))
+            .execute(conn);
+    }
 }
 
 // ---------------------------------------------------------------------------

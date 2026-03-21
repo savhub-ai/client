@@ -25,6 +25,7 @@ struct DisplaySkill {
     summary: Option<String>,
     version: Option<String>,
     owner: Option<String>,
+    security_status: savhub_shared::SecurityStatus,
 }
 
 impl From<SkillListItem> for DisplaySkill {
@@ -45,6 +46,7 @@ impl DisplaySkill {
             summary: item.summary,
             version: item.latest_version.map(|v| v.version),
             owner: Some(item.owner.handle),
+            security_status: item.security_status,
         }
     }
 }
@@ -940,8 +942,27 @@ fn SkillCard(
                         }
                         crate::components::copy_sign::CopySign { value: skill.sign.clone() }
                     }
-                    span { style: "font-size: 12px; padding: 2px 8px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border-radius: 10px; white-space: nowrap;",
-                        "v{version_display}"
+                    div { style: "display: flex; gap: 4px; align-items: center;",
+                        {
+                            let (sec_label, sec_color) = match skill.security_status {
+                                savhub_shared::SecurityStatus::Verified => ("V", Theme::SUCCESS),
+                                savhub_shared::SecurityStatus::Flagged => ("!", "#d4a017"),
+                                savhub_shared::SecurityStatus::Rejected => ("X", Theme::DANGER),
+                                _ => ("", ""),
+                            };
+                            if !sec_label.is_empty() {
+                                rsx! {
+                                    span { style: "font-size: 10px; width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: {sec_color}20; color: {sec_color}; font-weight: 700;",
+                                        "{sec_label}"
+                                    }
+                                }
+                            } else {
+                                rsx! {}
+                            }
+                        }
+                        span { style: "font-size: 12px; padding: 2px 8px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border-radius: 10px; white-space: nowrap;",
+                            "v{version_display}"
+                        }
                     }
                 }
                 if let Some(desc) = &skill.summary {

@@ -16,7 +16,7 @@ use crate::schema::{audit_logs, flocks, repos, skill_versions, skills, users};
 use crate::state::app_state;
 use shared::{
     AuditLogEntry, CatalogStats, ModerationStatus, ResourceFileSummary, SkillBadges, SkillListItem,
-    StoredBundleFile, UserRole, UserSummary, VersionDetail, VersionSummary,
+    StoredBundleFile, UserRole, UserSummary, VersionDetail, VersionScanSummary, VersionSummary,
     bundle_metadata_from_json,
 };
 
@@ -255,7 +255,14 @@ pub fn version_summary_from_skill(row: &SkillVersionRow) -> VersionSummary {
         changelog: row.changelog.clone(),
         tags: row.tags.iter().filter_map(|t| t.clone()).collect(),
         created_at: row.created_at,
+        scan_summary: parse_scan_summary(&row.scan_summary),
     }
+}
+
+fn parse_scan_summary(value: &Option<Value>) -> Option<VersionScanSummary> {
+    value
+        .as_ref()
+        .and_then(|v| serde_json::from_value::<VersionScanSummary>(v.clone()).ok())
 }
 
 pub fn version_detail_from_skill(row: &SkillVersionRow) -> Result<VersionDetail, AppError> {
@@ -282,6 +289,7 @@ pub fn version_detail_from_skill(row: &SkillVersionRow) -> Result<VersionDetail,
         ),
         parsed_metadata: row.parsed_metadata.clone(),
         bundle_metadata: bundle_metadata_from_json(&row.parsed_metadata).ok(),
+        scan_summary: parse_scan_summary(&row.scan_summary),
     })
 }
 

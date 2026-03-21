@@ -242,6 +242,7 @@ diesel::table! {
         created_by -> Uuid,
         created_at -> Timestamptz,
         soft_deleted_at -> Nullable<Timestamptz>,
+        scan_summary -> Nullable<Jsonb>,
     }
 }
 

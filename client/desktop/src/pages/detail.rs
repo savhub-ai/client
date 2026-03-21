@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use savhub_shared::{SkillDetailResponse, ToggleStarResponse};
+use savhub_shared::{ScanVerdict, SkillDetailResponse, ToggleStarResponse, VersionScanSummary};
 
 use crate::components::pagination::{self, PaginationControls};
 use crate::state::AppState;
@@ -182,10 +182,19 @@ fn DetailContent(detail: SkillDetailResponse) -> Element {
             // Header
             div { style: "display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;",
                 div {
-                    h1 { style: "font-size: 28px; font-weight: 700; color: {Theme::TEXT}; margin-bottom: 4px;",
+                    h1 { style: "font-size: 28px; font-weight: 700; color: {Theme::TEXT}; margin-bottom: 4px; display: flex; align-items: center; gap: 8px;",
                         "{detail.skill.display_name}"
-                        // TODO: add security badge once savhub-shared is published
-                        // with the security_status field on SkillListItem.
+                        {
+                            let (badge_text, badge_color) = security_badge_info(
+                                detail.latest_version.as_ref().and_then(|v| v.scan_summary.as_ref()),
+                                &detail.skill.security_status,
+                            );
+                            rsx! {
+                                span { style: "font-size: 11px; padding: 2px 8px; border-radius: 10px; background: {badge_color}20; color: {badge_color}; font-weight: 600;",
+                                    "{badge_text}"
+                                }
+                            }
+                        }
                     }
                     div { style: "font-size: 14px; color: {Theme::MUTED}; margin-bottom: 8px; display: flex; align-items: center; gap: 4px;",
                         crate::components::copy_sign::CopySign { value: detail.skill.sign.clone() }
@@ -269,6 +278,11 @@ fn DetailContent(detail: SkillDetailResponse) -> Element {
                         StatItem { label: comments_label, value: format!("{}", detail.skill.stats.comments) }
                     }
                 }
+            }
+
+            // Security scan summary
+            if let Some(scan) = detail.latest_version.as_ref().and_then(|v| v.scan_summary.as_ref()) {
+                SecurityScanPanel { scan: scan.clone() }
             }
 
             // Changelog
@@ -386,5 +400,153 @@ fn format_bytes(size: i32) -> String {
         format!("{:.1} KB", size as f64 / 1024.0)
     } else {
         format!("{:.1} MB", size as f64 / 1024.0 / 1024.0)
+    }
+}
+
+fn verdict_color(verdict: ScanVerdict) -> &'static str {
+    match verdict {
+        ScanVerdict::Benign => Theme::SUCCESS,
+        ScanVerdict::Suspicious => "#d4a017",
+        ScanVerdict::Malicious => Theme::DANGER,
+        ScanVerdict::Pending => Theme::MUTED,
+    }
+}
+
+fn verdict_label(verdict: ScanVerdict, t: &i18n::Texts) -> &'static str {
+    match verdict {
+        ScanVerdict::Benign => t.scan_benign,
+        ScanVerdict::Suspicious => t.scan_suspicious,
+        ScanVerdict::Malicious => t.scan_malicious,
+        ScanVerdict::Pending => t.scan_pending,
+    }
+}
+
+fn security_badge_info(
+    scan: Option<&VersionScanSummary>,
+    status: &savhub_shared::SecurityStatus,
+) -> (&'static str, &'static str) {
+    if let Some(s) = scan {
+        let v = s.overall_verdict();
+        let color = verdict_color(v);
+        let label = match v {
+            ScanVerdict::Benign => "Benign",
+            ScanVerdict::Suspicious => "Suspicious",
+            ScanVerdict::Malicious => "Malicious",
+            ScanVerdict::Pending => "Pending",
+        };
+        return (label, color);
+    }
+    match status {
+        savhub_shared::SecurityStatus::Verified => ("Verified", Theme::SUCCESS),
+        savhub_shared::SecurityStatus::Flagged => ("Flagged", "#d4a017"),
+        savhub_shared::SecurityStatus::Rejected => ("Rejected", Theme::DANGER),
+        savhub_shared::SecurityStatus::Scanning => ("Scanning", Theme::ACCENT),
+        savhub_shared::SecurityStatus::Unverified => ("Unverified", Theme::MUTED),
+    }
+}
+
+#[component]
+fn SecurityScanPanel(scan: VersionScanSummary) -> Element {
+    let state = use_context::<AppState>();
+    let t = i18n::texts(*state.lang.read());
+    let overall = scan.overall_verdict();
+    let overall_color = verdict_color(overall);
+    let overall_label = verdict_label(overall, &t);
+
+    rsx! {
+        div { style: "background: {Theme::PANEL}; border: 1px solid {Theme::LINE}; border-radius: 8px; padding: 16px; margin-bottom: 16px;",
+            h3 { style: "font-size: 12px; color: {Theme::MUTED}; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;",
+                "{t.security_scan}"
+                span { style: "font-size: 11px; padding: 1px 8px; border-radius: 10px; background: {overall_color}20; color: {overall_color}; font-weight: 600;",
+                    "{overall_label}"
+                }
+            }
+            div { style: "display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;",
+                // VirusTotal
+                div { style: "padding: 10px; border: 1px solid {Theme::LINE}; border-radius: 6px;",
+                    p { style: "font-size: 11px; color: {Theme::MUTED}; margin-bottom: 4px;", "{t.scan_virustotal}" }
+                    if let Some(vt) = &scan.virustotal {
+                        {
+                            let color = verdict_color(vt.verdict);
+                            let label = verdict_label(vt.verdict, &t);
+                            rsx! {
+                                p { style: "font-size: 14px; font-weight: 600; color: {color};", "{label}" }
+                                if let Some(url) = &vt.report_url {
+                                    a { style: "font-size: 11px; color: {Theme::ACCENT}; text-decoration: none;",
+                                        href: "{url}",
+                                        "View Report"
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        p { style: "font-size: 13px; color: {Theme::MUTED};", "\u{2014}" }
+                    }
+                }
+
+                // LLM Analysis
+                div { style: "padding: 10px; border: 1px solid {Theme::LINE}; border-radius: 6px;",
+                    p { style: "font-size: 11px; color: {Theme::MUTED}; margin-bottom: 4px;", "{t.scan_llm_analysis}" }
+                    if let Some(llm) = &scan.llm_analysis {
+                        {
+                            let color = verdict_color(llm.verdict);
+                            let label = verdict_label(llm.verdict, &t);
+                            rsx! {
+                                p { style: "font-size: 14px; font-weight: 600; color: {color};", "{label}" }
+                                if let Some(conf) = &llm.confidence {
+                                    p { style: "font-size: 11px; color: {Theme::MUTED};", "Confidence: {conf}" }
+                                }
+                                if let Some(summary) = &llm.summary {
+                                    p { style: "font-size: 11px; color: {Theme::TEXT}; margin-top: 4px; line-height: 1.4;",
+                                        "{summary}"
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        p { style: "font-size: 13px; color: {Theme::MUTED};", "\u{2014}" }
+                    }
+                }
+
+                // Static Scan
+                div { style: "padding: 10px; border: 1px solid {Theme::LINE}; border-radius: 6px;",
+                    p { style: "font-size: 11px; color: {Theme::MUTED}; margin-bottom: 4px;", "{t.scan_static}" }
+                    if let Some(st) = &scan.static_scan {
+                        {
+                            let color = match st.status.as_str() {
+                                "clean" => Theme::SUCCESS,
+                                "suspicious" => "#d4a017",
+                                "malicious" => Theme::DANGER,
+                                _ => Theme::MUTED,
+                            };
+                            let label = match st.status.as_str() {
+                                "clean" => t.scan_benign,
+                                "suspicious" => t.scan_suspicious,
+                                "malicious" => t.scan_malicious,
+                                _ => t.scan_pending,
+                            };
+                            rsx! {
+                                p { style: "font-size: 14px; font-weight: 600; color: {color};", "{label}" }
+                                if let Some(engine) = &st.engine_version {
+                                    p { style: "font-size: 11px; color: {Theme::MUTED};", "Engine: {engine}" }
+                                }
+                                if let Some(summary) = &st.summary {
+                                    p { style: "font-size: 11px; color: {Theme::TEXT}; margin-top: 4px;",
+                                        "{summary}"
+                                    }
+                                }
+                                if !st.findings.is_empty() {
+                                    p { style: "font-size: 11px; color: #d4a017; margin-top: 4px;",
+                                        "{st.findings.len()} finding(s)"
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        p { style: "font-size: 13px; color: {Theme::MUTED};", "\u{2014}" }
+                    }
+                }
+            }
+        }
     }
 }

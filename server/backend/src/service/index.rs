@@ -65,6 +65,7 @@ pub fn index_skill(auth: &AuthContext, request: IndexRequest) -> Result<PublishR
             created_by: auth.user.id,
             created_at: now,
             soft_deleted_at: None,
+            scan_summary: None,
         };
 
         let version_exists = skill_versions::table

@@ -23,6 +23,129 @@ pub enum SecurityStatus {
     Rejected,
 }
 
+// ---------------------------------------------------------------------------
+// Per-version security scan summary (modelled after ClawHub scan data)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScanVerdict {
+    #[default]
+    Pending,
+    Benign,
+    Suspicious,
+    Malicious,
+}
+
+impl ScanVerdict {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Pending => "Pending",
+            Self::Benign => "Benign",
+            Self::Suspicious => "Suspicious",
+            Self::Malicious => "Malicious",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VtScanResult {
+    pub verdict: ScanVerdict,
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub analysis: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LlmScanDimension {
+    pub name: String,
+    pub label: String,
+    pub rating: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LlmScanResult {
+    pub verdict: ScanVerdict,
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guidance: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dimensions: Vec<LlmScanDimension>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StaticScanFinding {
+    pub code: String,
+    pub severity: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StaticScanResult {
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub findings: Vec<StaticScanFinding>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reason_codes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VersionScanSummary {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub virustotal: Option<VtScanResult>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llm_analysis: Option<LlmScanResult>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub static_scan: Option<StaticScanResult>,
+}
+
+impl VersionScanSummary {
+    /// Overall verdict across all scanners (worst wins).
+    pub fn overall_verdict(&self) -> ScanVerdict {
+        let verdicts = [
+            self.virustotal.as_ref().map(|v| v.verdict),
+            self.llm_analysis.as_ref().map(|v| v.verdict),
+        ];
+        if verdicts.iter().any(|v| *v == Some(ScanVerdict::Malicious)) {
+            return ScanVerdict::Malicious;
+        }
+        if verdicts.iter().any(|v| *v == Some(ScanVerdict::Suspicious)) {
+            return ScanVerdict::Suspicious;
+        }
+        if verdicts.iter().all(|v| *v == Some(ScanVerdict::Benign)) {
+            return ScanVerdict::Benign;
+        }
+        ScanVerdict::Pending
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IndexJobStatus {
@@ -319,6 +442,8 @@ pub struct VersionSummary {
     pub changelog: String,
     pub tags: Vec<String>,
     pub created_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scan_summary: Option<VersionScanSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -347,6 +472,8 @@ pub struct VersionDetail {
     pub markdown_html: String,
     pub parsed_metadata: Value,
     pub bundle_metadata: Option<BundleMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scan_summary: Option<VersionScanSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

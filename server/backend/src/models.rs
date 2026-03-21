@@ -340,6 +340,7 @@ pub struct SkillVersionRow {
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
     pub soft_deleted_at: Option<DateTime<Utc>>,
+    pub scan_summary: Option<Value>,
 }
 
 #[derive(Debug, Clone, Insertable)]
@@ -361,6 +362,7 @@ pub struct NewSkillVersionRow {
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
     pub soft_deleted_at: Option<DateTime<Utc>>,
+    pub scan_summary: Option<Value>,
 }
 
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable)]
