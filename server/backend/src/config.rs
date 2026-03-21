@@ -16,15 +16,6 @@ pub struct Config {
     pub github_moderator_logins: Vec<String>,
     pub sync_interval_secs: u64,
     pub sync_stale_hours: u64,
-    pub registry_git_url: String,
-    /// Optional GitHub personal access token for push access to the registry repo.
-    pub registry_git_token: Option<String>,
-    /// Optional base64-encoded SSH private key for push access to the registry repo.
-    /// When set, it is decoded and written to a temp file, then used via GIT_SSH_COMMAND.
-    pub registry_git_ssh_key: Option<String>,
-    /// Optional path to an SSH private key file (e.g. mounted via Docker volume).
-    /// Takes priority over `registry_git_ssh_key` when both are set.
-    pub registry_git_ssh_key_file: Option<String>,
     /// AI provider for generating flock metadata. "zhipu" or "doubao".
     pub ai_provider: Option<String>,
     /// API key for the configured AI provider.
@@ -36,8 +27,6 @@ pub struct Config {
     pub auto_index_min_interval_secs: u64,
     /// Maximum number of index jobs that may execute in parallel. Default 10.
     pub max_parallel_index_jobs: usize,
-    /// Whether to push commits to the remote registry repo. Default true.
-    pub registry_git_push: bool,
     /// Enable the enhanced security scanning pipeline (static + LLM). Default false.
     pub security_scan_enabled: bool,
     /// Max concurrent AI chat requests (flock/repo metadata). Default 2.
@@ -47,27 +36,8 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn registry_repo_path(&self) -> std::path::PathBuf {
-        std::path::PathBuf::from(&self.space_path).join("registry")
-    }
-
     pub fn repo_checkout_base_path(&self) -> std::path::PathBuf {
         std::path::PathBuf::from(&self.space_path).join("repos")
-    }
-
-    /// Return the registry git URL with credentials embedded when a token is configured.
-    /// e.g. `https://x-access-token:{token}@github.com/org/repo.git`
-    pub fn registry_git_url_with_auth(&self) -> String {
-        match &self.registry_git_token {
-            Some(token) => {
-                if let Some(rest) = self.registry_git_url.strip_prefix("https://") {
-                    format!("https://x-access-token:{token}@{rest}")
-                } else {
-                    self.registry_git_url.clone()
-                }
-            }
-            None => self.registry_git_url.clone(),
-        }
     }
 }
 
@@ -110,17 +80,6 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(6),
-            registry_git_url: env::var("SAVHUB_REGISTRY_GIT_URL")
-                .unwrap_or_else(|_| "https://github.com/savhub-ai/registry.git".to_string()),
-            registry_git_token: env::var("SAVHUB_REGISTRY_GIT_TOKEN")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            registry_git_ssh_key: env::var("SAVHUB_REGISTRY_GIT_SSH_KEY")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            registry_git_ssh_key_file: env::var("SAVHUB_REGISTRY_GIT_SSH_KEY_FILE")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
             ai_provider: env::var("SAVHUB_AI_PROVIDER")
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
@@ -141,9 +100,6 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(10),
-            registry_git_push: env::var("SAVHUB_REGISTRY_GIT_PUSH")
-                .map(|v| !matches!(v.trim().to_lowercase().as_str(), "false" | "0" | "no"))
-                .unwrap_or(true),
             security_scan_enabled: env::var("SAVHUB_SECURITY_SCAN")
                 .map(|v| matches!(v.trim().to_lowercase().as_str(), "true" | "1" | "yes"))
                 .unwrap_or(false),

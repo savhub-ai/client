@@ -1,3 +1,5 @@
+DROP TABLE IF EXISTS ai_request_cache;
+DROP TABLE IF EXISTS ai_usage_logs;
 DROP TABLE IF EXISTS user_footprints;
 DROP TABLE IF EXISTS site_admins;
 DROP TABLE IF EXISTS security_scans;
@@ -5,6 +7,7 @@ DROP TABLE IF EXISTS index_jobs;
 DROP TABLE IF EXISTS index_rules;
 DROP TABLE IF EXISTS reports;
 DROP TABLE IF EXISTS audit_logs;
+DROP TABLE IF EXISTS skill_installs;
 DROP TABLE IF EXISTS skill_blocks;
 DROP TABLE IF EXISTS skill_ratings;
 DROP TABLE IF EXISTS skill_stars;

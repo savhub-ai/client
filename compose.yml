@@ -31,8 +31,6 @@ services:
       SAVHUB_BIND: "0.0.0.0:5006"
       SAVHUB_FRONTEND_ORIGIN: "http://localhost:5006"
       SAVHUB_API_BASE: "http://localhost:5006/api/v1"
-      SAVHUB_REGISTRY_GIT_URL: "${SAVHUB_REGISTRY_GIT_URL:-https://github.com/savhub-ai/registry.git}"
-      SAVHUB_REGISTRY_GIT_TOKEN: "${SAVHUB_REGISTRY_GIT_TOKEN:-}"
       SAVHUB_SPACE_PATH: "/data/space"
       RUST_LOG: "info,savhub_backend=debug"
     ports:

@@ -15,18 +15,17 @@ use crate::models::{
 use crate::schema::{ai_request_cache, flocks, index_jobs, repos, skills};
 use crate::state::app_state;
 use shared::{
-    CatalogSource, FlockDocument, FlockMetadata, ImportedSkillRecord, IndexJobDto,
+    CatalogSource, FlockMetadata, ImportedSkillRecord, IndexJobDto,
     IndexJobListResponse, IndexJobStatus, RegistryGitReference, RegistryGitReferenceType,
-    RegistryStatus, RepoDocument, RepoMetadata, SubmitIndexRequest, SubmitIndexResponse,
+    RegistryStatus, SubmitIndexRequest, SubmitIndexResponse,
 };
 
 use super::helpers::{
     db_conn, hash_string, insert_audit_log, normalize_git_url, parse_git_url_parts,
 };
 use super::registry_sync::{
-    SkillCandidate, StagedRegistryWriter, apply_repo_redirect, collect_skill_candidates,
+    SkillCandidate, apply_repo_redirect, collect_skill_candidates,
     parse_skill_markdown_metadata, refresh_cached_repo, resolve_remote_sha, sanitize_registry_slug,
-    sync_registry_checkout,
 };
 use super::security::{ScanContext, run_automated_scans_with_files};
 
@@ -703,9 +702,6 @@ async fn do_auto_import(
     let mut total_skill_count = 0usize;
     let total_groups = groups.len();
 
-    // Create a staged writer so all registry files are committed in a single git commit
-    let mut staged_writer = StagedRegistryWriter::new()?;
-
     println!(
         "[index{}] {} flock group(s) to persist",
         job.id, total_groups
@@ -889,7 +885,6 @@ async fn do_auto_import(
                 job.requested_by_user_id,
                 &skills,
                 "scan_job.auto_import",
-                Some(&mut staged_writer),
                 &scan_files,
             )?;
         }
@@ -918,21 +913,6 @@ async fn do_auto_import(
 
         flock_slugs.push(flock_slug);
         total_skill_count += skill_count;
-    }
-
-    // Commit all staged registry files in a single git commit (under lock)
-    let commit_msg = format!(
-        "scan: {} ({} flocks, {} skills)",
-        repo_sign,
-        flock_slugs.len(),
-        total_skill_count
-    );
-    {
-        let _lock = app_state()
-            .registry_lock
-            .lock()
-            .expect("registry lock poisoned");
-        let _ = staged_writer.commit_to_registry(&commit_msg);
     }
 
     // Enhance repo metadata after all flocks are persisted.
@@ -1123,7 +1103,6 @@ pub(crate) fn persist_auto_import_flock(
     user_id: Uuid,
     skills: &[ImportedSkillRecord],
     audit_action: &str,
-    staged_writer: Option<&mut StagedRegistryWriter>,
     skill_scan_files: &[super::security::SkillScanInput],
 ) -> Result<(), AppError> {
     let now = Utc::now();
@@ -1314,100 +1293,6 @@ pub(crate) fn persist_auto_import_flock(
     // so the registry JSON includes scanned_commit for client verification.
     //
     // When scans were skipped (already_scanned), the scanned_commit must
-    // point to the commit that was *originally* scanned — which is the
-    // previous git_commit_sha stored on the flock row — so the client
-    // installs the verified code, not the new (unscanned) commit.
-    let flock_row = flocks::table
-        .find(flock_id)
-        .select(crate::models::FlockRow::as_select())
-        .first::<crate::models::FlockRow>(conn)?;
-
-    let scanned_commit_for_registry = if already_scanned {
-        // Use the commit that was previously scanned.  We stored the old
-        // git_commit_sha on the flock before updating it above, but the
-        // flock row was already updated with the new commit_sha.  Look up
-        // the last scan record instead.
-        use crate::schema::security_scans;
-        security_scans::table
-            .filter(security_scans::target_type.eq("flock"))
-            .filter(security_scans::target_id.eq(flock_id))
-            .filter(security_scans::commit_sha.is_not_null())
-            .order(security_scans::created_at.desc())
-            .select(security_scans::commit_sha)
-            .first::<Option<String>>(conn)
-            .ok()
-            .flatten()
-            // Fallback: for flocks scanned before this migration (no
-            // commit_sha in scan records yet), use the existing flock field.
-            .or_else(|| existing_flock.as_ref().and_then(|f| f.git_commit_sha.clone()))
-    } else {
-        Some(commit_sha.to_string())
-    };
-
-    let flock_security = shared::SecuritySummary {
-        status: Some(flock_row.security_status.clone()),
-        scanned_at: Some(Utc::now()),
-        scanned_commit: scanned_commit_for_registry.clone(),
-        ..Default::default()
-    };
-    // Patch security on the skill records that will be written to the registry.
-    let mut skills_with_security: Vec<ImportedSkillRecord> = skills.to_vec();
-    for skill_rec in &mut skills_with_security {
-        let skill_status = skills::table
-            .filter(skills::flock_id.eq(flock_id))
-            .filter(skills::slug.eq(&skill_rec.slug))
-            .select(skills::security_status)
-            .first::<String>(conn)
-            .ok();
-        skill_rec.security = shared::SecuritySummary {
-            status: skill_status,
-            scanned_at: Some(Utc::now()),
-            scanned_commit: scanned_commit_for_registry.clone(),
-            ..Default::default()
-        };
-    }
-    let skills = &skills_with_security;
-
-    // Sync registry files
-    let repo_path_slug = repo_sign
-        .split_once('/')
-        .map(|(_, p)| p)
-        .unwrap_or(&repo_sign);
-    let repo_doc = RepoDocument {
-        sign: repo_sign.clone(),
-        name: repo.name.clone(),
-        description: repo.description.clone(),
-        git_url: git_url.to_string(),
-        git_rev: Some(commit_sha.to_string()),
-        git_branch: Some(git_ref.to_string()),
-        visibility: shared::RegistryVisibility::Public,
-        verified: false,
-        metadata: RepoMetadata::default(),
-    };
-    let flock_doc = FlockDocument {
-        sign: format!("{repo_sign}/{flock_slug}"),
-        repo: repo_sign.clone(),
-        name: flock_name.to_string(),
-        description: format!("Auto-imported flock: {flock_name}"),
-        path: if source_path == "." {
-            None
-        } else {
-            Some(source_path.to_string())
-        },
-        version: None,
-        status: RegistryStatus::Active,
-        visibility: Some(shared::RegistryVisibility::Public),
-        license: "MIT".to_string(),
-        source: None,
-        security: flock_security,
-        metadata: FlockMetadata::default(),
-    };
-    if let Some(writer) = staged_writer {
-        let _ = writer.stage_flock(&repo_doc, repo_path_slug, &flock_doc, flock_slug, skills);
-    } else {
-        let _ = sync_registry_checkout(&repo_doc, repo_path_slug, &flock_doc, flock_slug, skills);
-    }
-
     insert_audit_log(
         conn,
         Some(user_id),

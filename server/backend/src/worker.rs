@@ -492,7 +492,6 @@ async fn do_flock_sync(
         flock.imported_by_user_id,
         &skills,
         "flock.sync",
-        None,
         &[],
     )
     .map_err(|e| e.to_string())?;

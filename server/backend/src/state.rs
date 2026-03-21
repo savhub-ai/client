@@ -31,8 +31,6 @@ pub struct AppState {
     pub config: Config,
     pub pool: PgPool,
     pub events_tx: broadcast::Sender<WsEvent>,
-    /// Lock that serialises all writes to the registry git repo.
-    pub registry_lock: Arc<Mutex<()>>,
     /// Per-repo locks that serialise clone/pull operations so that
     /// `collect_skill_candidates` never runs against a partially-cloned checkout.
     pub repo_checkout_locks: Arc<Mutex<HashMap<PathBuf, Arc<tokio::sync::Mutex<()>>>>>,
@@ -67,7 +65,6 @@ pub fn init_state(config: Config, pool: PgPool) -> Result<Arc<AppState>> {
         config,
         pool,
         events_tx,
-        registry_lock: Arc::new(Mutex::new(())),
         repo_checkout_locks: Arc::new(Mutex::new(HashMap::new())),
         ai_chat_semaphore: Arc::new(tokio::sync::Semaphore::new(ai_chat_concurrency)),
         ai_security_semaphore: Arc::new(tokio::sync::Semaphore::new(ai_security_concurrency)),

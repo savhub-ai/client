@@ -6186,7 +6186,6 @@ version = "0.1.14"
 dependencies = [
  "ammonia",
  "anyhow",
- "base64",
  "chrono",
  "diesel",
  "diesel_migrations",

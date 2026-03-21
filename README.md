@@ -23,7 +23,7 @@ Savhub is an open registry and package manager for AI skills (`SKILL.md`). Skill
 | Backend | Salvo 0.89 |
 | ORM | Diesel 2.3 |
 | Database | PostgreSQL 18 |
-| Registry | Git-based JSON index |
+| Registry | Database-backed index |
 | Desktop | Dioxus native |
 | CLI TUI | Ratatui |
 
@@ -40,7 +40,7 @@ User submits git URL
        |
   Generate flock metadata (AI when available)
        |
-  Persist to DB + write to registry git repo (serial, locked)
+  Persist to DB
 ```
 
 - **Repos**: Git repositories tracked by Savhub
@@ -148,25 +148,7 @@ All server configuration is via environment variables. Copy `.env.example` to `.
 | `SAVHUB_BIND` | Backend listen address | `127.0.0.1:5006` |
 | `SAVHUB_FRONTEND_ORIGIN` | Frontend URL for CORS | `http://127.0.0.1:5007` |
 | `SAVHUB_API_BASE` | Public API base URL | `http://{SAVHUB_BIND}/api/v1` |
-| `SAVHUB_SPACE_PATH` | Data directory for registry checkout and repo caches | `./space` |
-
-#### Registry Git Access
-
-The backend maintains a local checkout of the registry git repo and pushes index data after each scan. Choose one authentication method:
-
-**Option A: HTTPS Token** (recommended)
-
-| Variable | Description |
-|----------|-------------|
-| `SAVHUB_REGISTRY_GIT_URL` | Registry repo URL (default: `https://github.com/savhub-ai/registry.git`) |
-| `SAVHUB_REGISTRY_GIT_TOKEN` | GitHub PAT with `Contents: Read and write` on the registry repo |
-
-**Option B: SSH Key**
-
-| Variable | Description |
-|----------|-------------|
-| `SAVHUB_REGISTRY_GIT_URL` | SSH URL, e.g. `git@github.com:savhub-ai/registry.git` |
-| `SAVHUB_REGISTRY_GIT_SSH_KEY` | Base64-encoded SSH private key |
+| `SAVHUB_SPACE_PATH` | Data directory for repo caches | `./space` |
 
 #### AI Metadata Generation
 
@@ -233,7 +215,6 @@ cargo run -p savhub-desktop
 ### Docker Compose
 
 ```bash
-export SAVHUB_REGISTRY_GIT_TOKEN=ghp_xxx
 docker compose up
 ```
 

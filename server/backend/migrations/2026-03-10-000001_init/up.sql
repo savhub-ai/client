@@ -24,12 +24,13 @@ CREATE TABLE repos (
     sign TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
-    git_url TEXT NOT NULL UNIQUE,-- Add git_rev and git_branch to repos table
+    git_url TEXT NOT NULL UNIQUE,
     git_rev TEXT,
     git_branch TEXT,
     visibility TEXT NOT NULL DEFAULT 'public',
     verified BOOLEAN NOT NULL DEFAULT FALSE,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    keywords TEXT[] NOT NULL DEFAULT '{}',
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
     last_indexed_at TIMESTAMPTZ
@@ -62,6 +63,8 @@ CREATE TABLE flocks (
     sync_error TEXT,
     git_commit_sha TEXT,
     stats_stars BIGINT NOT NULL DEFAULT 0,
+    stats_max_installs BIGINT NOT NULL DEFAULT 0,
+    stats_max_unique_users BIGINT NOT NULL DEFAULT 0,
     UNIQUE (repo_id, slug)
 );
 
@@ -77,7 +80,7 @@ CREATE TABLE skills (
     flock_id UUID NOT NULL REFERENCES flocks(id) ON DELETE CASCADE,
     version TEXT,
     status TEXT NOT NULL DEFAULT 'active',
-    license TEXT NOT NULL DEFAULT 'MIT',
+    license TEXT DEFAULT,
     source JSONB NOT NULL DEFAULT '{}'::jsonb,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     entry_data JSONB NULL,
@@ -94,6 +97,8 @@ CREATE TABLE skills (
     stats_stars BIGINT NOT NULL DEFAULT 0,
     stats_versions BIGINT NOT NULL DEFAULT 0,
     stats_comments BIGINT NOT NULL DEFAULT 0,
+    stats_installs BIGINT NOT NULL DEFAULT 0,
+    stats_unique_users BIGINT NOT NULL DEFAULT 0,
     soft_deleted_at TIMESTAMPTZ NULL,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL
@@ -101,8 +106,8 @@ CREATE TABLE skills (
 
 CREATE TABLE skill_versions (
     id UUID PRIMARY KEY,
-    repo_id UUID NOT NULL REFERENCES repos(id),
-    flock_id UUID REFERENCES flocks(id),
+    repo_id UUID NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+    flock_id UUID REFERENCES flocks(id) ON DELETE CASCADE,
     skill_id UUID REFERENCES skills(id) ON DELETE CASCADE,
     git_rev TEXT,
     git_branch TEXT,
@@ -122,35 +127,38 @@ CREATE TABLE skill_versions (
 CREATE TABLE skill_comments (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    repo_id UUID NOT NULL REFERENCES repos(id),
-    flock_id UUID NOT NULL REFERENCES flocks(id),
+    repo_id UUID NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+    flock_id UUID NOT NULL REFERENCES flocks(id) ON DELETE CASCADE,
     skill_id UUID REFERENCES skills(id) ON DELETE CASCADE,
     body TEXT NOT NULL,
     soft_deleted_at TIMESTAMPTZ NULL,
     created_at TIMESTAMPTZ NOT NULL
 );
+
 CREATE TABLE skill_stars (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    repo_id UUID NOT NULL REFERENCES repos(id),
-    flock_id UUID NOT NULL REFERENCES flocks(id),
+    repo_id UUID NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+    flock_id UUID NOT NULL REFERENCES flocks(id) ON DELETE CASCADE,
     skill_id UUID REFERENCES skills(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL,
     UNIQUE (skill_id, user_id)
 );
+
 CREATE TABLE skill_blocks (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES users(id),
-    repo_id UUID NOT NULL REFERENCES repos(id),
-    flock_id UUID NOT NULL REFERENCES flocks(id),
+    repo_id UUID NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+    flock_id UUID NOT NULL REFERENCES flocks(id) ON DELETE CASCADE,
     skill_id UUID REFERENCES skills(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(user_id, flock_id)
 );
+
 CREATE TABLE skill_ratings (
     id UUID PRIMARY KEY,
-    repo_id UUID NOT NULL REFERENCES repos(id),
-    flock_id UUID NOT NULL REFERENCES flocks(id),
+    repo_id UUID NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+    flock_id UUID NOT NULL REFERENCES flocks(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES users(id),
     score SMALLINT NOT NULL CHECK (score >= 1 AND score <= 10),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -158,6 +166,14 @@ CREATE TABLE skill_ratings (
     UNIQUE(flock_id, user_id)
 );
 
+CREATE TABLE skill_installs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    skill_id UUID NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+    flock_id UUID NOT NULL REFERENCES flocks(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    client_type TEXT NOT NULL DEFAULT 'unknown',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 CREATE TABLE audit_logs (
     id UUID PRIMARY KEY,
@@ -205,6 +221,16 @@ CREATE TABLE index_jobs (
     url_hash TEXT
 );
 
+CREATE TABLE index_rules (
+    id UUID PRIMARY KEY,
+    repo_url TEXT NOT NULL UNIQUE,
+    path_regex TEXT NOT NULL,
+    strategy TEXT NOT NULL DEFAULT 'smart',
+    description TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
+);
+
 CREATE TABLE security_scans (
     id UUID PRIMARY KEY,
     target_type TEXT NOT NULL,
@@ -214,7 +240,9 @@ CREATE TABLE security_scans (
     severity TEXT,
     details JSONB NOT NULL DEFAULT '{}',
     scanned_by_user_id UUID REFERENCES users(id),
-    created_at TIMESTAMPTZ NOT NULL
+    created_at TIMESTAMPTZ NOT NULL,
+    version_id UUID REFERENCES skill_versions(id) ON DELETE SET NULL,
+    commit_sha TEXT
 );
 
 CREATE TABLE site_admins (
@@ -230,8 +258,31 @@ CREATE TABLE user_footprints (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     resource_type TEXT NOT NULL,
     resource_id UUID NOT NULL,
-    resource_slug TEXT NOT NULL,
     viewed_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE ai_usage_logs (
+    id UUID PRIMARY KEY,
+    task_type TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+    completion_tokens INTEGER NOT NULL DEFAULT 0,
+    total_tokens INTEGER NOT NULL DEFAULT 0,
+    target_type TEXT,
+    target_id UUID,
+    created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE ai_request_cache (
+    id UUID PRIMARY KEY,
+    task_type TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id UUID NOT NULL,
+    commit_sha TEXT NOT NULL,
+    success BOOLEAN NOT NULL DEFAULT FALSE,
+    error_message TEXT,
+    created_at TIMESTAMPTZ NOT NULL
 );
 
 -- Indexes
@@ -256,6 +307,9 @@ CREATE INDEX idx_skill_comments_flock ON skill_comments(flock_id, created_at DES
 CREATE INDEX idx_skill_ratings_flock ON skill_ratings(flock_id);
 CREATE INDEX idx_skill_blocks_user ON skill_blocks(user_id);
 CREATE INDEX idx_skill_blocks_flock ON skill_blocks(flock_id);
+CREATE INDEX idx_skill_installs_skill_id ON skill_installs(skill_id);
+CREATE INDEX idx_skill_installs_flock_id ON skill_installs(flock_id);
+CREATE INDEX idx_skill_installs_user_id ON skill_installs(user_id);
 
 CREATE INDEX idx_audit_logs_created ON audit_logs(created_at DESC);
 
@@ -266,22 +320,18 @@ CREATE INDEX idx_reports_status ON reports(status);
 CREATE INDEX idx_index_jobs_dedup ON index_jobs (git_url, commit_sha) WHERE status = 'completed' AND commit_sha IS NOT NULL;
 CREATE INDEX idx_index_jobs_url_hash_active ON index_jobs (url_hash) WHERE status IN ('pending', 'running');
 
-CREATE TABLE index_rules (
-    id UUID PRIMARY KEY,
-    repo_url TEXT NOT NULL UNIQUE,
-    path_pattern TEXT NOT NULL,
-    strategy TEXT NOT NULL DEFAULT 'smart',
-    description TEXT NOT NULL DEFAULT '',
-    created_at TIMESTAMPTZ NOT NULL,
-    updated_at TIMESTAMPTZ NOT NULL
-);
-
-INSERT INTO index_rules (id, repo_url, path_pattern, strategy, description, created_at, updated_at) VALUES
-    ('01968c00-0000-7000-8000-000000000001', 'https://github.com/anthropics/skills.git', 'skills', 'subdirs_as_flocks', 'Anthropic official skills', NOW(), NOW()),
-    ('01968c00-0000-7000-8000-000000000002', 'https://github.com/sickn33/antigravity-awesome-skills.git', 'skills', 'subdirs_as_flocks', 'Antigravity awesome skills', NOW(), NOW()),
-    ('01968c00-0000-7000-8000-000000000003', 'https://github.com/mofa-org/mofa-skills.git', '*', 'subdirs_as_flocks', 'MoFA skills', NOW(), NOW()),
-    ('01968c00-0000-7000-8000-000000000004', 'https://github.com/K-Dense-AI/claude-scientific-skills.git', 'scientific-skills', 'subdirs_as_flocks', 'K-Dense scientific skills', NOW(), NOW()),
-    ('01968c00-0000-7000-8000-000000000005', 'https://github.com/openclaw/skills.git', '*', 'subdirs_as_flocks', 'OpenClaw skills', NOW(), NOW());
-
 CREATE INDEX idx_user_footprints_user ON user_footprints (user_id, viewed_at DESC);
 CREATE INDEX idx_user_footprints_cleanup ON user_footprints (viewed_at);
+
+CREATE INDEX idx_ai_usage_logs_task_type ON ai_usage_logs (task_type);
+CREATE INDEX idx_ai_usage_logs_created_at ON ai_usage_logs (created_at);
+
+CREATE UNIQUE INDEX idx_ai_request_cache_lookup ON ai_request_cache (task_type, target_id, commit_sha);
+
+-- Seed index rules
+INSERT INTO index_rules (id, repo_url, path_regex, strategy, description, created_at, updated_at) VALUES
+    ('01968c00-0000-7000-8000-000000000001', 'https://github.com/anthropics/skills.git', '^skills$', 'each_dir_as_flock', 'Anthropic official skills', NOW(), NOW()),
+    ('01968c00-0000-7000-8000-000000000002', 'https://github.com/sickn33/antigravity-awesome-skills.git', '^skills$', 'each_dir_as_flock', 'Antigravity awesome skills', NOW(), NOW()),
+    ('01968c00-0000-7000-8000-000000000003', 'https://github.com/mofa-org/mofa-skills.git', '.*', 'each_dir_as_flock', 'MoFA skills', NOW(), NOW()),
+    ('01968c00-0000-7000-8000-000000000004', 'https://github.com/K-Dense-AI/claude-scientific-skills.git', '^scientific-skills$', 'each_dir_as_flock', 'K-Dense scientific skills', NOW(), NOW()),
+    ('01968c00-0000-7000-8000-000000000005', 'https://github.com/openclaw/skills.git', '.*', 'each_dir_as_flock', 'OpenClaw skills', NOW(), NOW());

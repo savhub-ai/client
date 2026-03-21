@@ -24,7 +24,6 @@ use super::helpers::{
     user_summary_from_row,
 };
 use super::interactions::{fetch_flock_comments, get_user_flock_rating, is_flock_starred};
-use super::registry_sync::sync_registry_checkout;
 use super::security::parse_security_status;
 
 pub fn list_repos(
@@ -306,7 +305,7 @@ pub async fn import_flock(
         request_skills
     };
 
-    persist_flock_import(auth, &repo, &slug, document, skills, true)
+    persist_flock_import(auth, &repo, &slug, document, skills)
 }
 
 pub fn import_flock_seeded(
@@ -322,7 +321,6 @@ pub fn import_flock_seeded(
         &request.slug,
         request.document,
         request.skills,
-        false,
     )
 }
 
@@ -356,7 +354,6 @@ fn persist_flock_import(
     flock_slug: &str,
     mut document: FlockDocument,
     skills: Vec<ImportedSkillRecord>,
-    sync_registry_repo: bool,
 ) -> Result<FlockDetailResponse, AppError> {
     let mut conn = db_conn()?;
     let repo_id_str = repo.sign.clone();
@@ -521,11 +518,6 @@ fn persist_flock_import(
         });
     }
 
-    let repo_document = if sync_registry_repo {
-        Some(repo_document_from_row(repo)?)
-    } else {
-        None
-    };
     let updated_existing_flock = existing_flock.is_some();
 
     conn.transaction::<_, AppError, _>(|conn| {
@@ -563,17 +555,6 @@ fn persist_flock_import(
             }),
         )?;
 
-        if sync_registry_repo {
-            sync_registry_checkout(
-                repo_document
-                    .as_ref()
-                    .ok_or_else(|| AppError::Internal("missing repo document".to_string()))?,
-                &path_slug_from_repo_path(&repo.sign),
-                &document,
-                flock_slug,
-                &skills,
-            )?;
-        }
         Ok(())
     })?;
 
@@ -876,11 +857,6 @@ fn parse_status(value: &str) -> RegistryStatus {
 /// Split a repo path like `"github.com/owner/name"` into `("github.com", "owner/name")`.
 fn split_repo_path(path: &str) -> (&str, &str) {
     path.split_once('/').unwrap_or((path, ""))
-}
-
-/// Extract the path_slug portion (everything after the first `/`) from a repo path.
-fn path_slug_from_repo_path(path: &str) -> String {
-    split_repo_path(path).1.to_string()
 }
 
 /// Build a human-readable repo name from the git URL path (domain stripped).
