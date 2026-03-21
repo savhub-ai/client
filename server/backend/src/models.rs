@@ -290,6 +290,8 @@ pub struct NewSkillRow {
 #[derive(Debug, Default, Clone, AsChangeset)]
 #[diesel(table_name = skills)]
 pub struct SkillChangeset {
+    pub sign: Option<String>,
+    pub slug: Option<String>,
     pub name: Option<String>,
     pub path: Option<String>,
     pub description: Option<Option<String>>,

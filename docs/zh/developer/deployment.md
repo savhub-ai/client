@@ -11,7 +11,7 @@ description: 环境变量和服务器部署
 
 | 变量 | 说明 | 示例 |
 |------|------|------|
-| `DATABASE_URL` | PostgreSQL 连接字符串 | `postgres://postgres:postgres@127.0.0.1:55432/savhub_dev` |
+| `DATABASE_URL` | PostgreSQL 连接字符串 | `postgres://postgres:postgres@127.0.0.1:45432/savhub_dev` |
 | `SAVHUB_GITHUB_CLIENT_ID` | GitHub OAuth 应用 Client ID | `Ov23li...` |
 | `SAVHUB_GITHUB_CLIENT_SECRET` | GitHub OAuth 应用 Secret | `70733a...` |
 | `SAVHUB_GITHUB_REDIRECT_URL` | GitHub OAuth 回调地址 | `http://127.0.0.1:5006/api/v1/auth/github/callback` |

@@ -1768,8 +1768,11 @@ code {
   top: -0.1em;
 }
 
-.security-badge .sb-label {
-  padding: 3px 6px;
+.security-badge .sb-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 5px;
   background: #555;
   color: #fff;
 }

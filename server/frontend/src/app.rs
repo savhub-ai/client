@@ -1407,13 +1407,14 @@ fn RepoListRow(repo: RepoSummary, #[props(default = false)] is_admin: bool) -> E
     let updated = relative_time_i18n(repo.updated_at, i18n_ctx.t());
     let repo_slug = repo.sign.clone();
     let git_url = repo.git_url.clone();
+    let git_url_display = git_url.clone();
     let mut reindex_loading = use_signal(|| false);
     let mut reindex_done = use_signal(|| false);
     rsx! {
         div { class: "list-item",
             div { class: "list-item-main",
                 h3 { Link { to: repo_route(&repo_slug), "{repo.name}" } }
-                span { class: "list-item-slug", "{repo_slug}" }
+                a { class: "list-item-slug", href: "{git_url_display}", target: "_blank", rel: "noreferrer", "{repo_slug}" }
                 if !repo.description.is_empty() {
                     p { class: "list-item-summary", "{repo.description}" }
                 }
@@ -1657,7 +1658,7 @@ fn RepoPage(lang: String, domain: String, owner: String, name: String) -> Elemen
                     div { class: "detail-head",
                         div {
                             h1 { "{payload.repo.name}" }
-                            p { class: "muted", "{payload.repo.sign}" }
+                            a { class: "muted", href: "{payload.repo.git_url}", target: "_blank", rel: "noreferrer", "{payload.repo.sign}" }
                         }
                         {
                             let token_val = api.token.read().clone();
@@ -1721,7 +1722,6 @@ fn RepoPage(lang: String, domain: String, owner: String, name: String) -> Elemen
                         span { "{payload.repo.skill_count} {t.nav_skills}" }
                         span { "{payload.repo.visibility:?}" }
                         span { if payload.repo.verified { "{t.verified}" } else { "{t.unverified}" } }
-                        a { href: "{payload.repo.git_url}", target: "_blank", rel: "noreferrer", "{payload.repo.git_url}" }
                     }
                     if !maintainers.is_empty() || !links.is_empty() {
                         div { class: "detail-grid",
@@ -2207,7 +2207,13 @@ fn render_security_badge(status: &SecurityStatus, t: &T) -> Element {
     let value = security_badge_value(status, t);
     rsx! {
         span { class: "security-badge {modifier}",
-            span { class: "sb-label", "security" }
+            span { class: "sb-icon",
+                if matches!(status, SecurityStatus::Verified) {
+                    crate::icons::IconShieldCheck { size: 12, color: "#fff" }
+                } else {
+                    crate::icons::IconShield { size: 12, color: "#fff" }
+                }
+            }
             span { class: "sb-value", "{value}" }
         }
     }

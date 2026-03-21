@@ -136,7 +136,7 @@ All server configuration is via environment variables. Copy `.env.example` to `.
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | `postgres://postgres:postgres@127.0.0.1:55432/savhub_dev` |
+| `DATABASE_URL` | PostgreSQL connection string | `postgres://postgres:postgres@127.0.0.1:45432/savhub_dev` |
 | `SAVHUB_GITHUB_CLIENT_ID` | GitHub OAuth app client ID | `Ov23li...` |
 | `SAVHUB_GITHUB_CLIENT_SECRET` | GitHub OAuth app secret | `70733a...` |
 | `SAVHUB_GITHUB_REDIRECT_URL` | GitHub OAuth callback URL | `http://127.0.0.1:5006/api/v1/auth/github/callback` |
