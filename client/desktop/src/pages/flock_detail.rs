@@ -27,7 +27,7 @@ pub fn FlockDetailPage(slug: String) -> Element {
         }
         loaded.set(true);
         let client = state.api_client();
-        let workdir = state.skills_dir();
+        let workdir = state.workdir.read().clone();
         let flock_id = flock_id.clone();
         spawn(async move {
             let fetched_map = tokio::task::spawn_blocking(move || {
@@ -86,7 +86,7 @@ pub fn FlockDetailPage(slug: String) -> Element {
         let repo_sign = batch_repo_sign.clone();
         let flock_slug = batch_flock_slug.clone();
         let client = state.api_client();
-        let workdir = state.skills_dir();
+        let workdir = state.workdir.read().clone();
         spawn(async move {
             working.set(true);
             action_error.set(None);
@@ -271,7 +271,7 @@ fn FlockSkillRow(
             flock_sign: Some(format!("{repo_sign}/{flock_slug}")),
         };
         let client = state.api_client();
-        let workdir = state.skills_dir();
+        let workdir = state.workdir.read().clone();
         spawn(async move {
             working.set(true);
             error_msg.set(None);

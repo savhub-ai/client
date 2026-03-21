@@ -662,15 +662,12 @@ pub fn fetched_flock_signs(workdir: &Path) -> std::collections::HashSet<String> 
         .collect()
 }
 
-/// Remove a fetched skill folder and update the lockfile.
+/// Remove a skill entry from the lockfile.
+///
+/// Skills live inside cached repo checkouts (`~/.savhub/repos/`), not in a
+/// separate directory, so there is nothing to delete on disk — only the
+/// lockfile tracking entry is removed.
 pub fn prune_skill(workdir: &Path, slug: &str) -> Result<()> {
-    let skill_dir = workdir.join(slug);
-    match fs::remove_dir_all(&skill_dir) {
-        Ok(()) => {}
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-        Err(err) => bail!("failed to remove skill directory: {err}"),
-    }
-
     let lock_dir = workdir.join(".savhub");
     let lock_path = lock_dir.join("lock.json");
     let mut lock = fs::read_to_string(&lock_path)

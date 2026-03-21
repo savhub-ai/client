@@ -598,7 +598,7 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
     // Collect available skills (off UI thread)
     let mut installed_skills_sig = use_signal(Vec::<String>::new);
     use_effect(move || {
-        let workdir = state.skills_dir();
+        let workdir = state.workdir.read().clone();
         spawn(async move {
             let slugs = tokio::task::spawn_blocking(move || {
                 savhub_local::skills::read_fetched_skill_versions(&workdir)

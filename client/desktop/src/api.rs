@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use savhub_local::registry::{fetch_version_label, install_remote_skill_from_repo};
-use savhub_local::skills::{FetchedSkillMetadata, RepoSkillOrigin, write_repo_skill_origin};
+use savhub_local::registry::{cache_remote_skill_from_repo, fetch_version_label};
+use savhub_local::skills::FetchedSkillMetadata;
 use savhub_shared::{
     DataSource, FlockDetailResponse, FlockSummary, PagedResponse, RemoteSkillFetchSpec,
     RepoDetailResponse, SkillDetailResponse, SkillEntry, SkillListItem,
@@ -296,31 +296,17 @@ pub async fn fetch_remote_skill_with_lookup(
     } else {
         local_slug.clone()
     };
-    let skill_dir = workdir.join(&install_slug);
-    let registry = client.base.clone();
-    let spec_for_install = spec.clone();
-    let skill_dir_for_install = skill_dir.clone();
-    let install_slug_for_origin = install_slug.clone();
+
+    // Clone/update the repo in ~/.savhub/repos/ — no copy to a separate skills dir.
     tokio::task::spawn_blocking(move || -> Result<(), String> {
-        install_remote_skill_from_repo(&spec_for_install, &skill_dir_for_install)
-            .map_err(|error| error.to_string())?;
-        let fetched_at = chrono::Utc::now().timestamp_millis();
-        write_repo_skill_origin(
-            &skill_dir_for_install,
-            &RepoSkillOrigin {
-                version: 1,
-                repo: registry,
-                repo_sign: spec_for_install.repo_sign.clone(),
-                repo_commit: Some(spec_for_install.git_rev.clone()),
-                slug: install_slug_for_origin,
-                skill_version: spec_for_install.skill_version.clone(),
-                fetched_at,
-            },
-        )
-        .map_err(|error| error.to_string())
+        cache_remote_skill_from_repo(&spec)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
     })
     .await
     .map_err(|error| format!("failed to join fetch task: {error}"))??;
+
+    // Track in lockfile only.
     savhub_local::skills::update_lockfile_with_metadata(
         workdir,
         &install_slug,

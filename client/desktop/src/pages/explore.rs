@@ -245,7 +245,7 @@ fn fetch_flock_from_explore(
     mut action_error: Signal<Option<String>>,
 ) {
     let client = state.api_client();
-    let workdir = state.skills_dir();
+    let workdir = state.workdir.read().clone();
     let flock_sign = format!("{}/{}", flock.repo_sign, flock.slug);
 
     spawn(async move {
@@ -321,7 +321,7 @@ fn prune_flock_from_explore(
     mut working: Signal<bool>,
     mut action_error: Signal<Option<String>>,
 ) {
-    let workdir = state.skills_dir();
+    let workdir = state.workdir.read().clone();
     let flock_sign = format!("{}/{}", flock.repo_sign, flock.slug);
 
     spawn(async move {
@@ -398,7 +398,7 @@ pub fn ExplorePage() -> Element {
 
     use_effect(move || {
         let _ = *state.config_version.read();
-        let workdir = state.skills_dir();
+        let workdir = state.workdir.read().clone();
         spawn(async move {
             let wd = workdir.clone();
             let (versions, flock_signs) = tokio::task::spawn_blocking(move || {
@@ -424,7 +424,7 @@ pub fn ExplorePage() -> Element {
         }
         load_skills_page(
             state.api_client(),
-            state.skills_dir(),
+            state.workdir.read().clone(),
             query,
             filter,
             page,
@@ -739,7 +739,7 @@ fn SkillListRow(
         let remote_slug = remote_slug.clone();
         let should_prune = is_fetched;
         let client = state.api_client();
-        let workdir = state.skills_dir();
+        let workdir = state.workdir.read().clone();
         spawn(async move {
             working.set(true);
             action_error.set(None);
@@ -874,7 +874,7 @@ fn SkillCard(
         let remote_slug = remote_slug.clone();
         let should_prune = is_fetched;
         let client = state.api_client();
-        let workdir = state.skills_dir();
+        let workdir = state.workdir.read().clone();
         spawn(async move {
             working.set(true);
             action_error.set(None);

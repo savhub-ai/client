@@ -104,11 +104,6 @@ impl AppState {
         ApiClient::new(self.api_base.read().clone(), self.token.read().clone())
     }
 
-    /// The directory where fetched skills are stored: `<workdir>/skills/`.
-    pub fn skills_dir(&self) -> PathBuf {
-        self.workdir.read().join("skills")
-    }
-
     /// Whether the user is logged in (has a token and user info).
     #[allow(dead_code)]
     pub fn is_logged_in(&self) -> bool {
