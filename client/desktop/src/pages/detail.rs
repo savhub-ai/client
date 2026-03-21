@@ -197,7 +197,7 @@ fn DetailContent(detail: SkillDetailResponse) -> Element {
                         }
                     }
                     div { style: "font-size: 14px; color: {Theme::MUTED}; margin-bottom: 8px; display: flex; align-items: center; gap: 4px;",
-                        crate::components::copy_sign::CopySign { value: detail.skill.slug.clone() }
+                        crate::components::copy_sign::CopySign { repo_url: detail.skill.repo_url.clone(), path: detail.skill.path.clone() }
                     }
                     if !summary.is_empty() {
                         p { style: "font-size: 15px; color: {Theme::TEXT}; max-width: 600px;",

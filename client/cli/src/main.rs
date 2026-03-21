@@ -2116,6 +2116,15 @@ fn normalize_remote_text(value: Option<String>) -> Option<String> {
     })
 }
 
+/// Convert a git URL to the route path used by the API (strip scheme and .git suffix).
+fn git_url_to_route_path(url: &str) -> String {
+    let url = url.trim().trim_end_matches('/').trim_end_matches(".git");
+    url.strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url)
+        .to_string()
+}
+
 fn repo_sign_from_skill_detail(detail: &SkillDetailResponse) -> Result<String> {
     let repo_url = detail.skill.repo_url.trim();
     if repo_url.is_empty() {
@@ -2147,12 +2156,13 @@ async fn resolve_remote_skill_fetch(
     let detail = client
         .get_json::<SkillDetailResponse>(&format!("/skills/{}", summary.id))
         .await?;
-    let repo_sign = repo_sign_from_skill_detail(&detail)?;
+    let repo_url = repo_sign_from_skill_detail(&detail)?;
+    let repo_path = git_url_to_route_path(&repo_url);
     let repo = client
-        .get_json::<RepoDetailResponse>(&format!("/repos/{repo_sign}"))
+        .get_json::<RepoDetailResponse>(&format!("/repos/{repo_path}"))
         .await?;
     let git_rev = normalize_remote_text(repo.document.git_rev.clone())
-        .ok_or_else(|| anyhow!("repo `{repo_sign}` has no git_rev"))?;
+        .ok_or_else(|| anyhow!("repo `{repo_url}` has no git_rev"))?;
     let skill_version = normalize_remote_text(
         detail
             .latest_version
@@ -2163,7 +2173,7 @@ async fn resolve_remote_skill_fetch(
     let display_version = fetch_version_label(skill_version.as_deref(), &git_rev);
     Ok(ResolvedRemoteSkillFetch {
         spec: RemoteSkillFetchSpec {
-            repo_sign,
+            repo_sign: repo_url,
             skill_path: detail.skill.path.clone(),
             git_url: repo.document.git_url,
             git_rev,

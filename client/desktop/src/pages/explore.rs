@@ -811,7 +811,7 @@ fn SkillListRow(
                         }
                     }
                     div { style: "margin-bottom: 6px;",
-                        crate::components::copy_sign::CopySign { value: format!("{}/{}", skill.repo_url, skill.path) }
+                        crate::components::copy_sign::CopySign { repo_url: skill.repo_url.clone(), path: skill.path.clone() }
                     }
                     if let Some(desc) = &skill.summary {
                         p { style: "font-size: 13px; color: {Theme::MUTED}; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;",
@@ -941,7 +941,7 @@ fn SkillCard(
                         h3 { style: "font-size: 15px; font-weight: 600; color: {Theme::TEXT}; margin-bottom: 2px;",
                             "{skill.name}"
                         }
-                        crate::components::copy_sign::CopySign { value: format!("{}/{}", skill.repo_url, skill.path) }
+                        crate::components::copy_sign::CopySign { repo_url: skill.repo_url.clone(), path: skill.path.clone() }
                     }
                     div { style: "display: flex; gap: 4px; align-items: center;",
                         {
@@ -1011,7 +1011,6 @@ fn FlockListRow(
     let working = use_signal(|| false);
     let action_error = use_signal(|| Option::<String>::None);
     let version_display = flock.version.as_deref().unwrap_or("\u{2014}");
-    let slug_display = format!("{}/{}", flock.repo_sign, flock.slug);
     let flock_sign = format!("{}/{}", flock.repo_sign, flock.slug);
     let is_fetched = fetched_flock_slugs.read().contains(&flock_sign);
     let nav = use_navigator();
@@ -1061,7 +1060,7 @@ fn FlockListRow(
                     }
                 }
                 div { style: "margin-bottom: 6px;",
-                    crate::components::copy_sign::CopySign { value: slug_display.clone() }
+                    crate::components::copy_sign::CopySign { repo_url: flock.repo_sign.clone(), path: flock.slug.clone() }
                 }
                 if !flock.description.is_empty() {
                     p { style: "font-size: 13px; color: {Theme::MUTED}; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;",

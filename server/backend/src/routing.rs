@@ -335,10 +335,12 @@ async fn list_skills(req: &mut Request, res: &mut Response) {
     let limit = req.query::<i64>("limit").unwrap_or(20);
     let cursor = req.query::<String>("cursor");
     let q = req.query::<String>("q");
-    let skill_locator = req.query::<String>("sign");
-    let repo_id = req
-        .query::<String>("repo")
-        .and_then(|v| uuid::Uuid::parse_str(&v).ok());
+    let repo_param = req.query::<String>("repo");
+    let path_param = req.query::<String>("path");
+    let repo_id = repo_param
+        .as_deref()
+        .and_then(|v| uuid::Uuid::parse_str(v).ok());
+    let repo_url = repo_param.filter(|v| repo_id.is_none() && !v.trim().is_empty());
     let flock_id = req
         .query::<String>("flock")
         .and_then(|v| uuid::Uuid::parse_str(&v).ok());
@@ -348,8 +350,9 @@ async fn list_skills(req: &mut Request, res: &mut Response) {
         limit,
         cursor,
         q,
-        skill_locator,
         repo_id,
+        repo_url,
+        path_param,
         flock_id,
         auth.as_ref().map(|ctx| &ctx.user),
     ) {
@@ -366,10 +369,13 @@ async fn list_all_flocks(req: &mut Request, res: &mut Response) {
     let limit = req.query::<i64>("limit").unwrap_or(20);
     let cursor = req.query::<String>("cursor");
     let q = req.query::<String>("q");
-    let repo_id = req
-        .query::<String>("repo")
-        .and_then(|v| uuid::Uuid::parse_str(&v).ok());
-    match catalog::list_flocks(&sort, limit, cursor, q, repo_id) {
+    let repo_param = req.query::<String>("repo");
+    let slug_param = req.query::<String>("slug");
+    let repo_id = repo_param
+        .as_deref()
+        .and_then(|v| uuid::Uuid::parse_str(v).ok());
+    let repo_url = repo_param.filter(|v| repo_id.is_none() && !v.trim().is_empty());
+    match catalog::list_flocks(&sort, limit, cursor, q, repo_id, repo_url, slug_param) {
         Ok(payload) => res.render(Json(payload)),
         Err(error) => render_error(res, error),
     }

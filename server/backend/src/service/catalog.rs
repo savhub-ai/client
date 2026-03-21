@@ -32,8 +32,9 @@ pub fn list_skills(
     limit: i64,
     cursor: Option<String>,
     q: Option<String>,
-    skill_locator: Option<String>,
     repo_id: Option<uuid::Uuid>,
+    repo_url: Option<String>,
+    path: Option<String>,
     flock_id: Option<uuid::Uuid>,
     viewer: Option<&RequestUser>,
 ) -> Result<PagedResponse<SkillListItem>, AppError> {
@@ -41,43 +42,43 @@ pub fn list_skills(
 
     let mut conn = db_conn()?;
 
-    // When a locator is provided, look up the skill by repo git_url + path.
-    if let Some(ref locator_value) = skill_locator {
-        let sign_value = locator_value.trim();
-        if !sign_value.is_empty() {
-            let row = find_skill_by_sign(&mut conn, sign_value)?;
-            return match row {
-                Some(row) => {
-                    if !viewer_is_staff(viewer) && row.moderation_status != "active" {
-                        return Ok(PagedResponse {
-                            items: Vec::new(),
+    // Precise lookup by repo git_url + path
+    if let Some(ref url) = repo_url {
+        if let Some(ref p) = path {
+            let repo = repos::table
+                .filter(repos::git_url.eq(url))
+                .select(RepoRow::as_select())
+                .first::<RepoRow>(&mut conn)
+                .optional()?;
+            if let Some(repo) = repo {
+                let row = dsl::skills
+                    .filter(dsl::repo_id.eq(repo.id))
+                    .filter(dsl::path.eq(p))
+                    .filter(dsl::soft_deleted_at.is_null())
+                    .select(SkillRow::as_select())
+                    .first::<SkillRow>(&mut conn)
+                    .optional()?;
+                return match row {
+                    Some(row) => {
+                        if !viewer_is_staff(viewer) && row.moderation_status != "active" {
+                            return Ok(PagedResponse { items: Vec::new(), next_cursor: None });
+                        }
+                        let owners = load_skill_owners(&mut conn, &[&row])?;
+                        let latest = row.latest_version_id
+                            .map(|id| load_skill_versions_map(&mut conn, vec![id]))
+                            .transpose()?.unwrap_or_default();
+                        let owner = owners.get(&row.flock_id)
+                            .ok_or_else(|| AppError::Internal("missing skill owner".to_string()))?;
+                        let lv = row.latest_version_id.and_then(|id| latest.get(&id));
+                        Ok(PagedResponse {
+                            items: vec![skill_item_from_rows(&row, &repo.git_url, owner, lv)],
                             next_cursor: None,
-                        });
+                        })
                     }
-                    let repo = repos::table
-                        .find(row.repo_id)
-                        .select(RepoRow::as_select())
-                        .first::<RepoRow>(&mut conn)?;
-                    let owners = load_skill_owners(&mut conn, &[&row])?;
-                    let latest = row
-                        .latest_version_id
-                        .map(|id| load_skill_versions_map(&mut conn, vec![id]))
-                        .transpose()?
-                        .unwrap_or_default();
-                    let owner = owners
-                        .get(&row.flock_id)
-                        .ok_or_else(|| AppError::Internal("missing skill owner".to_string()))?;
-                    let lv = row.latest_version_id.and_then(|id| latest.get(&id));
-                    Ok(PagedResponse {
-                        items: vec![skill_item_from_rows(&row, &repo.git_url, owner, lv)],
-                        next_cursor: None,
-                    })
-                }
-                None => Ok(PagedResponse {
-                    items: Vec::new(),
-                    next_cursor: None,
-                }),
-            };
+                    None => Ok(PagedResponse { items: Vec::new(), next_cursor: None }),
+                };
+            }
+            return Ok(PagedResponse { items: Vec::new(), next_cursor: None });
         }
     }
 
@@ -222,8 +223,39 @@ pub fn list_flocks(
     cursor: Option<String>,
     q: Option<String>,
     repo_id: Option<uuid::Uuid>,
+    repo_url: Option<String>,
+    slug: Option<String>,
 ) -> Result<PagedResponse<FlockSummary>, AppError> {
     use crate::schema::flocks::dsl;
+
+    let mut conn = db_conn()?;
+
+    // Precise lookup by repo git_url + flock slug
+    if let Some(ref url) = repo_url {
+        if let Some(ref s) = slug {
+            let repo = repos::table
+                .filter(repos::git_url.eq(url))
+                .select(RepoRow::as_select())
+                .first::<RepoRow>(&mut conn)
+                .optional()?;
+            if let Some(repo) = repo {
+                let flock = dsl::flocks
+                    .filter(dsl::repo_id.eq(repo.id))
+                    .filter(dsl::slug.eq(s))
+                    .select(crate::models::FlockRow::as_select())
+                    .first::<crate::models::FlockRow>(&mut conn)
+                    .optional()?;
+                return match flock {
+                    Some(flock) => {
+                        let items = build_flock_summaries(&mut conn, vec![&flock])?;
+                        Ok(PagedResponse { items, next_cursor: None })
+                    }
+                    None => Ok(PagedResponse { items: Vec::new(), next_cursor: None }),
+                };
+            }
+            return Ok(PagedResponse { items: Vec::new(), next_cursor: None });
+        }
+    }
 
     let mut conn = db_conn()?;
     let limit = limit.clamp(1, 100);
@@ -694,43 +726,6 @@ fn push_skill_results(
             owner_handle: owners.get(&row.flock_id).map(|user| user.handle.clone()),
         });
     }
-}
-
-/// Find a skill by its sign (e.g. `github.com/org/repo/path/to/skill`).
-///
-/// Tries progressively longer repo prefixes until a matching repo + skill path is found.
-fn find_skill_by_sign(
-    conn: &mut PgConnection,
-    sign: &str,
-) -> Result<Option<SkillRow>, AppError> {
-    let Some((domain, rest)) = sign.split_once('/') else {
-        return Ok(None);
-    };
-    let segments: Vec<&str> = rest.split('/').collect();
-    // Try progressively longer repo path_slugs
-    for i in 1..segments.len() {
-        let path_slug = segments[..i].join("/");
-        let skill_path = segments[i..].join("/");
-        let git_url = format!("https://{domain}/{path_slug}.git");
-        let repo = repos::table
-            .filter(repos::git_url.eq(&git_url))
-            .select(RepoRow::as_select())
-            .first::<RepoRow>(conn)
-            .optional()?;
-        if let Some(repo) = repo {
-            let skill = skills::table
-                .filter(skills::repo_id.eq(repo.id))
-                .filter(skills::path.eq(&skill_path))
-                .filter(skills::soft_deleted_at.is_null())
-                .select(SkillRow::as_select())
-                .first::<SkillRow>(conn)
-                .optional()?;
-            if skill.is_some() {
-                return Ok(skill);
-            }
-        }
-    }
-    Ok(None)
 }
 
 /// Load all repos into a map keyed by id.

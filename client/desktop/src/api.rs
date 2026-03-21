@@ -152,12 +152,22 @@ pub async fn fetch_remote_skill_detail(
 
 pub async fn fetch_remote_repo_detail(
     client: &ApiClient,
-    repo_sign: &str,
+    repo_url: &str,
 ) -> Result<RepoDetailResponse, String> {
+    let path_slug = git_url_to_route_path(repo_url);
     client
-        .get_json::<RepoDetailResponse>(&format!("/repos/{repo_sign}"))
+        .get_json::<RepoDetailResponse>(&format!("/repos/{path_slug}"))
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Convert a git URL like `https://github.com/org/repo.git` to a route path `github.com/org/repo`.
+fn git_url_to_route_path(url: &str) -> String {
+    let url = url.trim().trim_end_matches('/').trim_end_matches(".git");
+    url.strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url)
+        .to_string()
 }
 
 fn normalize_remote_text(value: Option<String>) -> Option<String> {
@@ -198,27 +208,22 @@ pub async fn resolve_remote_skill(
         }
     }
 
-    // If we have repo_url + path, search by slug and filter by repo_url match
+    // Precise lookup by repo_url + path
     if let Some(repo_url) = lookup
         .repo_url
         .as_deref()
         .filter(|value| !value.trim().is_empty())
     {
         if let Some(path) = lookup.path.as_deref().filter(|v| !v.trim().is_empty()) {
-            let q = path.rsplit('/').next().unwrap_or(path);
             let mut url = client.v1_url("/skills").map_err(|e| e.to_string())?;
             url.query_pairs_mut()
-                .append_pair("limit", "20")
-                .append_pair("q", q);
+                .append_pair("repo", repo_url)
+                .append_pair("path", path);
             let response = client
                 .get_json_url::<PagedResponse<SkillListItem>>(url)
                 .await
                 .map_err(|e| e.to_string())?;
-            if let Some(item) = response
-                .items
-                .into_iter()
-                .find(|item| item.repo_url == repo_url && item.path == path)
-            {
+            if let Some(item) = response.items.into_iter().next() {
                 return Ok(item);
             }
         }

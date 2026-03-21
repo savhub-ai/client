@@ -3,11 +3,12 @@ use dioxus::prelude::*;
 use crate::icons::{Icon, LucideIcon};
 use crate::theme::Theme;
 
-/// Inline sign display: shields.io-style "SIGN" badge + value text + copy icon.
+/// Inline sign display: value text + copy icon. Copies JSON `{"repo":..,"path":..}`.
 #[component]
-pub fn CopySign(value: String) -> Element {
+pub fn CopySign(repo_url: String, path: String) -> Element {
     let mut copied = use_signal(|| false);
-    let display = value.clone();
+    let display = format!("{}/{}", strip_scheme(&repo_url), path);
+    let copy_json = format!("{{\"repo\":\"{}\",\"path\":\"{}\"}}", repo_url, path);
 
     rsx! {
         span {
@@ -16,7 +17,7 @@ pub fn CopySign(value: String) -> Element {
             title: "Click to copy",
             onclick: move |evt: Event<MouseData>| {
                 evt.stop_propagation();
-                let v = value.clone();
+                let v = copy_json.clone();
                 if let Ok(mut clip) = arboard::Clipboard::new() {
                     let _ = clip.set_text(&v);
                     copied.set(true);
@@ -26,12 +27,6 @@ pub fn CopySign(value: String) -> Element {
                     });
                 }
             },
-            span {
-                style: "font-size: 10px; font-weight: 700; color: #fff; background: #5a9e3f; \
-                        padding: 3px 7px; border-radius: 4px; letter-spacing: 0.02em; \
-                        flex-shrink: 0;",
-                "sign"
-            }
             span {
                 style: "color: {Theme::MUTED}; overflow: hidden; text-overflow: ellipsis; \
                         white-space: nowrap; min-width: 0;",
@@ -48,4 +43,11 @@ pub fn CopySign(value: String) -> Element {
             }
         }
     }
+}
+
+fn strip_scheme(url: &str) -> &str {
+    let url = url.trim().trim_end_matches('/').trim_end_matches(".git");
+    url.strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url)
 }

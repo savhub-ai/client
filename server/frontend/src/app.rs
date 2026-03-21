@@ -31,12 +31,16 @@ const SCROLL_PAGE_SIZE: i64 = 20;
 
 /// Derive a human-readable repo slug from git_url (e.g. `https://github.com/org/repo.git` → `github.com/org/repo`).
 fn derive_repo_slug(git_url: &str) -> String {
-    let url = git_url.trim().trim_end_matches('/').trim_end_matches(".git");
-    let url = url
-        .strip_prefix("https://")
+    strip_url_scheme(git_url).to_string()
+}
+
+/// Strip `https://` / `http://` prefix and `.git` suffix for display.
+fn strip_url_scheme(url: &str) -> &str {
+    let url = url.trim().trim_end_matches('/');
+    let url = url.trim_end_matches(".git");
+    url.strip_prefix("https://")
         .or_else(|| url.strip_prefix("http://"))
-        .unwrap_or(url);
-    url.to_string()
+        .unwrap_or(url)
 }
 const ADMIN_MODE_STORAGE_KEY: &str = "savhub.admin_mode";
 const CLIENT_REPO_URL: &str = "https://github.com/savhub-ai/savhub";
@@ -1147,7 +1151,6 @@ fn FlockListRow(flock: FlockSummary) -> Element {
     let t = use_context::<I18nContext>().t();
     let updated = relative_time_i18n(flock.updated_at, t);
 
-    let flock_sign = format!("{}/{}", flock.repo_url, flock.slug);
     rsx! {
         div { class: "list-item",
             div { class: "list-item-main",
@@ -1155,7 +1158,7 @@ fn FlockListRow(flock: FlockSummary) -> Element {
                     Link { to: Route::FlockPage { lang: url_lang(), id: flock.id.to_string() }, "{flock.name}" }
                     { render_security_badge(&flock.security_status, t) }
                 }
-                { render_copy_sign(&flock_sign) }
+                { render_copy_sign(&flock.repo_url, &flock.slug) }
                 if !flock.description.is_empty() {
                     p { class: "list-item-summary", "{flock.description}" }
                 }
@@ -1215,9 +1218,7 @@ fn SkillListRow(skill: SkillListItem) -> Element {
                     Link { to: Route::SkillPage { lang: url_lang(), id: skill.id.to_string() }, "{skill.display_name}" }
                     { render_security_badge(&skill.security_status, t) }
                 }
-                {
-                    render_copy_sign(&skill.slug)
-                }
+                { render_copy_sign(&skill.repo_url, &skill.path) }
                 if !summary.is_empty() {
                     p { class: "list-item-summary", "{summary}" }
                 }
@@ -1853,10 +1854,7 @@ fn FlockPage(lang: String, id: String) -> Element {
                             h1 { "{payload.flock.name}"
                                 { render_security_badge(&payload.flock.security_status, t) }
                             }
-                            {
-                                let sign = format!("{}/{}", payload.flock.repo_url, payload.flock.slug);
-                                render_copy_sign(&sign)
-                            }
+                            { render_copy_sign(&payload.flock.repo_url, &payload.flock.slug) }
                         }
                         div { class: "detail-actions",
                             button {
@@ -2104,7 +2102,7 @@ fn SkillCard(skill: SkillListItem) -> Element {
                         Link { to: Route::SkillPage { lang: url_lang(), id: skill.id.to_string() }, "{skill.display_name}" }
                         { render_security_badge(&skill.security_status, t) }
                         {
-                            render_copy_icon(&skill.slug)
+                            render_copy_icon(&skill.repo_url, &skill.path)
                         }
                     }
                 }
@@ -2152,7 +2150,6 @@ fn RepoCard(repo: savhub_shared::RepoSummary) -> Element {
 #[component]
 fn FlockCard(flock: savhub_shared::FlockSummary) -> Element {
     let t = use_context::<I18nContext>().t();
-    let flock_sign = format!("{}/{}", flock.repo_url, flock.slug);
     rsx! {
         article { class: "card",
             div { class: "card-head",
@@ -2166,7 +2163,7 @@ fn FlockCard(flock: savhub_shared::FlockSummary) -> Element {
                             "{flock.name}"
                         }
                         { render_security_badge(&flock.security_status, t) }
-                        { render_copy_icon(&flock_sign) }
+                        { render_copy_icon(&flock.repo_url, &flock.slug) }
                     }
                 }
                 span { class: "pill", "{flock.skill_count} {t.nav_skills}" }
@@ -2310,8 +2307,9 @@ fn render_ws_index_progress(
     }
 }
 
-fn render_copy_sign(sign: &str) -> Element {
-    let value = sign.to_string();
+fn render_copy_sign(repo_url: &str, path: &str) -> Element {
+    let display = format!("{}/{}", strip_url_scheme(repo_url), path);
+    let copy_json = format!("{{\"repo\":\"{}\",\"path\":\"{}\"}}", repo_url, path);
     let mut copied = use_signal(|| false);
     rsx! {
         span {
@@ -2319,7 +2317,7 @@ fn render_copy_sign(sign: &str) -> Element {
             title: "Click to copy",
             onclick: move |evt: Event<MouseData>| {
                 evt.stop_propagation();
-                let v = value.clone();
+                let v = copy_json.clone();
                 copied.set(true);
                 spawn(async move {
                     let _ = wasm_bindgen_futures::JsFuture::from(
@@ -2334,8 +2332,7 @@ fn render_copy_sign(sign: &str) -> Element {
                     copied.set(false);
                 });
             },
-            span { class: "copy-sign-label", "sign" }
-            span { class: "copy-sign-value", "{value}" }
+            span { class: "copy-sign-value", "{display}" }
             span { class: "copy-sign-btn",
                 if *copied.read() {
                     crate::icons::IconCheck { size: 14, color: "#4ade80" }
@@ -2348,16 +2345,17 @@ fn render_copy_sign(sign: &str) -> Element {
 }
 
 /// Compact copy button — just the icon, no sign text. For use in cards.
-fn render_copy_icon(sign: &str) -> Element {
-    let value = sign.to_string();
+fn render_copy_icon(repo_url: &str, path: &str) -> Element {
+    let display = format!("{}/{}", strip_url_scheme(repo_url), path);
+    let copy_json = format!("{{\"repo\":\"{}\",\"path\":\"{}\"}}", repo_url, path);
     let mut copied = use_signal(|| false);
     rsx! {
         span {
             class: "copy-icon-btn",
-            title: "{value}",
+            title: "{display}",
             onclick: move |evt: Event<MouseData>| {
                 evt.stop_propagation();
-                let v = value.clone();
+                let v = copy_json.clone();
                 copied.set(true);
                 spawn(async move {
                     let _ = wasm_bindgen_futures::JsFuture::from(
@@ -3050,9 +3048,7 @@ fn SkillPage(lang: String, id: String) -> Element {
                             h1 { "{payload.skill.display_name}"
                                 { render_security_badge(&payload.skill.security_status, t) }
                             }
-                            {
-                                render_copy_sign(&payload.skill.slug)
-                            }
+                            { render_copy_sign(&payload.skill.repo_url, &payload.skill.path) }
                         }
                         div { class: "detail-actions",
                             button {

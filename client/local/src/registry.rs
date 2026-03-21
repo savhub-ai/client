@@ -637,8 +637,18 @@ fn remote_skill_detail(slug: &str) -> Result<Option<RemoteSkillDescriptor>> {
         .map(skill_descriptor_from_detail))
 }
 
-fn remote_repo_detail(repo_sign: &str) -> Result<Option<RepoDetailResponse>> {
-    RegistryApiClient::new()?.get_json_opt(&format!("/repos/{repo_sign}"))
+fn remote_repo_detail(repo_url: &str) -> Result<Option<RepoDetailResponse>> {
+    let route_path = git_url_to_route_path(repo_url);
+    RegistryApiClient::new()?.get_json_opt(&format!("/repos/{route_path}"))
+}
+
+/// Convert a git URL to the API route path (strip scheme and .git suffix).
+fn git_url_to_route_path(url: &str) -> String {
+    let url = url.trim().trim_end_matches('/').trim_end_matches(".git");
+    url.strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url)
+        .to_string()
 }
 
 fn remote_flock_detail_by_id(id: &str) -> Result<Option<FlockDetailResponse>> {

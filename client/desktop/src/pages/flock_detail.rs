@@ -155,7 +155,6 @@ pub fn FlockDetailPage(slug: String) -> Element {
     };
 
     let version_display = payload.flock.version.as_deref().unwrap_or("\u{2014}");
-    let slug_display = format!("{}/{}", payload.flock.repo_url, payload.flock.slug);
     let skills = payload.skills.clone();
     let repo_sign = payload.flock.repo_url.clone();
 
@@ -177,7 +176,7 @@ pub fn FlockDetailPage(slug: String) -> Element {
                     }
                 }
                 div { style: "display: flex; align-items: center; gap: 12px; flex-wrap: wrap;",
-                    crate::components::copy_sign::CopySign { value: slug_display.clone() }
+                    crate::components::copy_sign::CopySign { repo_url: payload.flock.repo_url.clone(), path: payload.flock.slug.clone() }
                     span { style: "font-size: 12px; color: {Theme::MUTED};",
                         "{payload.flock.skill_count} {t.flock_skills_count}"
                     }
@@ -255,6 +254,7 @@ fn FlockSkillRow(
         .map(|id| id.to_string())
         .unwrap_or_else(|| skill.slug.clone());
     let is_fetched = fetched.read().contains_key(&skill_slug);
+    let display_repo_sign = repo_sign.clone();
 
     let do_action = move |e: Event<MouseData>| {
         e.stop_propagation();
@@ -339,7 +339,7 @@ fn FlockSkillRow(
                         "v{version_display}"
                     }
                 }
-                crate::components::copy_sign::CopySign { value: skill.slug.clone() }
+                crate::components::copy_sign::CopySign { repo_url: display_repo_sign.clone(), path: skill.path.clone() }
                 if !desc.is_empty() {
                     p { style: "font-size: 13px; color: {Theme::MUTED}; margin-top: 4px;",
                         "{desc}"
