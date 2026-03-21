@@ -64,7 +64,7 @@ pub fn DashboardPage() -> Element {
                     .filter(|c| c.installed)
                     .collect();
                 let projects = load_recent_projects();
-                let lock_path = workdir_bg.join(".savhub").join("lock.json");
+                let lock_path = workdir_bg.join("skills.lock.json");
                 let skills = std::fs::read_to_string(&lock_path)
                     .ok()
                     .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
@@ -357,7 +357,7 @@ fn latest_project_update(project_path: &Path) -> i64 {
     [
         project_path.join("savhub.toml"),
         project_path.join("savhub.lock"),
-        project_path.join(".savhub").join("lock.json"),
+        project_path.join("skills.lock.json"),
         project_path.join(".savhub").join("profile.json"),
         project_path.to_path_buf(),
     ]

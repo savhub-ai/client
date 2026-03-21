@@ -40,7 +40,7 @@ pub fn FetchedPage() -> Element {
         spawn(async move {
             let workdir_bg = workdir.clone();
             let list = tokio::task::spawn_blocking(move || {
-                let lock_path = workdir_bg.join(".savhub").join("lock.json");
+                let lock_path = workdir_bg.join("skills.lock.json");
                 let raw = std::fs::read_to_string(&lock_path).ok()?;
                 let lock: Lockfile = serde_json::from_str(&raw).ok()?;
                 let list: Vec<FetchedSkill> = lock
@@ -211,7 +211,7 @@ fn FetchedRow(skill: FetchedSkill, mut skill_list: Signal<Vec<FetchedSkill>>) ->
         let skill_dir = workdir.join(&slug);
         let _ = std::fs::remove_dir_all(&skill_dir);
 
-        let lock_path = workdir.join(".savhub").join("lock.json");
+        let lock_path = workdir.join("skills.lock.json");
         if let Ok(raw) = std::fs::read_to_string(&lock_path) {
             if let Ok(mut lock) = serde_json::from_str::<serde_json::Value>(&raw) {
                 if let Some(map) = lock.get_mut("skills").and_then(|v| v.as_object_mut()) {

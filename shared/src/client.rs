@@ -133,6 +133,9 @@ pub struct LockEntry {
     /// The flock sign this skill belongs to (e.g. `github.com/owner/repo/flock-slug`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flock_sign: Option<String>,
+    /// The git revision (commit SHA) of the repo checkout when this skill was fetched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_rev: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

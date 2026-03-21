@@ -53,7 +53,7 @@ pub struct RepoSkillFolder {
 }
 
 pub fn read_lockfile(workdir: &Path) -> Result<Lockfile> {
-    let path = workdir.join(".savhub").join("lock.json");
+    let path = workdir.join("skills.lock.json");
     let Ok(raw) = fs::read_to_string(&path) else {
         return Ok(Lockfile::default());
     };
@@ -64,7 +64,7 @@ pub fn read_lockfile(workdir: &Path) -> Result<Lockfile> {
 }
 
 pub fn write_lockfile(workdir: &Path, lockfile: &Lockfile) -> Result<()> {
-    let path = workdir.join(".savhub").join("lock.json");
+    let path = workdir.join("skills.lock.json");
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -571,6 +571,7 @@ pub struct FetchedSkillMetadata {
     pub sign: Option<String>,
     pub path: Option<String>,
     pub flock_sign: Option<String>,
+    pub git_rev: Option<String>,
 }
 
 pub fn update_lockfile_with_metadata(
@@ -579,9 +580,7 @@ pub fn update_lockfile_with_metadata(
     version: &str,
     metadata: &FetchedSkillMetadata,
 ) {
-    let lock_dir = workdir.join(".savhub");
-    let _ = fs::create_dir_all(&lock_dir);
-    let lock_path = lock_dir.join("lock.json");
+    let lock_path = workdir.join("skills.lock.json");
 
     let mut lock = fs::read_to_string(&lock_path)
         .ok()
@@ -598,6 +597,7 @@ pub fn update_lockfile_with_metadata(
             sign: metadata.sign.clone(),
             path: metadata.path.clone(),
             flock_sign: metadata.flock_sign.clone(),
+            git_rev: metadata.git_rev.clone(),
         },
     );
 
@@ -609,7 +609,7 @@ pub fn update_lockfile_with_metadata(
 
 /// Read fetched skill versions from the lockfile.
 pub fn read_fetched_skill_versions(workdir: &Path) -> std::collections::BTreeMap<String, String> {
-    let lock_path = workdir.join(".savhub").join("lock.json");
+    let lock_path = workdir.join("skills.lock.json");
     fs::read_to_string(&lock_path)
         .ok()
         .and_then(|raw| serde_json::from_str::<Lockfile>(&raw).ok())
@@ -626,7 +626,7 @@ pub fn read_fetched_skill_versions(workdir: &Path) -> std::collections::BTreeMap
 pub fn read_fetched_skill_entries(
     workdir: &Path,
 ) -> std::collections::BTreeMap<String, LockEntry> {
-    let lock_path = workdir.join(".savhub").join("lock.json");
+    let lock_path = workdir.join("skills.lock.json");
     fs::read_to_string(&lock_path)
         .ok()
         .and_then(|raw| serde_json::from_str::<Lockfile>(&raw).ok())
@@ -668,15 +668,16 @@ pub fn fetched_flock_signs(workdir: &Path) -> std::collections::HashSet<String> 
 /// separate directory, so there is nothing to delete on disk — only the
 /// lockfile tracking entry is removed.
 pub fn prune_skill(workdir: &Path, slug: &str) -> Result<()> {
-    let lock_dir = workdir.join(".savhub");
-    let lock_path = lock_dir.join("lock.json");
+    let lock_path = workdir.join("skills.lock.json");
     let mut lock = fs::read_to_string(&lock_path)
         .ok()
         .and_then(|raw| serde_json::from_str::<Lockfile>(&raw).ok())
         .unwrap_or_default();
     lock.skills.remove(slug);
 
-    fs::create_dir_all(&lock_dir)?;
+    if let Some(parent) = lock_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
     fs::write(
         &lock_path,
         serde_json::to_string_pretty(&lock).unwrap_or_default(),

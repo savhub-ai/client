@@ -317,6 +317,7 @@ pub async fn fetch_remote_skill_with_lookup(
             sign: Some(skill.sign.clone()),
             path: Some(skill.path.clone()),
             flock_sign: flock_sign.clone(),
+            git_rev: Some(git_rev.clone()),
         },
     );
 
