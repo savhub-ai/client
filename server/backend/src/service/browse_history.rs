@@ -38,7 +38,6 @@ pub fn record_view(auth: &AuthContext, request: RecordViewRequest) -> Result<(),
                 user_id: auth.user.id,
                 resource_type: request.resource_type,
                 resource_id: request.resource_id,
-                resource_slug: request.resource_slug,
                 viewed_at: now,
             })
             .execute(&mut conn)?;
@@ -141,30 +140,30 @@ fn hydrate_history_items(
     Ok(rows
         .into_iter()
         .map(|row| {
-            let (resource_title, owner_handle) = match row.resource_type.as_str() {
+            let (resource_slug, resource_title, owner_handle) = match row.resource_type.as_str() {
                 "skill" => skill_map
                     .get(&row.resource_id)
-                    .map(|skill| (skill.name.clone(), None))
-                    .unwrap_or_else(|| (row.resource_slug.clone(), None)),
-                "realm" => (row.resource_slug.clone(), None),
+                    .map(|skill| (skill.slug.clone(), skill.name.clone(), None))
+                    .unwrap_or_else(|| (String::new(), String::new(), None)),
                 "flock" => flock_map
                     .get(&row.resource_id)
                     .map(|flock| {
                         (
+                            flock.sign.clone(),
                             flock.name.clone(),
                             users
                                 .get(&flock.imported_by_user_id)
                                 .map(|user| user.handle.clone()),
                         )
                     })
-                    .unwrap_or_else(|| (row.resource_slug.clone(), None)),
-                _ => (row.resource_slug.clone(), None),
+                    .unwrap_or_else(|| (String::new(), String::new(), None)),
+                _ => (String::new(), String::new(), None),
             };
 
             BrowseHistoryItem {
                 resource_type: row.resource_type,
                 resource_id: row.resource_id,
-                resource_slug: row.resource_slug,
+                resource_slug,
                 resource_title,
                 owner_handle,
                 viewed_at: row.viewed_at,

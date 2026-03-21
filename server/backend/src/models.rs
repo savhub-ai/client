@@ -483,7 +483,6 @@ pub struct UserFootprintRow {
     pub user_id: Uuid,
     pub resource_type: String,
     pub resource_id: Uuid,
-    pub resource_slug: String,
     pub viewed_at: DateTime<Utc>,
 }
 
@@ -494,7 +493,6 @@ pub struct NewUserFootprintRow {
     pub user_id: Uuid,
     pub resource_type: String,
     pub resource_id: Uuid,
-    pub resource_slug: String,
     pub viewed_at: DateTime<Utc>,
 }
 

@@ -108,7 +108,6 @@ pub struct BrowseHistoryResponse {
 pub struct RecordViewRequest {
     pub resource_type: String,
     pub resource_id: Uuid,
-    pub resource_slug: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

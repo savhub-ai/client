@@ -1629,7 +1629,6 @@ fn RepoPage(lang: String, domain: String, owner: String, name: String) -> Elemen
             // Record browse history
             {
                 let repo_id = payload.repo.id;
-                let repo_slug_h = payload.repo.sign.clone();
                 let view_token = api.token.read().clone();
                 let api_base = api.api_base;
                 spawn(async move {
@@ -1641,7 +1640,6 @@ fn RepoPage(lang: String, domain: String, owner: String, name: String) -> Elemen
                             &RecordViewRequest {
                                 resource_type: "repo".to_string(),
                                 resource_id: repo_id,
-                                resource_slug: repo_slug_h,
                             },
                         )
                         .await;
@@ -1812,8 +1810,6 @@ fn FlockPage(lang: String, id: String) -> Element {
             // Record browse history
             {
                 let flock_id = payload.flock.id;
-                let flock_slug_h = payload.flock.slug.clone();
-                let repo_slug_h = repo_id_str.clone();
                 let view_token = api.token.read().clone();
                 spawn(async move {
                     if !view_token.trim().is_empty() {
@@ -1824,7 +1820,6 @@ fn FlockPage(lang: String, id: String) -> Element {
                             &RecordViewRequest {
                                 resource_type: "flock".to_string(),
                                 resource_id: flock_id,
-                                resource_slug: format!("{}/{}", repo_slug_h, flock_slug_h),
                             },
                         )
                         .await;
@@ -3012,7 +3007,6 @@ fn SkillPage(lang: String, id: String) -> Element {
             // Record browse history
             {
                 let skill_id = payload.skill.id;
-                let skill_slug_h = payload.skill.slug.clone();
                 let view_token = api.token.read().clone();
                 spawn(async move {
                     if !view_token.trim().is_empty() {
@@ -3023,7 +3017,6 @@ fn SkillPage(lang: String, id: String) -> Element {
                             &RecordViewRequest {
                                 resource_type: "skill".to_string(),
                                 resource_id: skill_id,
-                                resource_slug: skill_slug_h,
                             },
                         )
                         .await;

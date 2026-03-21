@@ -288,7 +288,6 @@ diesel::table! {
         user_id -> Uuid,
         resource_type -> Text,
         resource_id -> Uuid,
-        resource_slug -> Text,
         viewed_at -> Timestamptz,
     }
 }
