@@ -130,6 +130,9 @@ pub struct LockEntry {
     pub sign: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    /// The flock sign this skill belongs to (e.g. `github.com/owner/repo/flock-slug`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flock_sign: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

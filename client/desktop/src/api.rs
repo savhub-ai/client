@@ -18,6 +18,8 @@ pub struct RemoteSkillLookup {
     pub slug: Option<String>,
     pub sign: Option<String>,
     pub path: Option<String>,
+    /// The flock sign this skill belongs to, for lockfile tracking.
+    pub flock_sign: Option<String>,
 }
 
 impl RemoteSkillLookup {
@@ -267,6 +269,7 @@ pub async fn fetch_remote_skill_with_lookup(
     lookup: RemoteSkillLookup,
 ) -> Result<FetchedRemoteSkill, String> {
     let local_slug = lookup.local_slug.trim().to_string();
+    let flock_sign = lookup.flock_sign.clone();
     let skill = resolve_remote_skill(client, lookup).await?;
     let detail = fetch_remote_skill_detail(client, &skill.id.to_string()).await?;
     let repo_sign = repo_sign_from_skill_detail(&detail)?;
@@ -327,6 +330,7 @@ pub async fn fetch_remote_skill_with_lookup(
             remote_slug: Some(skill.slug.clone()),
             sign: Some(skill.sign.clone()),
             path: Some(skill.path.clone()),
+            flock_sign: flock_sign.clone(),
         },
     );
 

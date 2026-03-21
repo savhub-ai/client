@@ -120,13 +120,14 @@ fn DetailContent(detail: SkillDetailResponse) -> Element {
 
     let do_fetch = move |_: Event<MouseData>| {
         let client = state.api_client();
-        let workdir = state.workdir.read().clone();
+        let workdir = state.skills_dir();
         let lookup = api::RemoteSkillLookup {
             local_slug: fetch_skill_slug.clone(),
             id: Some(fetch_skill_id.clone()),
             slug: Some(fetch_skill_slug.clone()),
             sign: Some(fetch_skill_sign.clone()),
             path: Some(fetch_skill_path.clone()),
+            flock_sign: None,
         };
         spawn(async move {
             fetching.set(true);

@@ -79,10 +79,12 @@ pub fn FlockDetailPage(slug: String) -> Element {
 
     let all_skills = payload.skills.clone();
     let batch_repo_sign = payload.flock.repo_sign.clone();
+    let batch_flock_slug = payload.flock.slug.clone();
     let do_all = move |_: MouseEvent| {
         let skills = all_skills.clone();
         let should_prune = all_fetched;
         let repo_sign = batch_repo_sign.clone();
+        let flock_slug = batch_flock_slug.clone();
         let client = state.api_client();
         let workdir = state.skills_dir();
         spawn(async move {
@@ -110,6 +112,7 @@ pub fn FlockDetailPage(slug: String) -> Element {
                         }
                     }
                 } else {
+                    let flock_sign = format!("{repo_sign}/{flock_slug}");
                     match api::fetch_remote_skill_with_lookup(
                         &client,
                         &workdir,
@@ -119,6 +122,7 @@ pub fn FlockDetailPage(slug: String) -> Element {
                             slug: Some(skill.slug.clone()),
                             sign: Some(format!("{repo_sign}/{}", skill.path)),
                             path: Some(skill.path.clone()),
+                            flock_sign: Some(flock_sign),
                         },
                     )
                     .await
@@ -215,6 +219,7 @@ pub fn FlockDetailPage(slug: String) -> Element {
                         FlockSkillRow {
                             skill: skill.clone(),
                             repo_sign: repo_sign.clone(),
+                            flock_slug: payload.flock.slug.clone(),
                             fetched: fetched,
                         }
                     }
@@ -233,6 +238,7 @@ pub fn FlockDetailPage(slug: String) -> Element {
 fn FlockSkillRow(
     skill: ImportedSkillRecord,
     repo_sign: String,
+    flock_slug: String,
     mut fetched: Signal<BTreeMap<String, String>>,
 ) -> Element {
     let state = use_context::<AppState>();
@@ -262,6 +268,7 @@ fn FlockSkillRow(
             slug: Some(remote_skill_slug.clone()),
             sign: Some(skill_sign.clone()),
             path: Some(remote_skill_path.clone()),
+            flock_sign: Some(format!("{repo_sign}/{flock_slug}")),
         };
         let client = state.api_client();
         let workdir = state.skills_dir();

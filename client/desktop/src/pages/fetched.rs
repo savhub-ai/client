@@ -91,6 +91,7 @@ pub fn FetchedPage() -> Element {
                         .or_else(|| Some(entry.slug.clone())),
                     sign: entry.sign.clone(),
                     path: entry.remote_path.clone(),
+                    flock_sign: None,
                 };
                 match crate::api::fetch_remote_skill_with_lookup(&client, &workdir, lookup).await {
                     Ok(result) => {

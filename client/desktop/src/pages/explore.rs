@@ -273,6 +273,7 @@ fn fetch_flock_from_explore(
                     slug: Some(skill.slug.clone()),
                     sign: Some(format!("{repo_sign}/{}", skill.path)),
                     path: Some(skill.path.clone()),
+                    flock_sign: Some(flock_sign.clone()),
                 },
             )
             .await
@@ -327,10 +328,10 @@ fn prune_flock_from_explore(
         working.set(true);
         action_error.set(None);
 
-        let sign_prefix = flock_sign.clone();
+        let fs_clone = flock_sign.clone();
         let wd = workdir.clone();
         let slugs = tokio::task::spawn_blocking(move || {
-            savhub_local::skills::fetched_slugs_by_sign_prefix(&wd, &sign_prefix)
+            savhub_local::skills::fetched_slugs_by_flock_sign(&wd, &fs_clone)
         })
         .await
         .unwrap_or_default();
@@ -378,7 +379,7 @@ pub fn ExplorePage() -> Element {
     let skill_list: Signal<Vec<DisplaySkill>> = use_signal(Vec::new);
     let fetched_skill_total = use_signal(|| 0usize);
     let mut fetched_versions: Signal<BTreeMap<String, String>> = use_signal(BTreeMap::new);
-    let fetched_flock_signs: Signal<HashSet<String>> = use_signal(HashSet::new);
+    let mut fetched_flock_signs: Signal<HashSet<String>> = use_signal(HashSet::new);
     let mut active_filter = use_signal(|| SkillFilter::All);
     let mut active_view = use_signal(|| ViewMode::Cards);
     let mut current_page = use_signal(|| 0usize);
@@ -399,12 +400,16 @@ pub fn ExplorePage() -> Element {
         let _ = *state.config_version.read();
         let workdir = state.skills_dir();
         spawn(async move {
-            let versions = tokio::task::spawn_blocking(move || {
-                savhub_local::skills::read_fetched_skill_versions(&workdir)
+            let wd = workdir.clone();
+            let (versions, flock_signs) = tokio::task::spawn_blocking(move || {
+                let v = savhub_local::skills::read_fetched_skill_versions(&wd);
+                let f = savhub_local::skills::fetched_flock_signs(&wd);
+                (v, f)
             })
             .await
             .unwrap_or_default();
             fetched_versions.set(versions);
+            fetched_flock_signs.set(flock_signs);
         });
     });
 
@@ -728,6 +733,7 @@ fn SkillListRow(
             slug: Some(remote_slug.clone()),
             sign: Some(skill_sign.clone()),
             path: Some(skill_path.clone()),
+            flock_sign: None,
         };
         let local_slug = local_slug.clone();
         let remote_slug = remote_slug.clone();
@@ -862,6 +868,7 @@ fn SkillCard(
             slug: Some(remote_slug.clone()),
             sign: Some(skill_sign.clone()),
             path: Some(skill_path.clone()),
+            flock_sign: None,
         };
         let local_slug = local_slug.clone();
         let remote_slug = remote_slug.clone();
@@ -1053,13 +1060,13 @@ fn FlockListRow(
                     button {
                         style: "padding: 5px 12px; font-size: 12px; background: rgba(200,50,50,0.1); color: #c03030; border: none; border-radius: 999px; cursor: pointer; font-weight: 600; white-space: nowrap;",
                         onclick: flock_action,
-                        "{t.prune}"
+                        "{t.flock_prune_all}"
                     }
                 } else {
                     button {
                         style: "padding: 5px 12px; font-size: 12px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border: none; border-radius: 999px; cursor: pointer; font-weight: 600; white-space: nowrap;",
                         onclick: flock_action,
-                        "{t.fetch}"
+                        "{t.flock_fetch_all}"
                     }
                 }
                 if let Some(err) = action_error.read().as_ref() {
@@ -1158,13 +1165,13 @@ fn FlockCard(
                     button {
                         style: "padding: 4px 12px; font-size: 12px; background: rgba(200,50,50,0.1); color: #c03030; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;",
                         onclick: flock_action,
-                        "{t.prune}"
+                        "{t.flock_prune_all}"
                     }
                 } else {
                     button {
                         style: "padding: 4px 12px; font-size: 12px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;",
                         onclick: flock_action,
-                        "{t.fetch}"
+                        "{t.flock_fetch_all}"
                     }
                 }
             }
