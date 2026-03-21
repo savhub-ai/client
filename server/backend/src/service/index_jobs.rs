@@ -15,17 +15,16 @@ use crate::models::{
 use crate::schema::{ai_request_cache, flocks, index_jobs, repos, skills};
 use crate::state::app_state;
 use shared::{
-    CatalogSource, FlockMetadata, ImportedSkillRecord, IndexJobDto,
-    IndexJobListResponse, IndexJobStatus, RegistryGitReference, RegistryGitReferenceType,
-    RegistryStatus, SubmitIndexRequest, SubmitIndexResponse,
+    CatalogSource, FlockMetadata, ImportedSkillRecord, IndexJobDto, IndexJobListResponse,
+    IndexJobStatus, RegistryStatus, SubmitIndexRequest, SubmitIndexResponse,
 };
 
 use super::helpers::{
     db_conn, hash_string, insert_audit_log, normalize_git_url, parse_git_url_parts,
 };
-use super::registry_sync::{
+use super::git_ops::{
     SkillCandidate, apply_repo_redirect, collect_skill_candidates,
-    parse_skill_markdown_metadata, refresh_cached_repo, resolve_remote_sha, sanitize_registry_slug,
+    parse_skill_markdown_metadata, refresh_cached_repo, resolve_remote_sha, sanitize_skill_slug,
 };
 use super::security::{ScanContext, run_automated_scans_with_files};
 
@@ -825,7 +824,7 @@ async fn do_auto_import(
                     .find_map(|&i| {
                         let c = &candidates[i];
                         if c.relative_dir.ends_with(&skill_rec.path)
-                            || skill_rec.slug == sanitize_registry_slug(&c.relative_dir)
+                            || skill_rec.slug == sanitize_skill_slug(&c.relative_dir)
                         {
                             Some(c.path.clone())
                         } else {
@@ -878,8 +877,6 @@ async fn do_auto_import(
                 &flock_slug,
                 &flock_name,
                 &flock_description,
-                &job.git_url,
-                &job.git_ref,
                 &source_path,
                 &checkout.head_sha,
                 job.requested_by_user_id,
@@ -1096,8 +1093,6 @@ pub(crate) fn persist_auto_import_flock(
     flock_slug: &str,
     flock_name: &str,
     flock_description: &str,
-    git_url: &str,
-    git_ref: &str,
     source_path: &str,
     commit_sha: &str,
     user_id: Uuid,
@@ -1120,14 +1115,8 @@ pub(crate) fn persist_auto_import_flock(
         .map(|r| r.id)
         .unwrap_or_else(Uuid::new_v4);
 
-    let flock_source = serde_json::to_value(CatalogSource::Git {
-        url: git_url.to_string(),
-        reference: RegistryGitReference {
-            kind: RegistryGitReferenceType::Branch,
-            value: git_ref.to_string(),
-        },
-        path: Some(source_path.to_string()),
-        commit_hash: Some(commit_sha.to_string()),
+    let flock_source = serde_json::to_value(CatalogSource::Registry {
+        path: source_path.to_string(),
     })
     .unwrap_or_default();
 
@@ -1161,10 +1150,6 @@ pub(crate) fn persist_auto_import_flock(
                 } else {
                     Some("unverified".to_string())
                 },
-                last_synced_at: Some(Some(now)),
-                sync_status: Some("idle".to_string()),
-                sync_error: Some(None),
-                git_commit_sha: Some(Some(commit_sha.to_string())),
                 ..Default::default()
             })
             .execute(conn)?;
@@ -1192,10 +1177,6 @@ pub(crate) fn persist_auto_import_flock(
                 stats_ratings: 0,
                 stats_avg_rating: 0.0,
                 security_status: "unverified".to_string(),
-                last_synced_at: Some(now),
-                sync_status: "idle".to_string(),
-                sync_error: None,
-                git_commit_sha: Some(commit_sha.to_string()),
                 stats_max_installs: 0,
                 stats_max_unique_users: 0,
             })
@@ -1327,9 +1308,9 @@ fn compute_each_dir_as_flock_plans(
         .map(|(i, candidate)| {
             let dir = &candidate.relative_dir;
             let (slug, source_path) = if dir == "." {
-                (sanitize_registry_slug(repo_name), ".".to_string())
+                (sanitize_skill_slug(repo_name), ".".to_string())
             } else {
-                (sanitize_registry_slug(dir), dir.clone())
+                (sanitize_skill_slug(dir), dir.clone())
             };
             FlockGroupPlan {
                 slug,
@@ -1423,9 +1404,9 @@ fn compute_flock_group_plans(
     for (i, candidate) in candidates.iter().enumerate() {
         let segs = path_segments(&candidate.relative_dir);
         let key = if segs.len() > lca_len {
-            sanitize_registry_slug(segs[lca_len])
+            sanitize_skill_slug(segs[lca_len])
         } else {
-            sanitize_registry_slug(repo_name)
+            sanitize_skill_slug(repo_name)
         };
         groups.entry(key).or_default().push(i);
     }
@@ -1439,7 +1420,7 @@ fn compute_flock_group_plans(
 
     if num_groups < 2 || max_size < 2 {
         return vec![FlockGroupPlan {
-            slug: sanitize_registry_slug(repo_name),
+            slug: sanitize_skill_slug(repo_name),
             source_path: ".".to_string(),
             candidate_indices: (0..candidates.len()).collect(),
         }];
@@ -1594,7 +1575,7 @@ pub(crate) fn format_skill_name(original_name: &str, skill_sign: &str) -> String
 
 /// Derive skill slug from the formatted skill name: lowercase, spaces → dashes.
 pub(crate) fn format_skill_slug(formatted_name: &str) -> String {
-    sanitize_registry_slug(formatted_name)
+    sanitize_skill_slug(formatted_name)
 }
 
 /// Words with special casing that should be preserved as-is.

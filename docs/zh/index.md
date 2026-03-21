@@ -25,7 +25,6 @@ Savhub 是公开 Git 仓库的技能索引平台。它扫描仓库中的 `SKILL.
 ## 开发者
 
 - [部署配置](https://savhub.ai/zh/docs/developer/deployment) - 环境变量和服务器部署
-- [Registry Git 访问](https://savhub.ai/zh/docs/developer/registry-git) - 配置 registry 仓库的推送权限
 - [AI 元数据生成](https://savhub.ai/zh/docs/developer/ai-metadata) - 使用 AI 自动生成 flock 描述
 - [索引规则](https://savhub.ai/zh/docs/developer/index-rules) - 控制仓库扫描和分组方式
 - [扫描与分组](https://savhub.ai/zh/docs/developer/scan-grouping) - 技能如何被发现和组织为 flock

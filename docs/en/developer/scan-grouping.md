@@ -152,5 +152,5 @@ Scan root overridden to `skills/`, each subdir = 1 flock: `python`, `rust`, `go`
 - LCA grouping: `backend/src/service/index_jobs.rs` -> `compute_flock_group_plans()`
 - each_dir_as_flock: `backend/src/service/index_jobs.rs` -> `compute_each_dir_as_flock_plans()`
 - Index rules: `backend/src/service/index_rules.rs` -> `resolve_index_rule()`
-- Skill discovery: `backend/src/service/registry_sync.rs` -> `collect_skill_candidates()`
+- Skill discovery: `backend/src/service/git_ops.rs` -> `collect_skill_candidates()`
 - AI metadata: `backend/src/service/ai.rs` -> `generate_flock_metadata()`

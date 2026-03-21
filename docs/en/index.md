@@ -25,7 +25,6 @@ Savhub is a skill index for public Git repositories. It scans `SKILL.md` files f
 ## Developer
 
 - [Deployment](https://savhub.ai/en/docs/developer/deployment) - Environment variables and server setup
-- [Registry Git Access](https://savhub.ai/en/docs/developer/registry-git) - Push access to the registry repo
 - [AI Metadata](https://savhub.ai/en/docs/developer/ai-metadata) - Auto-generate flock descriptions with AI
 - [Index Rules](https://savhub.ai/en/docs/developer/index-rules) - Control how repos are scanned and grouped
 - [Scan & Grouping](https://savhub.ai/en/docs/developer/scan-grouping) - How skills are discovered and organized into flocks

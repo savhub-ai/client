@@ -37,8 +37,6 @@ fn is_default_security(s: &SecuritySummary) -> bool {
     *s == SecuritySummary::default()
 }
 
-pub const REGISTRY_SCHEMA_VERSION: u32 = 1;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RegistryVisibility {
@@ -56,17 +54,6 @@ pub enum RegistryStatus {
     Deprecated,
     Archived,
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RegistryGitReferenceType {
-    Branch,
-    Tag,
-    Commit,
-}
-
-/// Alias kept for backwards compatibility with clients.
-pub type GitReferenceKind = RegistryGitReferenceType;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -89,20 +76,6 @@ pub struct RegistryMaintainer {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BrandingMetadata {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub icon: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub accent_color: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub banner_image: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub light_logo: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dark_logo: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompatibilityMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub savfox: Option<String>,
@@ -113,33 +86,11 @@ pub struct CompatibilityMetadata {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RegistryGitReference {
-    #[serde(rename = "type")]
-    pub kind: RegistryGitReferenceType,
-    pub value: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CatalogSource {
     Registry {
         path: String,
     },
-    Git {
-        url: String,
-        #[serde(rename = "ref")]
-        reference: RegistryGitReference,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        path: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        commit_hash: Option<String>,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EntryMetadata {
-    pub format: String,
-    pub path: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -233,7 +184,6 @@ pub struct FlockDocument {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visibility: Option<RegistryVisibility>,
     pub license: String,
-    /// Source is stored in the DB but omitted from registry flock.json (lives in repo.json).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<CatalogSource>,
     /// Automated security scan results.
@@ -348,10 +298,6 @@ pub struct FlockDetailResponse {
     pub starred: bool,
 }
 
-pub fn registry_schema_version() -> u32 {
-    REGISTRY_SCHEMA_VERSION
-}
-
 fn default_visibility() -> RegistryVisibility {
     RegistryVisibility::Public
 }
@@ -370,7 +316,7 @@ pub fn is_registry_slug(value: &str) -> bool {
         })
 }
 
-pub fn is_safe_registry_path(value: &str) -> bool {
+fn is_safe_relative_path(value: &str) -> bool {
     let value = value.trim();
     if value == "." {
         return true;
@@ -417,9 +363,7 @@ pub fn validate_flock_document(document: &FlockDocument) -> Result<(), String> {
     if let Some(ref v) = document.version {
         Version::parse(v.trim()).map_err(|_| "flock version must be valid semver".to_string())?;
     }
-    if let Some(source) = &document.source {
-        validate_source("flock.source", source)?;
-    }
+    validate_source("flock.source", document.source.as_ref())?;
     validate_maintainers("flock.maintainers", &document.metadata.maintainers)?;
     validate_links("flock.links", &document.metadata.links)?;
     validate_compatibility(
@@ -473,31 +417,13 @@ pub fn validate_imported_skill_record(
     Ok(())
 }
 
-fn validate_source(label: &str, source: &CatalogSource) -> Result<(), String> {
-    match source {
-        CatalogSource::Registry { path } => {
-            if !is_safe_registry_path(path) {
-                return Err(format!("{label} path must be a safe relative path"));
-            }
-        }
-        CatalogSource::Git {
-            url,
-            reference,
-            path,
-            ..
-        } => {
-            if url.trim().is_empty() {
-                return Err(format!("{label} url is required"));
-            }
-            if reference.value.trim().is_empty() {
-                return Err(format!("{label} ref.value is required"));
-            }
-            if let Some(path) = path {
-                if !is_safe_registry_path(path) {
-                    return Err(format!("{label} path must be a safe relative path"));
-                }
-            }
-        }
+fn validate_source(label: &str, source: Option<&CatalogSource>) -> Result<(), String> {
+    let Some(source) = source else {
+        return Ok(());
+    };
+    let CatalogSource::Registry { path } = source;
+    if !is_safe_relative_path(path) {
+        return Err(format!("{label} path must be a safe relative path"));
     }
     Ok(())
 }

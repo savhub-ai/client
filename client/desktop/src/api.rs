@@ -264,7 +264,6 @@ pub fn skill_list_item_to_entry(item: &SkillListItem) -> SkillEntry {
         license: String::new(),
         categories: Vec::new(),
         keywords: Vec::new(),
-        source: None,
         stars: Some(item.stats.stars as u32),
         starred_by_me: None,
         downloads: Some(item.stats.downloads as u64),

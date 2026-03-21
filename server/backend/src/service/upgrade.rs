@@ -1,9 +1,8 @@
 //! One-time startup upgrade: backfill `repos.git_rev` for rows that are NULL.
 //!
 //! Strategy (per repo):
-//! 1. Look up the newest `flocks.git_commit_sha` belonging to this repo.
-//! 2. Fall back to the newest completed `index_jobs.commit_sha` matching git_url.
-//! 3. If still nothing, resolve the latest SHA from the remote via `git ls-remote`.
+//! 1. Look up the newest completed `index_jobs.commit_sha` matching git_url.
+//! 2. If still nothing, resolve the latest SHA from the remote via `git ls-remote`.
 
 use chrono::Utc;
 use diesel::prelude::*;
@@ -11,9 +10,9 @@ use diesel::prelude::*;
 use crate::db::PgPool;
 use crate::error::AppError;
 use crate::models::{RepoChangeset, RepoRow};
-use crate::schema::{flocks, index_jobs, repos};
+use crate::schema::{index_jobs, repos};
 use crate::service::helpers::normalize_git_url;
-use crate::service::registry_sync::resolve_remote_sha;
+use crate::service::git_ops::resolve_remote_sha;
 
 /// Backfill `git_rev` for every repo that currently has it set to NULL.
 ///
@@ -70,30 +69,13 @@ pub async fn backfill_repo_git_rev(pool: &PgPool) -> Result<(), AppError> {
 
 /// Try every data source in priority order; return the first SHA found.
 async fn try_resolve_git_rev(pool: &PgPool, repo: &RepoRow) -> Option<String> {
-    // 1) Newest flock git_commit_sha for this repo
-    if let Some(sha) = from_flocks(pool, repo) {
-        return Some(sha);
-    }
-
-    // 2) Newest completed index_job commit_sha matching git_url
+    // 1) Newest completed index_job commit_sha matching git_url
     if let Some(sha) = from_index_jobs(pool, repo) {
         return Some(sha);
     }
 
-    // 3) Live resolve from remote
+    // 2) Live resolve from remote
     from_remote(repo).await
-}
-
-fn from_flocks(pool: &PgPool, repo: &RepoRow) -> Option<String> {
-    let mut conn = pool.get().ok()?;
-    flocks::table
-        .filter(flocks::repo_id.eq(repo.id))
-        .filter(flocks::git_commit_sha.is_not_null())
-        .order(flocks::updated_at.desc())
-        .select(flocks::git_commit_sha)
-        .first::<Option<String>>(&mut conn)
-        .ok()
-        .flatten()
 }
 
 fn from_index_jobs(pool: &PgPool, repo: &RepoRow) -> Option<String> {

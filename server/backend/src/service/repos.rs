@@ -292,20 +292,8 @@ pub async fn import_flock(
     path_slug: &str,
     request: ImportFlockRequest,
 ) -> Result<FlockDetailResponse, AppError> {
-    let ImportFlockRequest {
-        slug,
-        document,
-        skills: request_skills,
-    } = request;
     let repo = load_import_target(auth, domain, path_slug)?;
-    let skills = if document.source.as_ref().map_or(false, is_github_git_source) {
-        let scan = super::registry_sync::scan_github_flock_import(&slug, &document).await?;
-        scan.skills
-    } else {
-        request_skills
-    };
-
-    persist_flock_import(auth, &repo, &slug, document, skills)
+    persist_flock_import(auth, &repo, &request.slug, request.document, request.skills)
 }
 
 pub fn import_flock_seeded(
@@ -339,13 +327,6 @@ fn load_import_target(
         .ok_or_else(|| AppError::NotFound(format!("repo `{repo_path}` does not exist")))?;
 
     Ok(repo)
-}
-
-fn is_github_git_source(source: &CatalogSource) -> bool {
-    matches!(
-        source,
-        CatalogSource::Git { url, .. } if url.contains("github.com/")
-    )
 }
 
 fn persist_flock_import(
@@ -412,8 +393,13 @@ fn persist_flock_import(
         .unwrap_or_else(Uuid::new_v4);
     let flock_metadata = serde_json::to_value(document.metadata.clone())
         .map_err(|error| AppError::Internal(error.to_string()))?;
-    let flock_source = serde_json::to_value(document.source.clone())
-        .map_err(|error| AppError::Internal(error.to_string()))?;
+    let flock_source = document
+        .source
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|error| AppError::Internal(error.to_string()))?
+        .unwrap_or(serde_json::Value::Null);
     let flock_row = NewFlockRow {
         id: flock_id,
         sign: format!("{}/{}", repo.sign, flock_slug),
@@ -437,10 +423,6 @@ fn persist_flock_import(
         stats_ratings: 0,
         stats_avg_rating: 0.0,
         security_status: "unverified".to_string(),
-        last_synced_at: None,
-        sync_status: "idle".to_string(),
-        sync_error: None,
-        git_commit_sha: None,
         stats_max_installs: 0,
         stats_max_unique_users: 0,
     };
@@ -465,10 +447,6 @@ fn persist_flock_import(
         stats_ratings: None,
         stats_avg_rating: None,
         security_status: Some("unverified".to_string()),
-        last_synced_at: None,
-        sync_status: None,
-        sync_error: None,
-        git_commit_sha: None,
         stats_max_installs: None,
         stats_max_unique_users: None,
     };
@@ -762,8 +740,7 @@ fn flock_document_from_row(repo: &RepoRow, row: &FlockRow) -> Result<FlockDocume
     let source: Option<CatalogSource> = serde_json::from_value(row.source.clone())
         .map_err(|error| AppError::Internal(error.to_string()))?;
     let path = source.as_ref().and_then(|s| match s {
-        CatalogSource::Git { path, .. } => path.clone().filter(|p| p != "."),
-        _ => None,
+        CatalogSource::Registry { path } => Some(path.clone()).filter(|p| p != "."),
     });
     Ok(FlockDocument {
         sign: format!("{}/{}", repo.sign, row.slug),

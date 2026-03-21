@@ -6,25 +6,16 @@ use tokio::task::{JoinHandle, JoinSet};
 use uuid::Uuid;
 
 use crate::db::PgPool;
-use crate::models::{FlockChangeset, FlockRow, IndexJobRow, NewIndexJobRow, RepoRow};
+use crate::models::{IndexJobRow, NewIndexJobRow, RepoRow};
 use crate::schema::{flocks, index_jobs, repos};
+use crate::service::git_ops::resolve_remote_sha;
 use crate::service::helpers::{hash_string, normalize_git_url};
-use crate::service::index_jobs::{build_auto_import_skills, persist_auto_import_flock};
-use crate::service::registry_sync::{
-    apply_repo_redirect, collect_skill_candidates, refresh_cached_repo, resolve_remote_sha,
-};
 use crate::state::app_state;
 
 pub fn spawn_worker(pool: PgPool) -> JoinHandle<()> {
     tokio::spawn(async move {
         tracing::info!("background worker started");
 
-        // ── Recover interrupted jobs ──
-        // Jobs left in "running" state from a previous server instance will never
-        // complete because their tokio tasks are gone.  Reset them to "pending"
-        // so the dispatch loop picks them up again.  The freshness check inside
-        // execute_auto_import will verify whether the repo has newer commits
-        // before doing real work.
         {
             match pool.get() {
                 Ok(mut conn) => {
@@ -44,7 +35,7 @@ pub fn spawn_worker(pool: PgPool) -> JoinHandle<()> {
                             .unwrap_or(0);
 
                     if recovered > 0 {
-                        tracing::info!("recovered {recovered} stale running job(s) → pending");
+                        tracing::info!("recovered {recovered} stale running job(s) -> pending");
                     }
                 }
                 Err(e) => {
@@ -55,21 +46,19 @@ pub fn spawn_worker(pool: PgPool) -> JoinHandle<()> {
 
         let config = &app_state().config;
         let index_interval = std::time::Duration::from_secs(10);
-        let sync_interval = std::time::Duration::from_secs(config.sync_interval_secs);
+        let repo_check_interval = std::time::Duration::from_secs(config.sync_interval_secs);
 
         let mut index_tick = tokio::time::interval(index_interval);
-        let mut sync_tick = tokio::time::interval(sync_interval);
-        let mut repo_check_tick = tokio::time::interval(sync_interval);
-        let mut cleanup_tick = tokio::time::interval(std::time::Duration::from_secs(24 * 60 * 60));
+        let mut repo_check_tick = tokio::time::interval(repo_check_interval);
+        let mut cleanup_tick =
+            tokio::time::interval(std::time::Duration::from_secs(24 * 60 * 60));
 
-        // Track in-flight index jobs: maps job_id -> url_hash
         let mut index_tasks: JoinSet<(Uuid, String)> = JoinSet::new();
         let mut running_url_hashes: HashSet<String> = HashSet::new();
 
         loop {
             tokio::select! {
                 _ = index_tick.tick() => {
-                    // Reap completed tasks first
                     while let Some(result) = index_tasks.try_join_next() {
                         match result {
                             Ok((job_id, url_hash)) => {
@@ -92,14 +81,6 @@ pub fn spawn_worker(pool: PgPool) -> JoinHandle<()> {
                         tracing::warn!("index dispatch error: {error}");
                     }
                 }
-                _ = sync_tick.tick() => {
-                    let pool = pool.clone();
-                    tokio::spawn(async move {
-                        if let Err(error) = process_stale_flock_sync(&pool).await {
-                            tracing::warn!("flock sync error: {error}");
-                        }
-                    });
-                }
                 _ = repo_check_tick.tick() => {
                     let pool = pool.clone();
                     tokio::spawn(async move {
@@ -120,7 +101,6 @@ pub fn spawn_worker(pool: PgPool) -> JoinHandle<()> {
                         Err(e) => tracing::warn!("browse history cleanup pool error: {e}"),
                     }
                 }
-                // Reap index tasks that complete between ticks
                 Some(result) = index_tasks.join_next(), if !index_tasks.is_empty() => {
                     match result {
                         Ok((job_id, url_hash)) => {
@@ -137,10 +117,6 @@ pub fn spawn_worker(pool: PgPool) -> JoinHandle<()> {
     })
 }
 
-/// Find pending index jobs that are eligible to run and spawn them as parallel tasks.
-/// A job is eligible if:
-/// - Total running tasks < max_jobs
-/// - No other task is already running for the same url_hash (same git repo)
 async fn dispatch_pending_index_jobs(
     pool: &PgPool,
     tasks: &mut JoinSet<(Uuid, String)>,
@@ -152,7 +128,6 @@ async fn dispatch_pending_index_jobs(
         return Ok(());
     }
 
-    // Fetch a batch of pending jobs (more than we need, to filter by url_hash)
     let pending_jobs = {
         let mut conn = pool.get().map_err(|e| e.to_string())?;
         index_jobs::table
@@ -175,7 +150,6 @@ async fn dispatch_pending_index_jobs(
             .clone()
             .unwrap_or_else(|| hash_string(&normalize_git_url(&job.git_url)));
 
-        // Skip if another task for the same repo is already running
         if running_url_hashes.contains(&url_hash) {
             continue;
         }
@@ -183,7 +157,7 @@ async fn dispatch_pending_index_jobs(
         let job_id = job.id;
         let job_type = job.job_type.clone();
         let uh = url_hash.clone();
-        running_url_hashes.insert(url_hash.clone());
+        running_url_hashes.insert(url_hash);
 
         tracing::info!(
             job_id = %job_id,
@@ -247,276 +221,11 @@ async fn execute_index_job(pool: &PgPool, job_id: Uuid, job_type: &str) {
     }
 }
 
-async fn process_stale_flock_sync(pool: &PgPool) -> Result<(), String> {
-    let config = &app_state().config;
-    let stale_threshold = Utc::now() - chrono::Duration::hours(config.sync_stale_hours as i64);
-
-    // Find a git-sourced flock with oldest last_synced_at that is stale
-    let flock = {
-        let mut conn = pool.get().map_err(|e| e.to_string())?;
-        flocks::table
-            .filter(flocks::sync_status.eq("idle"))
-            .filter(flocks::git_commit_sha.is_not_null())
-            .filter(
-                flocks::last_synced_at
-                    .is_null()
-                    .or(flocks::last_synced_at.lt(stale_threshold)),
-            )
-            .order(flocks::last_synced_at.asc().nulls_first())
-            .select(FlockRow::as_select())
-            .first::<FlockRow>(&mut conn)
-            .optional()
-            .map_err(|e| e.to_string())?
-    };
-
-    let Some(flock) = flock else {
-        return Ok(());
-    };
-
-    tracing::info!(flock_id = %flock.id, flock_slug = %flock.slug, "re-syncing git-sourced flock");
-
-    // Parse git source
-    let source: shared::CatalogSource =
-        serde_json::from_value(flock.source.clone()).map_err(|e| e.to_string())?;
-
-    let (git_url, git_ref, source_path) = match &source {
-        shared::CatalogSource::Git {
-            url,
-            reference,
-            path,
-            ..
-        } => (
-            url.clone(),
-            reference.value.clone(),
-            path.clone().unwrap_or_else(|| ".".to_string()),
-        ),
-        _ => {
-            tracing::debug!(flock_id = %flock.id, "flock is not git-sourced, skipping");
-            return Ok(());
-        }
-    };
-
-    // Skip if there is already an active (pending/running) index job for the same repo.
-    // This prevents concurrent clone/index work on the same repository.
-    {
-        let mut conn = pool.get().map_err(|e| e.to_string())?;
-        let url_hash = hash_string(&normalize_git_url(&git_url));
-        let active_count: i64 = index_jobs::table
-            .filter(index_jobs::url_hash.eq(&url_hash))
-            .filter(index_jobs::status.eq_any(["pending", "running"]))
-            .count()
-            .get_result(&mut conn)
-            .map_err(|e: diesel::result::Error| e.to_string())?;
-
-        if active_count > 0 {
-            tracing::debug!(
-                flock_id = %flock.id,
-                "skipping flock sync: active index job exists for same repo"
-            );
-            return Ok(());
-        }
-    }
-
-    // Also check: if the repo was indexed within the last hour, skip the sync
-    // (unless the flock has never been synced before).
-    if flock.last_synced_at.is_some() {
-        let mut conn = pool.get().map_err(|e| e.to_string())?;
-        let one_hour_ago = Utc::now() - chrono::Duration::hours(1);
-        let recently_indexed: bool = repos::table
-            .find(flock.repo_id)
-            .filter(repos::last_indexed_at.gt(one_hour_ago))
-            .select(repos::id)
-            .first::<Uuid>(&mut conn)
-            .optional()
-            .map_err(|e| e.to_string())?
-            .is_some();
-
-        if recently_indexed {
-            tracing::debug!(
-                flock_id = %flock.id,
-                "skipping flock sync: repo was indexed within the last hour"
-            );
-            return Ok(());
-        }
-    }
-
-    // Mark syncing
-    {
-        let mut conn = pool.get().map_err(|e| e.to_string())?;
-        diesel::update(flocks::table.find(flock.id))
-            .set(FlockChangeset {
-                sync_status: Some("syncing".to_string()),
-                updated_at: Some(Utc::now()),
-                ..Default::default()
-            })
-            .execute(&mut conn)
-            .map_err(|e| e.to_string())?;
-    }
-
-    let result = do_flock_sync(pool, &flock, &git_url, &git_ref, &source_path).await;
-
-    let mut conn = pool.get().map_err(|e| e.to_string())?;
-    match result {
-        Ok(outcome) => {
-            diesel::update(flocks::table.find(flock.id))
-                .set(FlockChangeset {
-                    sync_status: Some("idle".to_string()),
-                    sync_error: Some(None),
-                    last_synced_at: Some(Some(Utc::now())),
-                    git_commit_sha: Some(Some(outcome.new_sha)),
-                    updated_at: Some(Utc::now()),
-                    ..Default::default()
-                })
-                .execute(&mut conn)
-                .map_err(|e| e.to_string())?;
-            tracing::info!(
-                flock_id = %flock.id,
-                changed_skill_files = outcome.changed_skill_files.len(),
-                metadata_updated = outcome.metadata_updated,
-                "flock sync completed"
-            );
-        }
-        Err(error) => {
-            diesel::update(flocks::table.find(flock.id))
-                .set(FlockChangeset {
-                    sync_status: Some("failed".to_string()),
-                    sync_error: Some(Some(error.clone())),
-                    last_synced_at: Some(Some(Utc::now())),
-                    updated_at: Some(Utc::now()),
-                    ..Default::default()
-                })
-                .execute(&mut conn)
-                .map_err(|e| e.to_string())?;
-            tracing::warn!(flock_id = %flock.id, "flock sync failed: {error}");
-        }
-    }
-
-    Ok(())
-}
-
-async fn do_flock_sync(
-    pool: &PgPool,
-    flock: &FlockRow,
-    git_url: &str,
-    git_ref: &str,
-    source_path: &str,
-) -> Result<FlockSyncOutcome, String> {
-    let checkout = refresh_cached_repo(
-        &app_state().config.repo_checkout_base_path(),
-        git_url,
-        git_ref,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-
-    if let Some(ref new_url) = checkout.redirected_url {
-        tracing::warn!(
-            flock_id = %flock.id,
-            old_url = git_url,
-            new_url = new_url.as_str(),
-            "repo has been moved/renamed — updating DB and registry"
-        );
-        let mut conn = pool.get().map_err(|e| e.to_string())?;
-        apply_repo_redirect(&mut conn, flock.repo_id, git_url, new_url)
-            .map_err(|e| e.to_string())?;
-    }
-
-    if flock.git_commit_sha.as_deref() == Some(checkout.head_sha.as_str()) {
-        tracing::debug!(flock_id = %flock.id, "no changes detected, skipping");
-        return Ok(FlockSyncOutcome {
-            new_sha: checkout.head_sha,
-            changed_skill_files: Vec::new(),
-            metadata_updated: false,
-        });
-    }
-
-    let changed_skill_files =
-        filter_changed_skill_files_for_source_path(&checkout.changed_skill_files, source_path);
-    if changed_skill_files.is_empty() {
-        tracing::debug!(
-            flock_id = %flock.id,
-            "new commit detected, but no SKILL.md changes under the flock source path"
-        );
-        return Ok(FlockSyncOutcome {
-            new_sha: checkout.head_sha,
-            changed_skill_files,
-            metadata_updated: false,
-        });
-    }
-
-    let index_root = if source_path == "." {
-        checkout.path.clone()
-    } else {
-        checkout.path.join(source_path)
-    };
-
-    let mut candidates = Vec::new();
-    if index_root.exists() {
-        collect_skill_candidates(&index_root, ".", &mut candidates).map_err(|e| e.to_string())?;
-    }
-
-    tracing::info!(
-        flock_id = %flock.id,
-        skill_count = candidates.len(),
-        changed_skill_files = changed_skill_files.len(),
-        "re-sync found skills"
-    );
-
-    let mut conn = pool.get().map_err(|e| e.to_string())?;
-    let repo = repos::table
-        .find(flock.repo_id)
-        .select(RepoRow::as_select())
-        .first::<RepoRow>(&mut conn)
-        .map_err(|e| e.to_string())?;
-    let skills = build_auto_import_skills(
-        &candidates,
-        &(0..candidates.len()).collect::<Vec<_>>(),
-        &flock.slug,
-        git_url,
-        git_ref,
-        source_path,
-        &repo.sign,
-    )
-    .map_err(|e| e.to_string())?;
-
-    persist_auto_import_flock(
-        &mut conn,
-        &repo,
-        &flock.slug,
-        &flock.name,
-        &flock.description,
-        git_url,
-        git_ref,
-        source_path,
-        &checkout.head_sha,
-        flock.imported_by_user_id,
-        &skills,
-        "flock.sync",
-        &[],
-    )
-    .map_err(|e| e.to_string())?;
-
-    Ok(FlockSyncOutcome {
-        new_sha: checkout.head_sha,
-        changed_skill_files,
-        metadata_updated: true,
-    })
-}
-
-#[derive(Debug)]
-struct FlockSyncOutcome {
-    new_sha: String,
-    changed_skill_files: Vec<String>,
-    metadata_updated: bool,
-}
-
-/// Check one repo for new commits and create a scan job if needed.
 async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
     let config = &app_state().config;
     let interval_secs = config.auto_index_min_interval_secs as i64;
     let threshold = Utc::now() - chrono::Duration::seconds(interval_secs);
 
-    // Find one repo that hasn't been scanned recently
     let repo = {
         let mut conn = pool.get().map_err(|e| e.to_string())?;
         repos::table
@@ -539,7 +248,6 @@ async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
     let git_url = normalize_git_url(&repo.git_url);
     let url_hash = hash_string(&git_url);
 
-    // Resolve current remote SHA
     let current_sha = match resolve_remote_sha(&git_url, "HEAD").await {
         Ok(sha) => sha,
         Err(e) => {
@@ -550,7 +258,6 @@ async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
 
     let mut conn = pool.get().map_err(|e| e.to_string())?;
 
-    // Check if we already have a completed scan for this sha
     let already_indexed: i64 = index_jobs::table
         .filter(index_jobs::git_url.eq(&git_url))
         .filter(index_jobs::commit_sha.eq(&current_sha))
@@ -560,7 +267,6 @@ async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
         .map_err(|e: diesel::result::Error| e.to_string())?;
 
     if already_indexed > 0 {
-        // Update last_indexed_at and git_rev so we don't keep checking
         diesel::update(repos::table.find(repo.id))
             .set(crate::models::RepoChangeset {
                 last_indexed_at: Some(Some(Utc::now())),
@@ -573,7 +279,6 @@ async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
         return Ok(());
     }
 
-    // Check if there's already an active job for this url_hash
     let active_count: i64 = index_jobs::table
         .filter(index_jobs::url_hash.eq(&url_hash))
         .filter(index_jobs::status.eq_any(["pending", "running"]))
@@ -585,7 +290,6 @@ async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
         return Ok(());
     }
 
-    // Create a new scan job
     let now = Utc::now();
     let job_id = Uuid::now_v7();
 
@@ -606,7 +310,6 @@ async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
             git_subdir: ".".to_string(),
             repo_slug: None,
             requested_by_user_id: {
-                // Use the first flock's importer as the requester, or a nil UUID for system jobs
                 let mut flock_conn = pool.get().map_err(|e| e.to_string())?;
                 flocks::table
                     .filter(flocks::repo_id.eq(repo.id))
@@ -630,21 +333,4 @@ async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     Ok(())
-}
-
-fn filter_changed_skill_files_for_source_path(paths: &[String], source_path: &str) -> Vec<String> {
-    let prefix = if source_path == "." {
-        None
-    } else {
-        Some(format!("{}/", source_path.trim_matches('/')))
-    };
-
-    paths
-        .iter()
-        .filter(|path| match &prefix {
-            Some(prefix) => path.starts_with(prefix),
-            None => true,
-        })
-        .cloned()
-        .collect()
 }

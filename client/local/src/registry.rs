@@ -24,8 +24,8 @@ use crate::config::get_config_dir;
 use crate::skills::{RepoSkillOrigin, copy_skill_folder, write_repo_skill_origin};
 
 pub use savhub_shared::{
-    DataSource, FetchedSkillEntry, GitRef, RegistryFlock, RegistrySkill, RegistrySource,
-    RemoteSkillFetchSpec, SkillEntry,
+    DataSource, FetchedSkillEntry, RegistryFlock, RegistrySkill, RemoteSkillFetchSpec,
+    SkillEntry,
 };
 
 const DEFAULT_API_BASE: &str = "https://savhub.ai/api/v1";

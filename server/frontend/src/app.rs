@@ -2183,16 +2183,6 @@ fn FlockCard(flock: savhub_shared::FlockSummary) -> Element {
 fn render_source_label(source: &Option<CatalogSource>, t: &T) -> String {
     match source {
         Some(CatalogSource::Registry { .. }) => t.registry_source.to_string(),
-        Some(CatalogSource::Git { url, .. }) => {
-            let host = url
-                .split("//")
-                .nth(1)
-                .unwrap_or(url.as_str())
-                .split('/')
-                .next()
-                .unwrap_or("git");
-            format!("git · {host}")
-        }
         None => String::new(),
     }
 }

@@ -1,5 +1,5 @@
+pub mod git_ops;
 pub(crate) mod helpers;
-pub mod registry_sync;
 
 pub mod admin;
 pub mod ai;

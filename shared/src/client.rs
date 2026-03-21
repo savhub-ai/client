@@ -9,28 +9,6 @@ fn is_default_security(summary: &SecuritySummary) -> bool {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GitRef {
-    pub r#type: String,
-    pub value: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum RegistrySource {
-    Git {
-        url: String,
-        r#ref: GitRef,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        path: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        commit_hash: Option<String>,
-    },
-    Registry {
-        path: String,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RegistryFlock {
     #[serde(default)]
     pub schema_version: u32,
@@ -97,7 +75,6 @@ pub struct SkillEntry {
     pub license: String,
     pub categories: Vec<String>,
     pub keywords: Vec<String>,
-    pub source: Option<RegistrySource>,
     pub stars: Option<u32>,
     pub starred_by_me: Option<bool>,
     pub downloads: Option<u64>,
@@ -119,7 +96,6 @@ impl From<RegistrySkill> for SkillEntry {
             license: skill.license,
             categories: skill.categories,
             keywords: skill.keywords,
-            source: None,
             stars: None,
             starred_by_me: None,
             downloads: None,

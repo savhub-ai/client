@@ -1,0 +1,5 @@
+ALTER TABLE flocks
+    ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS sync_status TEXT NOT NULL DEFAULT 'idle',
+    ADD COLUMN IF NOT EXISTS sync_error TEXT,
+    ADD COLUMN IF NOT EXISTS git_commit_sha TEXT;
