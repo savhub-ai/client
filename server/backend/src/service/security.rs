@@ -476,6 +476,57 @@ pub fn run_automated_scans_with_files(
 }
 
 // ---------------------------------------------------------------------------
+// Per-skill static scan (called from the background worker)
+// ---------------------------------------------------------------------------
+
+/// Run a static security scan on a single skill by loading its files from the
+/// cached repo checkout on disk.  Updates `security_status` on both the skill
+/// and its parent flock.
+///
+/// Returns `true` if a scan was actually executed, `false` if files couldn't
+/// be loaded (e.g. checkout missing).
+pub fn run_static_scan_for_skill(
+    conn: &mut PgConnection,
+    skill: &SkillRow,
+) -> Result<bool, AppError> {
+    let files = load_skill_files_from_repo_checkout(conn, skill);
+    if files.is_empty() {
+        tracing::debug!(
+            "[static-scan] no files found for skill {} — skipping",
+            skill.slug,
+        );
+        return Ok(false);
+    }
+
+    let scan_input = SkillScanInput {
+        skill_id: skill.id,
+        slug: skill.slug.clone(),
+        name: skill.name.clone(),
+        description: skill.description.clone(),
+        license: skill.license.clone().unwrap_or_default(),
+        version: skill.version.clone(),
+        metadata_json: None,
+        frontmatter_always: None,
+        files,
+        version_id: skill.latest_version_id,
+    };
+
+    let scan_ctx = ScanContext {
+        commit_hash: Some(skill.scan_commit_hash.clone()),
+    };
+
+    run_automated_scans_with_files(
+        conn,
+        skill.flock_id,
+        &[skill.clone()],
+        &[scan_input],
+        Some(&scan_ctx),
+    )?;
+
+    Ok(true)
+}
+
+// ---------------------------------------------------------------------------
 // AI scan queue processor
 // ---------------------------------------------------------------------------
 
@@ -653,48 +704,9 @@ pub async fn process_claimed_ai_scan_task(pool: &PgPool, skill: SkillRow) -> Res
     Ok(())
 }
 
-/// Load file contents for AI evaluation from the security_scan_queue or
-/// skill_versions table.
+/// Load file contents for AI evaluation from skill_versions or repo checkout.
 fn load_skill_files_for_ai_eval(conn: &mut PgConnection, skill: &SkillRow) -> Vec<FileContent> {
-    use crate::schema::security_scan_queue;
-
-    let exact_queue_files: Option<serde_json::Value> = if skill.scan_commit_hash.is_empty() {
-        None
-    } else {
-        security_scan_queue::table
-            .filter(security_scan_queue::flock_id.eq(skill.flock_id))
-            .filter(security_scan_queue::commit_hash.eq(&skill.scan_commit_hash))
-            .filter(security_scan_queue::status.ne("superseded"))
-            .order(security_scan_queue::updated_at.desc())
-            .select(security_scan_queue::scan_files)
-            .first::<serde_json::Value>(conn)
-            .optional()
-            .ok()
-            .flatten()
-    };
-
-    let queue_files = exact_queue_files.or_else(|| {
-        security_scan_queue::table
-            .filter(security_scan_queue::flock_id.eq(skill.flock_id))
-            .filter(security_scan_queue::status.ne("superseded"))
-            .order(security_scan_queue::updated_at.desc())
-            .select(security_scan_queue::scan_files)
-            .first::<serde_json::Value>(conn)
-            .optional()
-            .ok()
-            .flatten()
-    });
-
-    if let Some(files_json) = queue_files {
-        // The scan_files JSON is Vec<SkillScanInput>; find the one matching this skill
-        if let Ok(scan_inputs) = serde_json::from_value::<Vec<SkillScanInput>>(files_json) {
-            if let Some(input) = scan_inputs.into_iter().find(|si| si.slug == skill.slug) {
-                return input.files;
-            }
-        }
-    }
-
-    // Fallback 2: load from skill_versions (stored as Vec<StoredBundleFile>)
+    // Try skill_versions first (stored as Vec<StoredBundleFile>)
     if let Some(vid) = skill.latest_version_id {
         let files_json: Option<serde_json::Value> = skill_versions::table
             .find(vid)

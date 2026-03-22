@@ -6,10 +6,8 @@ use tokio::task::{JoinHandle, JoinSet};
 use uuid::Uuid;
 
 use crate::db::PgPool;
-use crate::models::{
-    IndexJobRow, NewAiRequestCacheRow, NewIndexJobRow, RepoRow, SecurityScanQueueRow, SkillRow,
-};
-use crate::schema::{ai_request_cache, flocks, index_jobs, repos, security_scan_queue};
+use crate::models::{IndexJobRow, NewIndexJobRow, RepoRow, SkillRow};
+use crate::schema::{flocks, index_jobs, repos, skills};
 use crate::service::git_ops::resolve_remote_sha;
 use crate::service::helpers::{hash_string, normalize_git_url};
 use crate::state::app_state;
@@ -53,13 +51,20 @@ pub fn spawn_worker(pool: PgPool) -> JoinHandle<()> {
         let mut index_tick = tokio::time::interval(index_interval);
         let mut repo_check_tick = tokio::time::interval(repo_check_interval);
         let mut cleanup_tick = tokio::time::interval(std::time::Duration::from_secs(24 * 60 * 60));
+
+        // Static security scan: in-memory set tracks which skill IDs are
+        // currently being scanned to prevent duplicate pickup.
         let mut scan_tick = tokio::time::interval(std::time::Duration::from_secs(2));
-        let mut scan_tasks: JoinSet<()> = JoinSet::new();
+        let mut scan_tasks: JoinSet<Uuid> = JoinSet::new();
         let max_scan_concurrency = config.static_scan_concurrency;
+        let mut static_scanning_ids: HashSet<Uuid> = HashSet::new();
+
+        // AI security scan: same pattern.
         let mut ai_scan_tick = tokio::time::interval(std::time::Duration::from_secs(2));
         let mut ai_scan_tasks: JoinSet<Uuid> = JoinSet::new();
         let max_ai_scan_concurrency = config.ai_security_concurrency.max(1);
         let ai_scan_enabled = config.ai_provider.is_some() && config.ai_api_key.is_some();
+        let mut ai_scanning_ids: HashSet<Uuid> = HashSet::new();
 
         let mut index_tasks: JoinSet<(Uuid, String)> = JoinSet::new();
         let mut running_url_hashes: HashSet<String> = HashSet::new();
@@ -98,34 +103,43 @@ pub fn spawn_worker(pool: PgPool) -> JoinHandle<()> {
                     });
                 }
                 _ = scan_tick.tick() => {
-                    // Drain completed scan tasks
+                    // Drain completed static scan tasks
                     while let Some(result) = scan_tasks.try_join_next() {
-                        if let Err(e) = result {
-                            tracing::warn!("static scan task panicked: {e}");
+                        match result {
+                            Ok(skill_id) => {
+                                static_scanning_ids.remove(&skill_id);
+                            }
+                            Err(e) => {
+                                tracing::warn!("static scan task panicked: {e}");
+                            }
                         }
                     }
                     // Fill up to max concurrency
                     while scan_tasks.len() < max_scan_concurrency {
-                        match claim_security_scan_task(&pool) {
-                            Ok(Some(task)) => {
+                        match pick_unscanned_skill(&pool, &static_scanning_ids) {
+                            Ok(Some(skill)) => {
+                                let skill_id = skill.id;
+                                static_scanning_ids.insert(skill_id);
                                 let pool = pool.clone();
                                 scan_tasks.spawn_blocking(move || {
-                                    run_claimed_scan_task(&pool, task);
+                                    run_static_scan_for_skill(&pool, skill);
+                                    skill_id
                                 });
                             }
-                            Ok(None) => break, // no more pending tasks
+                            Ok(None) => break,
                             Err(e) => {
-                                tracing::warn!("security scan queue error: {e}");
+                                tracing::warn!("static scan pick error: {e}");
                                 break;
                             }
                         }
                     }
                 }
                 _ = ai_scan_tick.tick() => {
+                    // Drain completed AI scan tasks
                     while let Some(result) = ai_scan_tasks.try_join_next() {
                         match result {
                             Ok(skill_id) => {
-                                tracing::debug!(skill_id = %skill_id, "ai scan task finished");
+                                ai_scanning_ids.remove(&skill_id);
                             }
                             Err(e) => {
                                 tracing::warn!("AI scan task panicked: {e}");
@@ -138,10 +152,11 @@ pub fn spawn_worker(pool: PgPool) -> JoinHandle<()> {
                     }
 
                     while ai_scan_tasks.len() < max_ai_scan_concurrency {
-                        match claim_ai_scan_task(&pool) {
+                        match pick_checked_skill(&pool, &ai_scanning_ids) {
                             Ok(Some(skill)) => {
-                                let pool = pool.clone();
                                 let skill_id = skill.id;
+                                ai_scanning_ids.insert(skill_id);
+                                let pool = pool.clone();
                                 ai_scan_tasks.spawn(async move {
                                     if let Err(e) =
                                         crate::service::security::process_claimed_ai_scan_task(
@@ -151,7 +166,7 @@ pub fn spawn_worker(pool: PgPool) -> JoinHandle<()> {
                                     {
                                         tracing::warn!(
                                             skill_id = %skill_id,
-                                            "AI scan queue error: {e}"
+                                            "AI scan error: {e}"
                                         );
                                     }
                                     skill_id
@@ -159,7 +174,7 @@ pub fn spawn_worker(pool: PgPool) -> JoinHandle<()> {
                             }
                             Ok(None) => break,
                             Err(e) => {
-                                tracing::warn!("AI scan queue error: {e}");
+                                tracing::warn!("AI scan pick error: {e}");
                                 break;
                             }
                         }
@@ -411,203 +426,88 @@ async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
     Ok(())
 }
 
-fn claim_ai_scan_task(pool: &PgPool) -> Result<Option<SkillRow>, String> {
-    let mut conn = pool.get().map_err(|e| e.to_string())?;
-    crate::service::security::claim_ai_scan_task(&mut conn).map_err(|e| e.to_string())
-}
-
 // ---------------------------------------------------------------------------
-// Security scan queue processor (static scans)
+// Static security scan: pick unscanned skills from DB
 // ---------------------------------------------------------------------------
 
-/// Atomically claim the oldest pending scan task.
-/// Returns `Ok(None)` if the queue is empty.
-fn claim_security_scan_task(pool: &PgPool) -> Result<Option<SecurityScanQueueRow>, String> {
+/// Pick one skill with `security_status = 'unscanned'` that is not currently
+/// being scanned (not in the in-memory exclusion set).
+fn pick_unscanned_skill(
+    pool: &PgPool,
+    exclude_ids: &HashSet<Uuid>,
+) -> Result<Option<SkillRow>, String> {
     let mut conn = pool.get().map_err(|e| e.to_string())?;
-    diesel::sql_query(
-        "UPDATE security_scan_queue SET status = 'running', updated_at = NOW() \
-         WHERE id = ( \
-           SELECT id FROM security_scan_queue \
-           WHERE status = 'pending' \
-           ORDER BY created_at ASC \
-           LIMIT 1 \
-           FOR UPDATE SKIP LOCKED \
-         ) \
-         RETURNING *",
-    )
-    .get_result::<SecurityScanQueueRow>(&mut conn)
-    .optional()
-    .map_err(|e| e.to_string())
+    let exclude: Vec<Uuid> = exclude_ids.iter().copied().collect();
+
+    let skill = skills::table
+        .filter(skills::security_status.eq("unscanned"))
+        .filter(skills::soft_deleted_at.is_null())
+        .filter(diesel::dsl::not(skills::id.eq_any(&exclude)))
+        .order(skills::updated_at.asc())
+        .select(SkillRow::as_select())
+        .first::<SkillRow>(&mut conn)
+        .optional()
+        .map_err(|e| e.to_string())?;
+
+    Ok(skill)
 }
 
-/// Execute a claimed scan task and delete it from the queue.
-fn run_claimed_scan_task(pool: &PgPool, task: SecurityScanQueueRow) {
-    tracing::info!(
-        "[static-scan] running task {}: flock={}, path={}, commit={}",
-        task.id,
-        task.flock_id,
-        task.path,
-        &task.commit_hash[..task.commit_hash.len().min(8)],
-    );
+/// Run a static scan on a single skill (called from spawn_blocking).
+fn run_static_scan_for_skill(pool: &PgPool, skill: SkillRow) {
+    let skill_id = skill.id;
+    let slug = skill.slug.clone();
 
-    let result = (|| -> Result<(String, serde_json::Value), String> {
+    let result = (|| -> Result<(), String> {
         let mut conn = pool.get().map_err(|e| e.to_string())?;
-
-        let entry_rows = crate::schema::skills::table
-            .filter(crate::schema::skills::flock_id.eq(task.flock_id))
-            .filter(crate::schema::skills::soft_deleted_at.is_null())
-            .select(crate::models::SkillRow::as_select())
-            .load::<crate::models::SkillRow>(&mut conn)
-            .map_err(|e| e.to_string())?;
-
-        let mut skill_scan_files: Vec<crate::service::security::SkillScanInput> =
-            serde_json::from_value(task.scan_files.clone()).unwrap_or_default();
-
-        if skill_scan_files.is_empty() {
-            skill_scan_files = crate::service::security::build_skill_scan_inputs_from_repo_checkout(
-                &mut conn,
-                task.repo_id,
-                &entry_rows,
-            );
-        }
-
-        let scan_files_json =
-            serde_json::to_value(&skill_scan_files).unwrap_or_else(|_| serde_json::json!([]));
-
-        let scan_ctx = crate::service::security::ScanContext {
-            commit_hash: Some(task.commit_hash.clone()),
-        };
-
-        match crate::service::security::run_automated_scans_with_files(
-            &mut conn,
-            task.flock_id,
-            &entry_rows,
-            &skill_scan_files,
-            Some(&scan_ctx),
-        ) {
-            Ok(verdict) => {
-                tracing::info!(
-                    "[static-scan] complete: flock={}, verdict={}",
-                    task.flock_id,
-                    verdict,
+        match crate::service::security::run_static_scan_for_skill(&mut conn, &skill) {
+            Ok(true) => {
+                tracing::debug!("[static-scan] completed: skill={} ({})", slug, skill_id);
+            }
+            Ok(false) => {
+                tracing::debug!(
+                    "[static-scan] no files for skill {} — skipping",
+                    slug,
                 );
-                Ok(("done".to_string(), scan_files_json))
-            }
-            Err(e) => {
-                tracing::error!("[static-scan] failed for flock {}: {}", task.flock_id, e,);
-                Ok(("failed".to_string(), scan_files_json))
-            }
-        }
-    })();
-
-    match result {
-        Ok((status, scan_files_json)) => match pool.get() {
-            Ok(mut conn) => {
-                let cache_result = if status == "done" {
-                    cache_security_scan_result(
-                        &mut conn,
-                        task.flock_id,
-                        &task.commit_hash,
-                        true,
-                        None,
-                    )
-                } else {
-                    cache_security_scan_result(
-                        &mut conn,
-                        task.flock_id,
-                        &task.commit_hash,
-                        false,
-                        Some("static scan failed"),
-                    )
-                };
-
-                if let Err(e) = diesel::update(security_scan_queue::table.find(task.id))
-                    .set((
-                        security_scan_queue::status.eq(status),
-                        security_scan_queue::scan_files.eq(scan_files_json),
-                        security_scan_queue::updated_at.eq(Utc::now()),
-                    ))
-                    .execute(&mut conn)
-                {
-                    tracing::error!("[static-scan] failed to finalize task {}: {}", task.id, e,);
-                }
-
-                if let Err(e) = cache_result {
-                    tracing::error!(
-                        "[static-scan] failed to cache task {} result: {}",
-                        task.id,
-                        e,
-                    );
-                }
             }
             Err(e) => {
                 tracing::error!(
-                    "[static-scan] failed to get DB connection to finalize task {}: {}",
-                    task.id,
+                    "[static-scan] failed for skill {} ({}): {}",
+                    slug,
+                    skill_id,
                     e,
                 );
             }
-        },
-        Err(e) => {
-            tracing::error!("[static-scan] task {} error: {}", task.id, e);
-            match pool.get() {
-                Ok(mut conn) => {
-                    let _ = cache_security_scan_result(
-                        &mut conn,
-                        task.flock_id,
-                        &task.commit_hash,
-                        false,
-                        Some(&e),
-                    );
-                    let _ = diesel::update(security_scan_queue::table.find(task.id))
-                        .set((
-                            security_scan_queue::status.eq("failed"),
-                            security_scan_queue::updated_at.eq(Utc::now()),
-                        ))
-                        .execute(&mut conn);
-                }
-                Err(conn_err) => {
-                    tracing::error!(
-                        "[static-scan] failed to mark task {} as failed: {}",
-                        task.id,
-                        conn_err,
-                    );
-                }
-            }
         }
+        Ok(())
+    })();
+
+    if let Err(e) = result {
+        tracing::error!("[static-scan] skill {} error: {}", skill_id, e);
     }
 }
 
-fn cache_security_scan_result(
-    conn: &mut diesel::PgConnection,
-    flock_id: Uuid,
-    commit_hash: &str,
-    success: bool,
-    error_message: Option<&str>,
-) -> Result<(), String> {
-    diesel::insert_into(ai_request_cache::table)
-        .values(NewAiRequestCacheRow {
-            id: Uuid::now_v7(),
-            task_type: "security_scan".to_string(),
-            target_type: "flock".to_string(),
-            target_id: flock_id,
-            commit_hash: commit_hash.to_string(),
-            success,
-            error_message: error_message.map(ToString::to_string),
-            created_at: Utc::now(),
-        })
-        .on_conflict((
-            ai_request_cache::task_type,
-            ai_request_cache::target_id,
-            ai_request_cache::commit_hash,
-        ))
-        .do_update()
-        .set((
-            ai_request_cache::success.eq(success),
-            ai_request_cache::error_message.eq(error_message),
-            ai_request_cache::created_at.eq(Utc::now()),
-        ))
-        .execute(conn)
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+// ---------------------------------------------------------------------------
+// AI security scan: pick statically-checked skills from DB
+// ---------------------------------------------------------------------------
+
+/// Pick one skill with `security_status = 'checked'` that is not currently
+/// being AI-scanned (not in the in-memory exclusion set).
+fn pick_checked_skill(
+    pool: &PgPool,
+    exclude_ids: &HashSet<Uuid>,
+) -> Result<Option<SkillRow>, String> {
+    let mut conn = pool.get().map_err(|e| e.to_string())?;
+    let exclude: Vec<Uuid> = exclude_ids.iter().copied().collect();
+
+    let skill = skills::table
+        .filter(skills::security_status.eq("checked"))
+        .filter(skills::soft_deleted_at.is_null())
+        .filter(diesel::dsl::not(skills::id.eq_any(&exclude)))
+        .order(skills::updated_at.asc())
+        .select(SkillRow::as_select())
+        .first::<SkillRow>(&mut conn)
+        .optional()
+        .map_err(|e| e.to_string())?;
+
+    Ok(skill)
 }

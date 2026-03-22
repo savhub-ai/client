@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::schema::{
     ai_request_cache, ai_usage_logs, audit_logs, browse_histories, flocks, index_jobs, index_rules,
-    reports, repos, security_scan_queue, security_scans, site_admins, skill_blocks, skill_comments,
+    reports, repos, security_scans, site_admins, skill_blocks, skill_comments,
     skill_installs, skill_ratings, skill_stars, skill_versions, skills, user_tokens, users,
 };
 
@@ -618,36 +618,6 @@ pub struct IndexJobChangeset {
     pub progress_pct: Option<i32>,
     pub progress_message: Option<String>,
     pub git_sha: Option<String>,
-}
-
-#[derive(Debug, Clone, Queryable, Selectable, Identifiable, QueryableByName)]
-#[diesel(table_name = security_scan_queue)]
-pub struct SecurityScanQueueRow {
-    pub id: Uuid,
-    pub status: String,
-    pub repo_id: Uuid,
-    pub repo_url: String,
-    pub path: String,
-    pub flock_id: Uuid,
-    pub commit_hash: String,
-    pub scan_files: Value,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Insertable)]
-#[diesel(table_name = security_scan_queue)]
-pub struct NewSecurityScanQueueRow {
-    pub id: Uuid,
-    pub status: String,
-    pub repo_id: Uuid,
-    pub repo_url: String,
-    pub path: String,
-    pub flock_id: Uuid,
-    pub commit_hash: String,
-    pub scan_files: Value,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable)]

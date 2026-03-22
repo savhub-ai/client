@@ -385,6 +385,47 @@ pub(crate) async fn changed_skill_markdown_files(
     ))
 }
 
+/// Return **all** file paths changed between two commits (not just SKILL.md).
+/// Paths are relative to the repo root, forward-slash separated and deduplicated.
+pub(crate) async fn changed_files_between(
+    repo_dir: &Path,
+    previous_sha: &str,
+    current_sha: &str,
+) -> Result<Vec<String>, AppError> {
+    if previous_sha == current_sha {
+        return Ok(Vec::new());
+    }
+
+    let output = tokio::process::Command::new("git")
+        .args([
+            "diff",
+            "--name-only",
+            previous_sha,
+            current_sha,
+            "--",
+        ])
+        .current_dir(repo_dir)
+        .output()
+        .await
+        .map_err(|error| AppError::Internal(format!("failed to run git diff: {error}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AppError::Internal(format!("git diff failed: {stderr}")));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut paths: Vec<String> = stdout
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(|l| l.replace('\\', "/"))
+        .collect();
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
+}
+
 pub(crate) fn cached_repo_dir(base_path: &Path, url: &str, git_ref: &str) -> PathBuf {
     base_path.join(repo_cache_dir_name(url, git_ref))
 }

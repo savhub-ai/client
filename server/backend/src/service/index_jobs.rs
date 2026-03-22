@@ -21,10 +21,10 @@ use crate::auth::AuthContext;
 use crate::error::AppError;
 use crate::models::{
     FlockChangeset, FlockRow, IndexJobChangeset, IndexJobRow, NewAiRequestCacheRow, NewFlockRow,
-    NewIndexJobRow, NewRepoRow, NewSecurityScanQueueRow, NewSkillRow, RepoRow, SkillChangeset,
+    NewIndexJobRow, NewRepoRow, NewSkillRow, RepoRow, SkillChangeset,
     SkillRow,
 };
-use crate::schema::{ai_request_cache, flocks, index_jobs, repos, security_scan_queue, skills};
+use crate::schema::{ai_request_cache, flocks, index_jobs, repos, skills};
 use crate::state::app_state;
 
 /// Check if we already have a **successful** AI request cached for this
@@ -588,6 +588,58 @@ async fn do_auto_import(
         ));
     }
 
+    // ── Incremental detection ──
+    // If we reused an existing checkout (pull, not fresh clone), compute which
+    // candidate indices actually have file changes so we can skip unchanged
+    // flocks entirely.
+    let changed_indices: HashSet<usize> =
+        if checkout.reused && checkout.previous_sha.is_some() {
+            let prev = checkout.previous_sha.as_deref().unwrap();
+            let all_changed = super::git_ops::changed_files_between(
+                &checkout.path,
+                prev,
+                &checkout.head_sha,
+            )
+            .await
+            .unwrap_or_default();
+
+            if all_changed.is_empty() {
+                // No files changed at all — nothing to do.
+                tracing::info!(
+                    "[index{}] no file changes between {} and {}, skipping",
+                    job.id,
+                    &prev[..prev.len().min(8)],
+                    &checkout.head_sha[..checkout.head_sha.len().min(8)],
+                );
+                HashSet::new()
+            } else {
+                tracing::info!(
+                    "[index{}] incremental: {} files changed between {}..{}",
+                    job.id,
+                    all_changed.len(),
+                    &prev[..prev.len().min(8)],
+                    &checkout.head_sha[..checkout.head_sha.len().min(8)],
+                );
+                candidates
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, c)| {
+                        let prefix =
+                            join_repo_relative_path(effective_subdir, &c.relative_dir);
+                        all_changed.iter().any(|f| {
+                            f.starts_with(&format!("{}/", prefix)) || f == &prefix
+                        })
+                    })
+                    .map(|(i, _)| i)
+                    .collect()
+            }
+        } else {
+            // Fresh clone → every candidate is "changed"
+            (0..candidates.len()).collect()
+        };
+
+    let is_incremental = checkout.reused && checkout.previous_sha.is_some();
+
     // Auto-categorize using the resolved strategy.
     update_progress(job.id, 50, "Categorizing skills…")?;
 
@@ -696,6 +748,42 @@ async fn do_auto_import(
         let flock_slug = group.slug.clone();
         let skill_count = group.candidate_indices.len();
 
+        // ── Incremental fast-path ──
+        // If this is an incremental update and none of the candidates in this
+        // flock group have changed files, just bump the git sha on the
+        // existing skills and skip everything else.
+        let flock_has_changes =
+            group.candidate_indices.iter().any(|i| changed_indices.contains(i));
+
+        if is_incremental && !flock_has_changes {
+            let mut conn = db_conn()?;
+            if let Ok(flock_row) = flocks::table
+                .filter(flocks::repo_id.eq(repo.id))
+                .filter(flocks::slug.eq(&flock_slug))
+                .select(FlockRow::as_select())
+                .first::<FlockRow>(&mut conn)
+            {
+                // Update scan_commit_hash on all skills to the new sha.
+                // security_status is preserved — no re-scan needed.
+                diesel::update(
+                    skills::table
+                        .filter(skills::flock_id.eq(flock_row.id))
+                        .filter(skills::soft_deleted_at.is_null()),
+                )
+                .set(skills::scan_commit_hash.eq(&checkout.head_sha))
+                .execute(&mut conn)?;
+            }
+            tracing::debug!(
+                "[index] unchanged flock {}/{} — sha bumped to {}",
+                repo_sign,
+                flock_slug,
+                &checkout.head_sha[..checkout.head_sha.len().min(8)],
+            );
+            flock_slugs.push(flock_slug);
+            total_skill_count += skill_count;
+            continue;
+        }
+
         // Check ai_request_cache to see if flock metadata was already generated
         // for this commit — if so, reuse existing flock row data and skip AI.
         let existing_flock_for_meta = {
@@ -713,28 +801,6 @@ async fn do_auto_import(
                 .map(|c| has_cached_ai_request(c, "flock_metadata", f.id, &checkout.head_sha))
                 .unwrap_or(false)
         });
-
-        // Fast path: if both flock metadata AND security scan are already
-        // cached for this exact commit, the flock is fully up-to-date and we
-        // can skip all the expensive work (SKILL.md parsing, walkdir file
-        // reads, per-skill DB upserts, scan enqueueing).
-        let scan_already_cached = existing_flock_for_meta.as_ref().map_or(false, |f| {
-            let mut conn = db_conn().ok();
-            conn.as_mut()
-                .map(|c| has_cached_ai_request(c, "security_scan", f.id, &checkout.head_sha))
-                .unwrap_or(false)
-        });
-        if flock_meta_cached && scan_already_cached {
-            tracing::debug!(
-                "[index] skipping flock {}/{} — fully cached at commit {}",
-                repo_sign,
-                flock_slug,
-                &checkout.head_sha[..checkout.head_sha.len().min(8)],
-            );
-            flock_slugs.push(flock_slug);
-            total_skill_count += skill_count;
-            continue;
-        }
 
         let default_flock_name = derive_flock_name(&flock_slug, &repo_name);
         let (flock_name, flock_description) = if flock_meta_cached {
@@ -821,8 +887,6 @@ async fn do_auto_import(
 
         let source_path = join_repo_relative_path(effective_subdir, &group.source_path);
 
-        // Acquire a fresh connection per flock to avoid holding a connection
-        // across the entire (potentially long) loop.
         {
             let mut conn = db_conn()?;
             persist_auto_import_flock(
@@ -1040,68 +1104,6 @@ pub(crate) fn build_auto_import_skills(
     Ok(skills)
 }
 
-/// Enqueue a security scan task. Upserts on (repo_url, path) so only the latest
-/// commit is queued per flock path.
-fn enqueue_security_scan(
-    conn: &mut PgConnection,
-    repo: &RepoRow,
-    source_path: &str,
-    flock_id: Uuid,
-    commit_sha: &str,
-) -> Result<(), AppError> {
-    let now = Utc::now();
-    let scan_files_json = serde_json::json!([]);
-
-    diesel::update(
-        security_scan_queue::table
-            .filter(security_scan_queue::repo_url.eq(&repo.git_url))
-            .filter(security_scan_queue::path.eq(source_path))
-            .filter(security_scan_queue::commit_hash.ne(commit_sha))
-            .filter(security_scan_queue::status.eq("pending")),
-    )
-    .set((
-        security_scan_queue::status.eq("superseded"),
-        security_scan_queue::updated_at.eq(now),
-    ))
-    .execute(conn)?;
-
-    diesel::insert_into(security_scan_queue::table)
-        .values(NewSecurityScanQueueRow {
-            id: Uuid::now_v7(),
-            status: "pending".to_string(),
-            repo_id: repo.id,
-            repo_url: repo.git_url.clone(),
-            path: source_path.to_string(),
-            flock_id,
-            commit_hash: commit_sha.to_string(),
-            scan_files: scan_files_json.clone(),
-            created_at: now,
-            updated_at: now,
-        })
-        .on_conflict((
-            security_scan_queue::repo_url,
-            security_scan_queue::path,
-            security_scan_queue::commit_hash,
-        ))
-        .do_update()
-        .set((
-            security_scan_queue::status.eq("pending"),
-            security_scan_queue::flock_id.eq(flock_id),
-            security_scan_queue::commit_hash.eq(commit_sha),
-            security_scan_queue::scan_files.eq(scan_files_json),
-            security_scan_queue::updated_at.eq(now),
-        ))
-        .execute(conn)?;
-
-    tracing::info!(
-        "[security] enqueued scan for flock {} (repo={}, path={}, commit={})",
-        flock_id,
-        repo.git_url,
-        source_path,
-        &commit_sha[..commit_sha.len().min(8)],
-    );
-    Ok(())
-}
 
 pub(crate) fn persist_auto_import_flock(
     conn: &mut PgConnection,
@@ -1135,19 +1137,6 @@ pub(crate) fn persist_auto_import_flock(
 
     let flock_metadata = serde_json::to_value(FlockMetadata::default()).unwrap_or_default();
 
-    // Check ai_request_cache for a previous successful security scan of
-    // this flock at the same commit. If found, skip re-scanning entirely.
-    let prev_security_status = existing_flock.as_ref().map(|f| f.security_status.as_str());
-    let already_scanned = has_cached_ai_request(conn, "security_scan", flock_id, commit_sha);
-    if already_scanned {
-        tracing::info!(
-            "[security] ai_request_cache hit for security_scan flock {} (commit {}), status={:?}",
-            flock_id,
-            &commit_sha[..commit_sha.len().min(8)],
-            prev_security_status,
-        );
-    }
-
     conn.transaction::<_, AppError, _>(|conn| {
         if let Some(existing) = &existing_flock {
             diesel::update(flocks::table.find(existing.id))
@@ -1158,11 +1147,7 @@ pub(crate) fn persist_auto_import_flock(
                     source: Some(flock_source.clone()),
                     metadata: Some(flock_metadata.clone()),
                     updated_at: Some(now),
-                    security_status: if already_scanned {
-                        None
-                    } else {
-                        Some("unscanned".to_string())
-                    },
+                    security_status: Some("unscanned".to_string()),
                     ..Default::default()
                 })
                 .execute(conn)?;
@@ -1224,6 +1209,7 @@ pub(crate) fn persist_auto_import_flock(
                         metadata: Some(metadata_json),
                         runtime_data: Some(runtime_json),
                         scan_commit_hash: Some(commit_sha.to_string()),
+                        security_status: Some("unscanned".to_string()),
                         soft_deleted_at: Some(None),
                         updated_at: Some(now),
                         ..Default::default()
@@ -1286,15 +1272,6 @@ pub(crate) fn persist_auto_import_flock(
                 skills::updated_at.eq(now),
             ))
             .execute(conn)?;
-        }
-
-        if !already_scanned {
-            enqueue_security_scan(conn, repo, source_path, flock_id, commit_sha)?;
-        } else {
-            let status = prev_security_status.unwrap_or("unscanned");
-            diesel::update(skills::table.filter(skills::flock_id.eq(flock_id)))
-                .set(skills::security_status.eq(status))
-                .execute(conn)?;
         }
 
         insert_audit_log(

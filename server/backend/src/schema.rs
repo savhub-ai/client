@@ -150,21 +150,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    security_scan_queue (id) {
-        id -> Uuid,
-        status -> Text,
-        repo_id -> Uuid,
-        repo_url -> Text,
-        path -> Text,
-        flock_id -> Uuid,
-        commit_hash -> Text,
-        scan_files -> Jsonb,
-        created_at -> Timestamptz,
-        updated_at -> Timestamptz,
-    }
-}
-
-diesel::table! {
     security_scans (id) {
         id -> Uuid,
         target_type -> Text,
@@ -338,8 +323,6 @@ diesel::joinable!(browse_histories -> users (user_id));
 diesel::joinable!(flocks -> repos (repo_id));
 diesel::joinable!(flocks -> users (imported_by_user_id));
 diesel::joinable!(index_jobs -> users (requested_by_user_id));
-diesel::joinable!(security_scan_queue -> flocks (flock_id));
-diesel::joinable!(security_scan_queue -> repos (repo_id));
 diesel::joinable!(security_scans -> skill_versions (version_id));
 diesel::joinable!(security_scans -> users (scanned_by_user_id));
 diesel::joinable!(skill_blocks -> flocks (flock_id));
@@ -378,7 +361,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     index_rules,
     reports,
     repos,
-    security_scan_queue,
     security_scans,
     site_admins,
     skill_blocks,
