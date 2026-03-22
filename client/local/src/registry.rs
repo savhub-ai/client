@@ -279,7 +279,7 @@ pub fn fetched_skill_local_path(entry: &FetchedSkillEntry) -> Option<PathBuf> {
         return None;
     }
     let root = repos_dir().ok()?;
-    Some(root.join(&entry.repo).join(Path::new(&entry.path)))
+    Some(root.join(strip_git_url_scheme(&entry.repo)).join(Path::new(&entry.path)))
 }
 
 pub fn make_skill_sign(repo_sign: &str, skill_path: &str) -> String {
@@ -471,7 +471,17 @@ fn current_remote_url(repo_root: &Path) -> Option<String> {
 }
 
 fn repo_checkout_dir(repo_sign: &str) -> Result<PathBuf> {
-    Ok(repos_dir()?.join(Path::new(repo_sign)))
+    let dir_name = strip_git_url_scheme(repo_sign);
+    Ok(repos_dir()?.join(Path::new(&dir_name)))
+}
+
+/// Strip `https://`/`http://` prefix and `.git` suffix for use as a filesystem path.
+fn strip_git_url_scheme(url: &str) -> String {
+    let url = url.trim().trim_end_matches('/').trim_end_matches(".git");
+    url.strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url)
+        .to_string()
 }
 
 fn ensure_repo_checkout(repo_sign: &str, git_url: &str, git_rev: &str) -> Result<PathBuf> {

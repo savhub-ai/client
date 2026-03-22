@@ -1022,11 +1022,13 @@ async fn cmd_fetch(opts: &GlobalOpts, args: FetchArgs) -> Result<()> {
         },
     )?;
     let mut lockfile = read_project_added_skills(&opts.workdir)?;
-    lockfile.skills.insert(
-        slug.clone(),
+    lockfile.insert(
+        &resolved.spec.repo_sign,
+        &resolved.spec.skill_path,
         LockEntry {
             version: resolved.display_version.clone(),
             fetched_at: now,
+            remote_slug: Some(slug.clone()),
             ..LockEntry::default()
         },
     );
@@ -1058,7 +1060,9 @@ async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
     let slugs = if let Some(slug) = args.slug {
         vec![normalize_slug(&slug)?]
     } else {
-        lockfile.skills.keys().cloned().collect::<Vec<_>>()
+        lockfile.iter_entries().map(|(_, _, e)| {
+            e.remote_slug.clone().unwrap_or_default()
+        }).filter(|s| !s.is_empty()).collect::<Vec<_>>()
     };
     if slugs.is_empty() {
         println!("No fetched skills.");
@@ -1103,15 +1107,14 @@ async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
 
         if local_version_info.git_commit.as_deref() == Some(remote.spec.git_rev.as_str()) {
             println!("{slug}: already at {latest}");
-            lockfile.skills.insert(
-                slug.clone(),
+            let prev_fetched_at = lockfile.find_by_slug(&slug).map(|(_, _, e)| e.fetched_at).unwrap_or(now);
+            lockfile.insert(
+                &remote.spec.repo_sign,
+                &remote.spec.skill_path,
                 LockEntry {
                     version: latest.clone(),
-                    fetched_at: lockfile
-                        .skills
-                        .get(&slug)
-                        .map(|entry| entry.fetched_at)
-                        .unwrap_or(now),
+                    fetched_at: prev_fetched_at,
+                    remote_slug: Some(slug.clone()),
                     ..LockEntry::default()
                 },
             );
@@ -1160,11 +1163,13 @@ async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
                 fetched_at: now,
             },
         )?;
-        lockfile.skills.insert(
-            slug.clone(),
+        lockfile.insert(
+            &remote.spec.repo_sign,
+            &remote.spec.skill_path,
             LockEntry {
                 version: latest.clone(),
                 fetched_at: now,
+                remote_slug: Some(slug.clone()),
                 ..LockEntry::default()
             },
         );
@@ -1190,7 +1195,7 @@ async fn cmd_update_global(opts: &GlobalOpts, args: &UpdateArgs) -> Result<()> {
     let slugs: Vec<String> = if let Some(slug) = &args.slug {
         vec![normalize_slug(slug)?]
     } else {
-        lockfile.skills.keys().cloned().collect()
+        lockfile.iter_entries().filter_map(|(_, _, e)| e.remote_slug.clone()).collect()
     };
 
     if slugs.is_empty() {
@@ -1229,11 +1234,13 @@ async fn cmd_update_global(opts: &GlobalOpts, args: &UpdateArgs) -> Result<()> {
                     fetched_at: now,
                 },
             )?;
-            lockfile.skills.insert(
-                slug.clone(),
+            lockfile.insert(
+                &remote.spec.repo_sign,
+                &remote.spec.skill_path,
                 LockEntry {
                     version: latest.clone(),
                     fetched_at: now,
+                    remote_slug: Some(slug.clone()),
                     ..LockEntry::default()
                 },
             );
@@ -1283,11 +1290,12 @@ fn cmd_prune(opts: &GlobalOpts, args: PruneArgs) -> Result<()> {
 
 fn cmd_list(opts: &GlobalOpts) -> Result<()> {
     let lockfile = read_project_added_skills(&opts.workdir)?;
-    if lockfile.skills.is_empty() {
+    if lockfile.is_empty() {
         println!("No fetched skills.");
         return Ok(());
     }
-    for (slug, entry) in lockfile.skills {
+    for (_, _, entry) in lockfile.iter_entries() {
+        let slug = entry.remote_slug.as_deref().unwrap_or("?");
         println!("{slug}  {}", entry.version);
     }
     Ok(())
@@ -2725,12 +2733,14 @@ fn cmd_flock(_opts: &GlobalOpts, command: FlockCommand) -> Result<()> {
                 .unwrap_or(0);
             let mut added = 0;
             for slug in &skill_slugs {
-                if !lockfile.skills.contains_key(slug) {
-                    lockfile.skills.insert(
-                        slug.clone(),
+                if lockfile.find_by_slug(slug).is_none() {
+                    lockfile.insert(
+                        "unknown",
+                        slug,
                         LockEntry {
                             version: "latest".to_string(),
                             fetched_at: now,
+                            remote_slug: Some(slug.clone()),
                             ..LockEntry::default()
                         },
                     );

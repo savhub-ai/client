@@ -576,30 +576,38 @@ pub struct FetchedSkillMetadata {
 
 pub fn update_lockfile_with_metadata(
     workdir: &Path,
-    slug: &str,
+    _slug: &str,
     version: &str,
     metadata: &FetchedSkillMetadata,
 ) {
+    let repo_url = match metadata.repo_url.as_deref() {
+        Some(v) if !v.is_empty() => v,
+        _ => return,
+    };
+    let path = match metadata.path.as_deref() {
+        Some(v) if !v.is_empty() => v,
+        _ => return,
+    };
     let lock_path = workdir.join("skills.lock.json");
-
     let mut lock = fs::read_to_string(&lock_path)
         .ok()
         .and_then(|raw| serde_json::from_str::<Lockfile>(&raw).ok())
         .unwrap_or_default();
 
-    lock.skills.insert(
-        slug.to_string(),
-        LockEntry {
-            version: version.to_string(),
-            fetched_at: chrono::Utc::now().timestamp(),
-            remote_id: metadata.remote_id.clone(),
-            remote_slug: metadata.remote_slug.clone(),
-            repo_url: metadata.repo_url.clone(),
-            path: metadata.path.clone(),
-            flock_slug: metadata.flock_slug.clone(),
-            git_rev: metadata.git_rev.clone(),
-        },
-    );
+    lock.repos
+        .entry(repo_url.to_string())
+        .or_default()
+        .insert(
+            path.to_string(),
+            LockEntry {
+                version: version.to_string(),
+                fetched_at: chrono::Utc::now().timestamp(),
+                remote_id: metadata.remote_id.clone(),
+                remote_slug: metadata.remote_slug.clone(),
+                flock_slug: metadata.flock_slug.clone(),
+                git_rev: metadata.git_rev.clone(),
+            },
+        );
 
     let _ = fs::write(
         &lock_path,
@@ -607,73 +615,98 @@ pub fn update_lockfile_with_metadata(
     );
 }
 
-/// Read fetched skill versions from the lockfile.
-pub fn read_fetched_skill_versions(workdir: &Path) -> std::collections::BTreeMap<String, String> {
-    let lock_path = workdir.join("skills.lock.json");
-    fs::read_to_string(&lock_path)
-        .ok()
-        .and_then(|raw| serde_json::from_str::<Lockfile>(&raw).ok())
-        .map(|lock| {
-            lock.skills
-                .into_iter()
-                .map(|(slug, entry)| (slug, entry.version))
-                .collect()
-        })
-        .unwrap_or_default()
+/// A flattened view of a lock entry with its repo_url and path.
+#[derive(Debug, Clone)]
+pub struct FlatLockEntry {
+    pub repo_url: String,
+    pub path: String,
+    pub slug: String,
+    pub entry: LockEntry,
 }
 
-/// Read the full lockfile entries (slug → LockEntry) for richer queries.
+/// Flatten the nested lockfile into a list of entries.
+pub fn flatten_lockfile(lock: &Lockfile) -> Vec<FlatLockEntry> {
+    let mut out = Vec::new();
+    for (repo_url, paths) in &lock.repos {
+        for (path, entry) in paths {
+            let slug = entry
+                .remote_slug
+                .clone()
+                .unwrap_or_else(|| path.rsplit('/').next().unwrap_or(path).to_string());
+            out.push(FlatLockEntry {
+                repo_url: repo_url.clone(),
+                path: path.clone(),
+                slug,
+                entry: entry.clone(),
+            });
+        }
+    }
+    out
+}
+
+/// Read fetched skill versions from the lockfile. Returns slug → version.
+pub fn read_fetched_skill_versions(workdir: &Path) -> std::collections::BTreeMap<String, String> {
+    let lock = read_lockfile(workdir).unwrap_or_default();
+    flatten_lockfile(&lock)
+        .into_iter()
+        .map(|e| (e.slug, e.entry.version))
+        .collect()
+}
+
+/// Read the full lockfile entries as a flat slug → LockEntry map.
 pub fn read_fetched_skill_entries(
     workdir: &Path,
 ) -> std::collections::BTreeMap<String, LockEntry> {
-    let lock_path = workdir.join("skills.lock.json");
-    fs::read_to_string(&lock_path)
-        .ok()
-        .and_then(|raw| serde_json::from_str::<Lockfile>(&raw).ok())
-        .map(|lock| lock.skills)
-        .unwrap_or_default()
+    let lock = read_lockfile(workdir).unwrap_or_default();
+    flatten_lockfile(&lock)
+        .into_iter()
+        .map(|e| (e.slug, e.entry))
+        .collect()
 }
 
 /// Count how many skills belong to a given flock_slug in the lockfile.
 pub fn count_fetched_by_flock_slug(workdir: &Path, flock_slug: &str) -> usize {
-    let entries = read_fetched_skill_entries(workdir);
-    entries
-        .values()
-        .filter(|entry| entry.flock_slug.as_deref() == Some(flock_slug))
+    let lock = read_lockfile(workdir).unwrap_or_default();
+    flatten_lockfile(&lock)
+        .iter()
+        .filter(|e| e.entry.flock_slug.as_deref() == Some(flock_slug))
         .count()
 }
 
 /// Collect the slugs of all fetched skills that belong to a given flock_slug.
 pub fn fetched_slugs_by_flock_slug(workdir: &Path, flock_slug: &str) -> Vec<String> {
-    let entries = read_fetched_skill_entries(workdir);
-    entries
+    let lock = read_lockfile(workdir).unwrap_or_default();
+    flatten_lockfile(&lock)
         .into_iter()
-        .filter(|(_, entry)| entry.flock_slug.as_deref() == Some(flock_slug))
-        .map(|(slug, _)| slug)
+        .filter(|e| e.entry.flock_slug.as_deref() == Some(flock_slug))
+        .map(|e| e.slug)
         .collect()
 }
 
 /// Return the set of flock_slug values that have at least one fetched skill.
 pub fn fetched_flock_slugs(workdir: &Path) -> std::collections::HashSet<String> {
-    let entries = read_fetched_skill_entries(workdir);
-    entries
-        .values()
-        .filter_map(|entry| entry.flock_slug.clone())
+    let lock = read_lockfile(workdir).unwrap_or_default();
+    flatten_lockfile(&lock)
+        .into_iter()
+        .filter_map(|e| e.entry.flock_slug)
         .collect()
 }
 
-/// Remove a skill entry from the lockfile.
-///
-/// Skills live inside cached repo checkouts (`~/.savhub/repos/`), not in a
-/// separate directory, so there is nothing to delete on disk — only the
-/// lockfile tracking entry is removed.
+/// Remove a skill entry from the lockfile by slug.
 pub fn prune_skill(workdir: &Path, slug: &str) -> Result<()> {
     let lock_path = workdir.join("skills.lock.json");
     let mut lock = fs::read_to_string(&lock_path)
         .ok()
         .and_then(|raw| serde_json::from_str::<Lockfile>(&raw).ok())
         .unwrap_or_default();
-    lock.skills.remove(slug);
+
+    // Find and remove the entry matching slug
+    for paths in lock.repos.values_mut() {
+        paths.retain(|_path, entry| {
+            entry.remote_slug.as_deref() != Some(slug)
+        });
+    }
+    lock.repos.retain(|_, paths| !paths.is_empty());
 
     if let Some(parent) = lock_path.parent() {
         fs::create_dir_all(parent)?;

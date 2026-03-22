@@ -127,28 +127,92 @@ pub struct LockEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_slug: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub repo_url: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flock_slug: Option<String>,
-    /// The git revision (commit SHA) of the repo checkout when this skill was fetched.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git_rev: Option<String>,
 }
 
+/// Lock file format: `{ "version": 1, "<repo_url>": { "<skill_path>": LockEntry } }`
+///
+/// Uses `#[serde(flatten)]` so repo URLs appear as top-level keys alongside `version`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Lockfile {
     pub version: u8,
-    pub skills: BTreeMap<String, LockEntry>,
+    #[serde(flatten)]
+    pub repos: BTreeMap<String, BTreeMap<String, LockEntry>>,
 }
 
 impl Default for Lockfile {
     fn default() -> Self {
         Self {
             version: 1,
-            skills: BTreeMap::new(),
+            repos: BTreeMap::new(),
         }
+    }
+}
+
+impl Lockfile {
+    /// Insert an entry keyed by repo_url + path.
+    pub fn insert(&mut self, repo_url: &str, path: &str, entry: LockEntry) {
+        self.repos
+            .entry(repo_url.to_string())
+            .or_default()
+            .insert(path.to_string(), entry);
+    }
+
+    /// Check if any entries exist.
+    pub fn is_empty(&self) -> bool {
+        self.repos.values().all(|paths| paths.is_empty())
+    }
+
+    /// Iterate over all entries as `(repo_url, path, &LockEntry)`.
+    pub fn iter_entries(&self) -> impl Iterator<Item = (&str, &str, &LockEntry)> {
+        self.repos.iter().flat_map(|(repo_url, paths)| {
+            paths
+                .iter()
+                .map(move |(path, entry)| (repo_url.as_str(), path.as_str(), entry))
+        })
+    }
+
+    /// Find an entry by slug (remote_slug or path basename).
+    pub fn find_by_slug(&self, slug: &str) -> Option<(&str, &str, &LockEntry)> {
+        for (repo_url, paths) in &self.repos {
+            for (path, entry) in paths {
+                let entry_slug = entry
+                    .remote_slug
+                    .as_deref()
+                    .unwrap_or_else(|| path.rsplit('/').next().unwrap_or(path));
+                if entry_slug == slug {
+                    return Some((repo_url.as_str(), path.as_str(), entry));
+                }
+            }
+        }
+        None
+    }
+
+    /// Remove an entry by slug. Returns true if found.
+    pub fn remove_by_slug(&mut self, slug: &str) -> bool {
+        let mut found = false;
+        for paths in self.repos.values_mut() {
+            let before = paths.len();
+            paths.retain(|path, entry| {
+                let entry_slug = entry
+                    .remote_slug
+                    .as_deref()
+                    .unwrap_or_else(|| path.rsplit('/').next().unwrap_or(path));
+                entry_slug != slug
+            });
+            if paths.len() < before {
+                found = true;
+            }
+        }
+        self.repos.retain(|_, paths| !paths.is_empty());
+        found
+    }
+
+    /// Count total entries.
+    pub fn len(&self) -> usize {
+        self.repos.values().map(|p| p.len()).sum()
     }
 }
 

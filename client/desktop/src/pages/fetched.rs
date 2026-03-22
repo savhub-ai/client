@@ -43,22 +43,23 @@ pub fn FetchedPage() -> Element {
                 let lock_path = workdir_bg.join("skills.lock.json");
                 let raw = std::fs::read_to_string(&lock_path).ok()?;
                 let lock: Lockfile = serde_json::from_str(&raw).ok()?;
-                let list: Vec<FetchedSkill> = lock
-                    .skills
-                    .iter()
-                    .map(|(slug, entry)| {
-                        let ts = chrono::DateTime::from_timestamp(entry.fetched_at, 0)
+                let flat = savhub_local::skills::flatten_lockfile(&lock);
+                let list: Vec<FetchedSkill> = flat
+                    .into_iter()
+                    .map(|e| {
+                        let slug = e.slug.clone();
+                        let ts = chrono::DateTime::from_timestamp(e.entry.fetched_at, 0)
                             .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
                             .unwrap_or_else(|| "\u{2014}".to_string());
                         FetchedSkill {
                             slug: slug.clone(),
-                            version: entry.version.clone(),
+                            version: e.entry.version,
                             fetched_at: ts,
-                            path: workdir_bg.join(slug),
-                            remote_id: entry.remote_id.clone(),
-                            remote_slug: entry.remote_slug.clone(),
-                            repo_url: entry.repo_url.clone(),
-                            remote_path: entry.path.clone(),
+                            path: workdir_bg.join(&slug),
+                            remote_id: e.entry.remote_id,
+                            remote_slug: e.entry.remote_slug,
+                            repo_url: Some(e.repo_url),
+                            remote_path: Some(e.path),
                         }
                     })
                     .collect();

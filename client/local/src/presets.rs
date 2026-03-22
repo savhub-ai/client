@@ -400,16 +400,15 @@ fn normalize_project_lock_skills(skills: &[ProjectLockedSkill]) -> Vec<ProjectLo
 }
 
 fn lockfile_to_project_added_skills(lockfile: &Lockfile) -> Vec<ProjectAddedSkill> {
-    lockfile
-        .skills
-        .iter()
-        .map(|(slug, entry)| ProjectAddedSkill {
+    crate::skills::flatten_lockfile(lockfile)
+        .into_iter()
+        .map(|e| ProjectAddedSkill {
             sign: None,
-            path: slug.clone(),
-            slug: slug.clone(),
+            path: e.path,
+            slug: e.slug,
             local: None,
-            version: Some(entry.version.clone()),
-            fetched_at: entry.fetched_at,
+            version: Some(e.entry.version),
+            fetched_at: e.entry.fetched_at,
         })
         .collect()
 }
@@ -417,14 +416,23 @@ fn lockfile_to_project_added_skills(lockfile: &Lockfile) -> Vec<ProjectAddedSkil
 fn project_added_skills_to_lockfile(skills: &[ProjectAddedSkill]) -> Lockfile {
     let mut lockfile = Lockfile::default();
     for skill in normalize_added_skills(skills) {
-        lockfile.skills.insert(
-            skill.path,
-            LockEntry {
-                version: skill.version.unwrap_or_else(|| "latest".to_string()),
-                fetched_at: skill.fetched_at,
-                ..LockEntry::default()
-            },
-        );
+        // Use sign as repo_url if available, otherwise use a placeholder
+        let repo_url = skill
+            .sign
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
+        lockfile
+            .repos
+            .entry(repo_url)
+            .or_default()
+            .insert(
+                skill.path,
+                LockEntry {
+                    version: skill.version.unwrap_or_else(|| "latest".to_string()),
+                    fetched_at: skill.fetched_at,
+                    ..LockEntry::default()
+                },
+            );
     }
     lockfile
 }
