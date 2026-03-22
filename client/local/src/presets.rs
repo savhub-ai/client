@@ -180,7 +180,8 @@ impl Default for ProjectLockFile {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnableProjectRepoSkillResult {
     pub slug: String,
-    /// The local folder name under `skills/`. Differs from `slug` when auto-renamed to avoid conflicts.
+    /// The local folder name under `skills/`. Differs from `slug` when auto-renamed to avoid
+    /// conflicts.
     pub local_name: String,
     pub version: Option<String>,
     pub git_hash: Option<String>,
@@ -274,7 +275,9 @@ pub fn repo_checkout_root() -> PathBuf {
     home_dir().join(".savhub").join("repos")
 }
 
-fn dedup_skill_refs(refs: &[crate::selectors::SelectorSkillRef]) -> Vec<crate::selectors::SelectorSkillRef> {
+fn dedup_skill_refs(
+    refs: &[crate::selectors::SelectorSkillRef],
+) -> Vec<crate::selectors::SelectorSkillRef> {
     let mut seen = std::collections::BTreeSet::new();
     refs.iter()
         .filter(|r| !r.repo.trim().is_empty() && seen.insert((*r).clone()))
@@ -910,7 +913,9 @@ fn resolve_project_skills_internal(workdir: &Path) -> Result<Vec<ResolvedProject
         for repo in &matched.repos {
             if let Ok(repo_flocks) = crate::registry::list_repo_flock_refs(&repo.git_url) {
                 for flock_ref in &repo_flocks {
-                    if let Ok(skill_slugs) = crate::registry::list_flock_skill_slugs(&flock_ref.path) {
+                    if let Ok(skill_slugs) =
+                        crate::registry::list_flock_skill_slugs(&flock_ref.path)
+                    {
                         for skill_slug in skill_slugs {
                             let entry = sources.entry(skill_slug).or_default();
                             add_unique(&mut entry.flocks, &flock_ref.path);

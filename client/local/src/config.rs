@@ -50,8 +50,7 @@ impl SecurityLevel {
             }
             SecurityLevel::Verified => {
                 // Only allow verified or checked verified + clean verdict
-                let status_ok =
-                    status.map_or(false, |s| s == "verified" || s == "checked");
+                let status_ok = status.map_or(false, |s| s == "verified" || s == "checked");
                 let verdict_ok = verdict.map_or(true, |v| v == "clean");
                 status_ok && verdict_ok
             }

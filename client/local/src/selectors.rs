@@ -1062,7 +1062,10 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             custom_expression: String::new(),
 
             skills: vec![],
-            flocks: vec![SelectorSkillRef { repo: "github.com/salvo-rs/salvo-skills".to_string(), path: "salvo-skills".to_string() }],
+            flocks: vec![SelectorSkillRef {
+                repo: "github.com/salvo-rs/salvo-skills".to_string(),
+                path: "salvo-skills".to_string(),
+            }],
             repos: vec![],
             enabled: true,
             priority: 20,

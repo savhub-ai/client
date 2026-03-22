@@ -389,13 +389,7 @@ pub(crate) async fn changed_files_between(
     }
 
     let output = tokio::process::Command::new("git")
-        .args([
-            "diff",
-            "--name-only",
-            previous_sha,
-            current_sha,
-            "--",
-        ])
+        .args(["diff", "--name-only", previous_sha, current_sha, "--"])
         .current_dir(repo_dir)
         .output()
         .await
@@ -754,10 +748,7 @@ mod tests {
 
         assert_eq!(a, b);
         assert_ne!(a, c);
-        assert_eq!(
-            a,
-            PathBuf::from("repos/github.com/acme/skills")
-        );
+        assert_eq!(a, PathBuf::from("repos/github.com/acme/skills"));
     }
 
     #[test]

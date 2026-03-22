@@ -156,8 +156,16 @@ impl SelectorForm {
                 _ => MatchMode::AllMatch,
             },
             custom_expression: self.custom_expr.clone(),
-            skills: self.skills.iter().map(|s| savhub_local::selectors::SelectorSkillRef::parse(s)).collect(),
-            flocks: self.flocks.iter().map(|s| savhub_local::selectors::SelectorSkillRef::parse(s)).collect(),
+            skills: self
+                .skills
+                .iter()
+                .map(|s| savhub_local::selectors::SelectorSkillRef::parse(s))
+                .collect(),
+            flocks: self
+                .flocks
+                .iter()
+                .map(|s| savhub_local::selectors::SelectorSkillRef::parse(s))
+                .collect(),
             repos: self
                 .repos
                 .iter()

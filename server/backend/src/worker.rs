@@ -465,10 +465,7 @@ fn run_static_scan_for_skill(pool: &PgPool, skill: SkillRow) {
                 tracing::debug!("[static-scan] completed: skill={} ({})", slug, skill_id);
             }
             Ok(false) => {
-                tracing::debug!(
-                    "[static-scan] no files for skill {} — skipping",
-                    slug,
-                );
+                tracing::debug!("[static-scan] no files for skill {} — skipping", slug,);
             }
             Err(e) => {
                 tracing::error!(

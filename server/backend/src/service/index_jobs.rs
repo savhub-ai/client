@@ -21,8 +21,7 @@ use crate::auth::AuthContext;
 use crate::error::AppError;
 use crate::models::{
     FlockChangeset, FlockRow, IndexJobChangeset, IndexJobRow, NewAiRequestCacheRow, NewFlockRow,
-    NewIndexJobRow, NewRepoRow, NewSkillRow, RepoRow, SkillChangeset,
-    SkillRow,
+    NewIndexJobRow, NewRepoRow, NewSkillRow, RepoRow, SkillChangeset, SkillRow,
 };
 use crate::schema::{ai_request_cache, flocks, index_jobs, repos, skills};
 use crate::state::app_state;
@@ -592,51 +591,46 @@ async fn do_auto_import(
     // If we reused an existing checkout (pull, not fresh clone), compute which
     // candidate indices actually have file changes so we can skip unchanged
     // flocks entirely.
-    let changed_indices: HashSet<usize> =
-        if checkout.reused && checkout.previous_sha.is_some() {
-            let prev = checkout.previous_sha.as_deref().unwrap();
-            let all_changed = super::git_ops::changed_files_between(
-                &checkout.path,
-                prev,
-                &checkout.head_sha,
-            )
-            .await
-            .unwrap_or_default();
+    let changed_indices: HashSet<usize> = if checkout.reused && checkout.previous_sha.is_some() {
+        let prev = checkout.previous_sha.as_deref().unwrap();
+        let all_changed =
+            super::git_ops::changed_files_between(&checkout.path, prev, &checkout.head_sha)
+                .await
+                .unwrap_or_default();
 
-            if all_changed.is_empty() {
-                // No files changed at all — nothing to do.
-                tracing::info!(
-                    "[index{}] no file changes between {} and {}, skipping",
-                    job.id,
-                    &prev[..prev.len().min(8)],
-                    &checkout.head_sha[..checkout.head_sha.len().min(8)],
-                );
-                HashSet::new()
-            } else {
-                tracing::info!(
-                    "[index{}] incremental: {} files changed between {}..{}",
-                    job.id,
-                    all_changed.len(),
-                    &prev[..prev.len().min(8)],
-                    &checkout.head_sha[..checkout.head_sha.len().min(8)],
-                );
-                candidates
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, c)| {
-                        let prefix =
-                            join_repo_relative_path(effective_subdir, &c.relative_dir);
-                        all_changed.iter().any(|f| {
-                            f.starts_with(&format!("{}/", prefix)) || f == &prefix
-                        })
-                    })
-                    .map(|(i, _)| i)
-                    .collect()
-            }
+        if all_changed.is_empty() {
+            // No files changed at all — nothing to do.
+            tracing::info!(
+                "[index{}] no file changes between {} and {}, skipping",
+                job.id,
+                &prev[..prev.len().min(8)],
+                &checkout.head_sha[..checkout.head_sha.len().min(8)],
+            );
+            HashSet::new()
         } else {
-            // Fresh clone → every candidate is "changed"
-            (0..candidates.len()).collect()
-        };
+            tracing::info!(
+                "[index{}] incremental: {} files changed between {}..{}",
+                job.id,
+                all_changed.len(),
+                &prev[..prev.len().min(8)],
+                &checkout.head_sha[..checkout.head_sha.len().min(8)],
+            );
+            candidates
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| {
+                    let prefix = join_repo_relative_path(effective_subdir, &c.relative_dir);
+                    all_changed
+                        .iter()
+                        .any(|f| f.starts_with(&format!("{}/", prefix)) || f == &prefix)
+                })
+                .map(|(i, _)| i)
+                .collect()
+        }
+    } else {
+        // Fresh clone → every candidate is "changed"
+        (0..candidates.len()).collect()
+    };
 
     let is_incremental = checkout.reused && checkout.previous_sha.is_some();
 
@@ -752,8 +746,10 @@ async fn do_auto_import(
         // If this is an incremental update and none of the candidates in this
         // flock group have changed files, just bump the git sha on the
         // existing skills and skip everything else.
-        let flock_has_changes =
-            group.candidate_indices.iter().any(|i| changed_indices.contains(i));
+        let flock_has_changes = group
+            .candidate_indices
+            .iter()
+            .any(|i| changed_indices.contains(i));
 
         if is_incremental && !flock_has_changes {
             let mut conn = db_conn()?;
@@ -1112,7 +1108,6 @@ pub(crate) fn build_auto_import_skills(
     skills.sort_by(|left, right| left.slug.cmp(&right.slug));
     Ok(skills)
 }
-
 
 pub(crate) fn persist_auto_import_flock(
     conn: &mut PgConnection,

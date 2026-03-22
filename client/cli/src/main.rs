@@ -2522,10 +2522,24 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
                     println!("  {}. {}", i + 1, rule.display());
                 }
                 if !d.skills.is_empty() {
-                    println!("Skills:     {}", d.skills.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(", "));
+                    println!(
+                        "Skills:     {}",
+                        d.skills
+                            .iter()
+                            .map(|s| s.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
                 }
                 if !d.flocks.is_empty() {
-                    println!("Flocks:     {}", d.flocks.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(", "));
+                    println!(
+                        "Flocks:     {}",
+                        d.flocks
+                            .iter()
+                            .map(|s| s.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
                 }
                 if !d.repos.is_empty() {
                     let repo_strs: Vec<_> = d.repos.iter().map(|r| r.git_url.as_str()).collect();
@@ -2549,10 +2563,26 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
                 );
             }
             if !result.skills.is_empty() {
-                println!("Skills:  {}", result.skills.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(", "));
+                println!(
+                    "Skills:  {}",
+                    result
+                        .skills
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
             }
             if !result.flocks.is_empty() {
-                println!("Flocks:  {}", result.flocks.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(", "));
+                println!(
+                    "Flocks:  {}",
+                    result
+                        .flocks
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
             }
             if !result.repos.is_empty() {
                 let repo_strs: Vec<_> = result.repos.iter().map(|r| r.git_url.as_str()).collect();
