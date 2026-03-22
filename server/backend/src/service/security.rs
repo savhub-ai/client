@@ -612,7 +612,7 @@ fn load_skill_files_for_ai_eval(
         }
     }
 
-    // Fallback: load from skill_versions
+    // Fallback: load from skill_versions (stored as Vec<StoredBundleFile>)
     if let Some(vid) = skill.latest_version_id {
         let files_json: Option<serde_json::Value> = skill_versions::table
             .find(vid)
@@ -622,6 +622,17 @@ fn load_skill_files_for_ai_eval(
             .ok()
             .flatten();
         if let Some(val) = files_json {
+            // Try StoredBundleFile format first (has path, content, size, sha256)
+            if let Ok(stored) = serde_json::from_value::<Vec<savhub_shared::StoredBundleFile>>(val.clone()) {
+                return stored
+                    .into_iter()
+                    .map(|f| FileContent {
+                        path: f.path,
+                        content: f.content,
+                    })
+                    .collect();
+            }
+            // Try FileContent format directly
             if let Ok(files) = serde_json::from_value::<Vec<FileContent>>(val) {
                 return files;
             }
