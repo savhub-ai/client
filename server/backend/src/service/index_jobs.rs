@@ -1145,7 +1145,7 @@ pub(crate) fn persist_auto_import_flock(
                 security_status: if already_scanned {
                     None // None = no change
                 } else {
-                    Some("unverified".to_string())
+                    Some("unscanned".to_string())
                 },
                 ..Default::default()
             })
@@ -1172,7 +1172,7 @@ pub(crate) fn persist_auto_import_flock(
                 stats_comments: 0,
                 stats_ratings: 0,
                 stats_avg_rating: 0.0,
-                security_status: "unverified".to_string(),
+                security_status: "unscanned".to_string(),
                 stats_max_installs: 0,
                 stats_max_unique_users: 0,
             })
@@ -1201,7 +1201,7 @@ pub(crate) fn persist_auto_import_flock(
                 .runtime
                 .as_ref()
                 .map(|r| serde_json::to_value(r).unwrap_or_default()),
-            security_status: "unverified".to_string(),
+            security_status: "unscanned".to_string(),
             latest_version_id: None,
             tags: serde_json::json!({}),
             moderation_status: "active".to_string(),
@@ -1259,7 +1259,7 @@ pub(crate) fn persist_auto_import_flock(
     } else {
         // Propagate the existing flock security_status to newly-inserted skills
         // so they inherit the previous scan result.
-        let status = prev_security_status.unwrap_or("unverified");
+        let status = prev_security_status.unwrap_or("unscanned");
         diesel::update(skills::table.filter(skills::flock_id.eq(flock_id)))
             .set(skills::security_status.eq(status))
             .execute(conn)?;

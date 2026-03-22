@@ -946,8 +946,9 @@ fn SkillCard(
                         {
                             let (sec_label, sec_color) = match skill.security_status {
                                 savhub_shared::SecurityStatus::Verified => ("V", Theme::SUCCESS),
-                                savhub_shared::SecurityStatus::Flagged => ("!", "#d4a017"),
-                                savhub_shared::SecurityStatus::Rejected => ("X", Theme::DANGER),
+                                savhub_shared::SecurityStatus::Partially => ("P", "#6a9f5b"),
+                                savhub_shared::SecurityStatus::Suspicious => ("!", "#d4a017"),
+                                savhub_shared::SecurityStatus::Malicious => ("X", Theme::DANGER),
                                 _ => ("", ""),
                             };
                             if !sec_label.is_empty() {

@@ -410,7 +410,7 @@ fn persist_flock_import(
         stats_comments: 0,
         stats_ratings: 0,
         stats_avg_rating: 0.0,
-        security_status: "unverified".to_string(),
+        security_status: "unscanned".to_string(),
         stats_max_installs: 0,
         stats_max_unique_users: 0,
     };
@@ -433,7 +433,7 @@ fn persist_flock_import(
         stats_comments: None,
         stats_ratings: None,
         stats_avg_rating: None,
-        security_status: Some("unverified".to_string()),
+        security_status: Some("unscanned".to_string()),
         stats_max_installs: None,
         stats_max_unique_users: None,
     };
@@ -506,7 +506,7 @@ fn persist_flock_import(
                             metadata: skill_metadata,
                             entry_data: None,
                             runtime_data: skill_runtime,
-                            security_status: "unverified".to_string(),
+                            security_status: "unscanned".to_string(),
                             latest_version_id: None,
                             tags: serde_json::json!({}),
                             moderation_status: "active".to_string(),
@@ -567,7 +567,7 @@ fn persist_flock_import(
                         .map(|runtime| serde_json::to_value(runtime))
                         .transpose()
                         .map_err(|error| AppError::Internal(error.to_string()))?,
-                    security_status: "unverified".to_string(),
+                    security_status: "unscanned".to_string(),
                     latest_version_id: None,
                     tags: serde_json::json!({}),
                     moderation_status: "active".to_string(),

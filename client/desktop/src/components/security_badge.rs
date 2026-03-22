@@ -9,20 +9,20 @@ fn badge_colors(status: &SecurityStatus) -> (&'static str, &'static str) {
     // Returns (icon_bg, value_bg)
     match status {
         SecurityStatus::Verified => ("#555", "#2e8b57"),
-        SecurityStatus::Scanning => ("#555", "#1e82d2"),
-        SecurityStatus::Flagged => ("#555", "#b8860b"),
-        SecurityStatus::Rejected => ("#555", "#e0413a"),
-        SecurityStatus::Unverified => ("#555", "#999"),
+        SecurityStatus::Partially => ("#555", "#6a9f5b"),
+        SecurityStatus::Suspicious => ("#555", "#b8860b"),
+        SecurityStatus::Malicious => ("#555", "#e0413a"),
+        SecurityStatus::Unscanned => ("#555", "#999"),
     }
 }
 
 fn badge_label<'a>(status: &SecurityStatus, t: &'a i18n::Texts) -> &'a str {
     match status {
         SecurityStatus::Verified => t.security_verified,
-        SecurityStatus::Scanning => t.security_scanning,
-        SecurityStatus::Flagged => t.security_flagged,
-        SecurityStatus::Rejected => t.security_rejected,
-        SecurityStatus::Unverified => t.security_unverified,
+        SecurityStatus::Partially => t.security_partially,
+        SecurityStatus::Suspicious => t.security_suspicious,
+        SecurityStatus::Malicious => t.security_malicious,
+        SecurityStatus::Unscanned => t.security_unscanned,
     }
 }
 
@@ -37,7 +37,7 @@ pub fn SecurityBadge(status: SecurityStatus) -> Element {
     rsx! {
         span { style: "display: inline-flex; align-items: stretch; font-size: 11px; line-height: 1; border-radius: 3px; overflow: hidden; vertical-align: middle; white-space: nowrap; position: relative; top: -0.1em;",
             span { style: "display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-height: {badge_height}px; padding: 0 5px; background: {icon_bg}; color: #fff;",
-                if matches!(status, SecurityStatus::Verified) {
+                if matches!(status, SecurityStatus::Verified | SecurityStatus::Partially) {
                     crate::icons::LucideIcon { icon: crate::icons::Icon::ShieldCheck, size: 12 }
                 } else {
                     crate::icons::LucideIcon { icon: crate::icons::Icon::Shield, size: 12 }

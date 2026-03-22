@@ -14,12 +14,12 @@ use serde::{Deserialize, Deserializer, Serialize};
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SecurityLevel {
-    /// Only fetch skills with status = "verified" and verdict = "clean".
+    /// Only fetch skills with "verified" or "partially" status.
     #[default]
     Verified,
-    /// Also allow skills with status = "flagged" (suspicious patterns detected).
-    Flagged,
-    /// Allow all skills regardless of security status, including unverified.
+    /// Also allow "suspicious" skills.
+    Suspicious,
+    /// Allow all skills regardless of security status.
     Any,
 }
 
@@ -27,14 +27,14 @@ impl SecurityLevel {
     pub fn as_str(self) -> &'static str {
         match self {
             SecurityLevel::Verified => "verified",
-            SecurityLevel::Flagged => "flagged",
+            SecurityLevel::Suspicious => "suspicious",
             SecurityLevel::Any => "any",
         }
     }
 
     pub fn from_str(s: &str) -> Self {
         match s {
-            "flagged" => SecurityLevel::Flagged,
+            "suspicious" => SecurityLevel::Suspicious,
             "any" => SecurityLevel::Any,
             _ => SecurityLevel::Verified,
         }
@@ -44,13 +44,14 @@ impl SecurityLevel {
     pub fn allows(&self, status: Option<&str>, verdict: Option<&str>) -> bool {
         match self {
             SecurityLevel::Any => true,
-            SecurityLevel::Flagged => {
-                // Allow verified, flagged, scanning, unverified — reject only "rejected"
-                status.map_or(true, |s| s != "rejected")
+            SecurityLevel::Suspicious => {
+                // Allow all except "malicious"
+                status.map_or(true, |s| s != "malicious")
             }
             SecurityLevel::Verified => {
-                // Only allow verified + clean
-                let status_ok = status.map_or(false, |s| s == "verified");
+                // Only allow verified or partially verified + clean verdict
+                let status_ok =
+                    status.map_or(false, |s| s == "verified" || s == "partially");
                 let verdict_ok = verdict.map_or(true, |v| v == "clean");
                 status_ok && verdict_ok
             }

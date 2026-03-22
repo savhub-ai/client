@@ -177,16 +177,6 @@ pub fn run_automated_scans_with_files(
 ) -> Result<String, AppError> {
     let commit_sha = scan_ctx.and_then(|c| c.commit_sha.clone());
 
-    // Set all skills and flock to "scanning" while scans are in progress.
-    for skill in skills {
-        diesel::update(skills::table.find(skill.id))
-            .set(skills::security_status.eq("scanning"))
-            .execute(conn)?;
-    }
-    diesel::update(flocks::table.find(flock_id))
-        .set(flocks::security_status.eq("scanning"))
-        .execute(conn)?;
-
     let scan_enabled = crate::state::app_state().config.security_scan_enabled;
     let mut worst_verdict = ModerationVerdict::Clean;
     let mut static_scan_ran = false;
@@ -314,11 +304,17 @@ pub fn run_automated_scans_with_files(
                 _ => {}
             }
 
-            // Update skill security_status based on static scan verdict
+            // If AI is configured, static clean → "unverified" (LLM will upgrade).
+            // If AI is NOT configured, static clean → "verified" (static is final).
+            let ai_enabled = {
+                let cfg = &crate::state::app_state().config;
+                cfg.ai_provider.is_some() && cfg.ai_api_key.is_some()
+            };
             let security_status = match static_result.verdict {
-                ModerationVerdict::Malicious => "rejected",
-                ModerationVerdict::Suspicious => "flagged",
-                ModerationVerdict::Clean => "unverified", // will be upgraded after LLM eval
+                ModerationVerdict::Malicious => "malicious",
+                ModerationVerdict::Suspicious => "suspicious",
+                ModerationVerdict::Clean if ai_enabled => "unscanned",
+                ModerationVerdict::Clean => "partially",
             };
             diesel::update(skills::table.find(skill.id))
                 .set(skills::security_status.eq(security_status))
@@ -334,24 +330,20 @@ pub fn run_automated_scans_with_files(
                 }
             }
 
-            // ----- Spawn async LLM evaluation -----
-            schedule_llm_eval(skill, flock_id, scan_input, &static_result);
+            // ----- Spawn async LLM evaluation (only if AI is configured) -----
+            if ai_enabled {
+                schedule_llm_eval(skill, flock_id, scan_input, &static_result);
+            }
         }
     }
 
     // If no static scan ran (scan not enabled or no file contents provided),
-    // reset skills from "scanning" back to "unverified" so they don't get
-    // stuck in "scanning" forever.
+    // leave skills at their current status (default "unscanned").
     if !static_scan_ran {
         tracing::info!(
-            "[security] no static scan ran for flock {} — resetting to unverified",
+            "[security] no static scan ran for flock {} — keeping current status",
             flock_id,
         );
-        for skill in skills {
-            diesel::update(skills::table.find(skill.id))
-                .set(skills::security_status.eq("unverified"))
-                .execute(conn)?;
-        }
     } else {
         tracing::info!(
             "[security] static scan completed for flock {}: worst_verdict={}",
@@ -381,12 +373,18 @@ pub fn run_automated_scans_with_files(
         })
         .execute(conn)?;
 
-    // Update flock security_status based on worst verdict (synchronous scans only).
-    // LLM eval may upgrade this later.
+    // Update flock security_status based on worst verdict.
+    // If AI is configured, LLM eval may upgrade to "verified" later.
+    // If AI is NOT configured, static scan is final — clean → "partially".
+    let ai_enabled = {
+        let cfg = &crate::state::app_state().config;
+        cfg.ai_provider.is_some() && cfg.ai_api_key.is_some()
+    };
     let flock_status = match worst_verdict {
-        ModerationVerdict::Malicious => "rejected",
-        ModerationVerdict::Suspicious => "flagged",
-        ModerationVerdict::Clean => "unverified", // may become "verified" after LLM eval
+        ModerationVerdict::Malicious => "malicious",
+        ModerationVerdict::Suspicious => "suspicious",
+        ModerationVerdict::Clean if ai_enabled => "unscanned",
+        ModerationVerdict::Clean => "partially",
     };
     diesel::update(flocks::table.find(flock_id))
         .set(flocks::security_status.eq(flock_status))
@@ -491,8 +489,8 @@ fn schedule_llm_eval(
                 let (combined_verdict, _codes, _summary) =
                     build_moderation_verdict(Some(&static_result_clone), Some(&result.verdict));
                 let final_status = match combined_verdict {
-                    ModerationVerdict::Malicious => "rejected",
-                    ModerationVerdict::Suspicious => "flagged",
+                    ModerationVerdict::Malicious => "malicious",
+                    ModerationVerdict::Suspicious => "suspicious",
                     ModerationVerdict::Clean => "verified",
                 };
                 if let Ok(mut conn) = db_conn() {
@@ -781,20 +779,20 @@ fn license_audit_scan(license: &str) -> String {
 
 pub fn security_status_to_str(status: SecurityStatus) -> &'static str {
     match status {
-        SecurityStatus::Unverified => "unverified",
-        SecurityStatus::Scanning => "scanning",
+        SecurityStatus::Unscanned => "unscanned",
+        SecurityStatus::Partially => "partially",
         SecurityStatus::Verified => "verified",
-        SecurityStatus::Flagged => "flagged",
-        SecurityStatus::Rejected => "rejected",
+        SecurityStatus::Suspicious => "suspicious",
+        SecurityStatus::Malicious => "malicious",
     }
 }
 
 pub fn parse_security_status(value: &str) -> SecurityStatus {
     match value {
-        "scanning" => SecurityStatus::Scanning,
+        "partially" => SecurityStatus::Partially,
         "verified" => SecurityStatus::Verified,
-        "flagged" => SecurityStatus::Flagged,
-        "rejected" => SecurityStatus::Rejected,
-        _ => SecurityStatus::Unverified,
+        "suspicious" => SecurityStatus::Suspicious,
+        "malicious" => SecurityStatus::Malicious,
+        _ => SecurityStatus::Unscanned,
     }
 }

@@ -381,9 +381,9 @@ fn GeneralPane() -> Element {
                     use savhub_local::config::SecurityLevel;
                     let current_sec = *state.security_level.read();
                     let levels = [
-                        (SecurityLevel::Verified, "Verified Only", "Only fetch skills that passed all security scans (recommended)"),
-                        (SecurityLevel::Flagged, "Allow Flagged", "Also allow skills with suspicious patterns detected"),
-                        (SecurityLevel::Any, "Allow All", "Fetch any skill regardless of security status, including unverified"),
+                        (SecurityLevel::Verified, "Verified Only", "Only fetch skills that passed security scans (recommended)"),
+                        (SecurityLevel::Suspicious, "Allow Suspicious", "Also allow skills with suspicious patterns detected"),
+                        (SecurityLevel::Any, "Allow All", "Fetch any skill regardless of security status"),
                     ];
                     rsx! {
                         div { style: "display: flex; flex-direction: column; gap: 6px;",
