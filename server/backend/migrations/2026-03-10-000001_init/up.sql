@@ -24,8 +24,8 @@ CREATE TABLE repos (
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     git_url TEXT NOT NULL UNIQUE,
-    git_hash TEXT NOT NULL,
-    git_branch TEXT,
+    git_ref TEXT,
+    git_sha TEXT NOT NULL,
     license TEXT,
     visibility TEXT NOT NULL DEFAULT 'public',
     verified BOOLEAN NOT NULL DEFAULT FALSE,
@@ -103,8 +103,8 @@ CREATE TABLE skill_versions (
     repo_id UUID NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
     flock_id UUID REFERENCES flocks(id) ON DELETE CASCADE,
     skill_id UUID REFERENCES skills(id) ON DELETE CASCADE,
-    git_hash TEXT NOT NULL,
-    git_branch TEXT NOT NULL,
+    git_ref TEXT NOT NULL,
+    git_sha TEXT NOT NULL,
     version TEXT,
     changelog TEXT NOT NULL,
     tags TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
@@ -200,20 +200,20 @@ CREATE TABLE index_jobs (
     job_type TEXT NOT NULL,
     git_url TEXT NOT NULL,
     git_ref TEXT NOT NULL DEFAULT 'main',
+    git_sha TEXT NOT NULL,
     git_subdir TEXT NOT NULL DEFAULT '.',
+    url_hash TEXT,
     repo_slug TEXT,
     requested_by_user_id UUID NOT NULL REFERENCES users(id),
     result_data JSONB NOT NULL DEFAULT '{}',
     error_message TEXT,
+    progress_pct INT NOT NULL DEFAULT 0,
+    progress_message TEXT NOT NULL DEFAULT '',
+    force_index BOOLEAN NOT NULL DEFAULT FALSE,
     started_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
-    progress_pct INT NOT NULL DEFAULT 0,
-    progress_message TEXT NOT NULL DEFAULT '',
-    commit_sha TEXT,
-    force_index BOOLEAN NOT NULL DEFAULT FALSE,
-    url_hash TEXT
 );
 
 CREATE TABLE index_rules (
@@ -230,14 +230,14 @@ CREATE TABLE security_scans (
     id UUID PRIMARY KEY,
     target_type TEXT NOT NULL,
     target_id UUID NOT NULL,
+    commit_sha TEXT NOT NULL,
     scan_module TEXT NOT NULL,
     result TEXT NOT NULL,
     severity TEXT,
     details JSONB NOT NULL DEFAULT '{}',
     scanned_by_user_id UUID REFERENCES users(id),
     created_at TIMESTAMPTZ NOT NULL,
-    version_id UUID REFERENCES skill_versions(id) ON DELETE SET NULL,
-    commit_sha TEXT
+    version_id UUID REFERENCES skill_versions(id) ON DELETE SET NULL
 );
 
 CREATE TABLE site_admins (
