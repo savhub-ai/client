@@ -39,7 +39,7 @@ fn has_cached_ai_request(
     ai_request_cache::table
         .filter(ai_request_cache::task_type.eq(task_type))
         .filter(ai_request_cache::target_id.eq(target_id))
-        .filter(ai_request_cache::commit_sha.eq(commit_sha))
+        .filter(ai_request_cache::commit_hash.eq(commit_sha))
         .filter(ai_request_cache::success.eq(true))
         .count()
         .get_result::<i64>(conn)
@@ -64,7 +64,7 @@ fn cache_ai_request(
             task_type: task_type.to_string(),
             target_type: target_type.to_string(),
             target_id,
-            commit_sha: commit_sha.to_string(),
+            commit_hash: commit_sha.to_string(),
             success,
             error_message: error_message.map(|s| s.to_string()),
             created_at: Utc::now(),
@@ -72,7 +72,7 @@ fn cache_ai_request(
         .on_conflict((
             ai_request_cache::task_type,
             ai_request_cache::target_id,
-            ai_request_cache::commit_sha,
+            ai_request_cache::commit_hash,
         ))
         .do_update()
         .set((
@@ -1201,6 +1201,7 @@ pub(crate) fn persist_auto_import_flock(
                 .runtime
                 .as_ref()
                 .map(|r| serde_json::to_value(r).unwrap_or_default()),
+            scan_commit_hash: commit_sha.to_string(),
             security_status: "unscanned".to_string(),
             latest_version_id: None,
             tags: serde_json::json!({}),
@@ -1237,7 +1238,7 @@ pub(crate) fn persist_auto_import_flock(
             .select(SkillRow::as_select())
             .load::<SkillRow>(conn)?;
         let scan_ctx = ScanContext {
-            commit_sha: Some(commit_sha.to_string()),
+            commit_hash: Some(commit_sha.to_string()),
         };
         run_automated_scans_with_files(
             conn,

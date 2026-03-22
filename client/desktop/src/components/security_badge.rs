@@ -19,7 +19,7 @@ fn badge_colors(status: &SecurityStatus) -> (&'static str, &'static str) {
 fn badge_label<'a>(status: &SecurityStatus, t: &'a i18n::Texts) -> &'a str {
     match status {
         SecurityStatus::Verified => t.security_verified,
-        SecurityStatus::Partially => t.security_partially,
+        SecurityStatus::Partially => t.security_validated,
         SecurityStatus::Suspicious => t.security_suspicious,
         SecurityStatus::Malicious => t.security_malicious,
         SecurityStatus::Unscanned => t.security_unscanned,

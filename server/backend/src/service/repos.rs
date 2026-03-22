@@ -506,6 +506,7 @@ fn persist_flock_import(
                             metadata: skill_metadata,
                             entry_data: None,
                             runtime_data: skill_runtime,
+                            scan_commit_hash: String::new(),
                             security_status: "unscanned".to_string(),
                             latest_version_id: None,
                             tags: serde_json::json!({}),
@@ -567,6 +568,7 @@ fn persist_flock_import(
                         .map(|runtime| serde_json::to_value(runtime))
                         .transpose()
                         .map_err(|error| AppError::Internal(error.to_string()))?,
+                    scan_commit_hash: String::new(),
                     security_status: "unscanned".to_string(),
                     latest_version_id: None,
                     tags: serde_json::json!({}),

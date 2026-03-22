@@ -107,7 +107,7 @@ pub fn update_skill_security_status(
         &mut conn,
         Some(auth.user.id),
         "flock_skill.security_status_update",
-        "flock_skill_entry",
+        "flock_skill",
         None,
         json!({
             "repo_domain": repo_domain,
@@ -147,7 +147,7 @@ pub struct SkillScanInput {
 
 /// Context for the scan pipeline that ties results to a specific git commit.
 pub struct ScanContext {
-    pub commit_sha: Option<String>,
+    pub commit_hash: Option<String>,
 }
 
 /// Run all automated scans (static + legacy content_analysis + license_audit).
@@ -175,7 +175,29 @@ pub fn run_automated_scans_with_files(
     skill_files: &[SkillScanInput],
     scan_ctx: Option<&ScanContext>,
 ) -> Result<String, AppError> {
-    let commit_sha = scan_ctx.and_then(|c| c.commit_sha.clone());
+    let commit_hash = scan_ctx.and_then(|c| c.commit_hash.clone());
+
+    // Skip if this commit_hash was already scanned for this flock.
+    if let Some(ref hash) = commit_hash {
+        if !hash.is_empty() {
+            let already_scanned = security_scans::table
+                .filter(security_scans::target_type.eq("flock"))
+                .filter(security_scans::target_id.eq(flock_id))
+                .filter(security_scans::commit_hash.eq(hash))
+                .select(security_scans::id)
+                .first::<Uuid>(conn)
+                .optional()?
+                .is_some();
+            if already_scanned {
+                tracing::info!(
+                    "[security] flock {} already scanned at commit {} — skipping",
+                    flock_id,
+                    &hash[..hash.len().min(8)],
+                );
+                return Ok("clean".to_string());
+            }
+        }
+    }
 
     let scan_enabled = crate::state::app_state().config.security_scan_enabled;
     let mut worst_verdict = ModerationVerdict::Clean;
@@ -219,7 +241,7 @@ pub fn run_automated_scans_with_files(
         diesel::insert_into(security_scans::table)
             .values(NewSecurityScanRow {
                 id: Uuid::now_v7(),
-                target_type: "flock_skill_entry".to_string(),
+                target_type: "flock_skill".to_string(),
                 target_id: skill.id,
                 scan_module: "content_analysis".to_string(),
                 result: content_result,
@@ -228,7 +250,7 @@ pub fn run_automated_scans_with_files(
                 scanned_by_user_id: None,
                 created_at: Utc::now(),
                 version_id: skill_version_id,
-                commit_sha: commit_sha.clone().unwrap_or_default(),
+                commit_hash: commit_hash.clone().unwrap_or_default(),
             })
             .execute(conn)?;
 
@@ -242,7 +264,7 @@ pub fn run_automated_scans_with_files(
         diesel::insert_into(security_scans::table)
             .values(NewSecurityScanRow {
                 id: Uuid::now_v7(),
-                target_type: "flock_skill_entry".to_string(),
+                target_type: "flock_skill".to_string(),
                 target_id: skill.id,
                 scan_module: "license_audit".to_string(),
                 result: license_result,
@@ -251,7 +273,7 @@ pub fn run_automated_scans_with_files(
                 scanned_by_user_id: None,
                 created_at: Utc::now(),
                 version_id: skill_version_id,
-                commit_sha: commit_sha.clone().unwrap_or_default(),
+                commit_hash: commit_hash.clone().unwrap_or_default(),
             })
             .execute(conn)?;
 
@@ -277,7 +299,7 @@ pub fn run_automated_scans_with_files(
             diesel::insert_into(security_scans::table)
                 .values(NewSecurityScanRow {
                     id: Uuid::now_v7(),
-                    target_type: "flock_skill_entry".to_string(),
+                    target_type: "flock_skill".to_string(),
                     target_id: skill.id,
                     scan_module: "static_moderation".to_string(),
                     result: static_result.verdict.to_string(),
@@ -291,7 +313,7 @@ pub fn run_automated_scans_with_files(
                     scanned_by_user_id: None,
                     created_at: Utc::now(),
                     version_id: scan_input.version_id,
-                    commit_sha: commit_sha.clone().unwrap_or_default(),
+                    commit_hash: commit_hash.clone().unwrap_or_default(),
                 })
                 .execute(conn)?;
 
@@ -367,7 +389,7 @@ pub fn run_automated_scans_with_files(
             scanned_by_user_id: None,
             created_at: Utc::now(),
             version_id: None,
-            commit_sha: commit_sha.clone().unwrap_or_default(),
+            commit_hash: commit_hash.clone().unwrap_or_default(),
         })
         .execute(conn)?;
 

@@ -720,7 +720,7 @@ pub async fn evaluate_skill_with_llm(
     diesel::insert_into(security_scans::table)
         .values(NewSecurityScanRow {
             id: Uuid::now_v7(),
-            target_type: "flock_skill_entry".to_string(),
+            target_type: "flock_skill".to_string(),
             target_id: skill_id,
             scan_module: "llm_security_eval".to_string(),
             result: verdict_to_status(&result.verdict).to_string(),
@@ -733,7 +733,7 @@ pub async fn evaluate_skill_with_llm(
             scanned_by_user_id: None,
             created_at: Utc::now(),
             version_id: None,
-            commit_sha: String::new(),
+            commit_hash: String::new(),
         })
         .execute(&mut conn)?;
 
@@ -753,7 +753,7 @@ fn store_llm_error(message: &str, skill_id: Uuid, flock_id: Uuid, model: &str) {
         let _ = diesel::insert_into(security_scans::table)
             .values(NewSecurityScanRow {
                 id: Uuid::now_v7(),
-                target_type: "flock_skill_entry".to_string(),
+                target_type: "flock_skill".to_string(),
                 target_id: skill_id,
                 scan_module: "llm_security_eval".to_string(),
                 result: "error".to_string(),
@@ -766,7 +766,7 @@ fn store_llm_error(message: &str, skill_id: Uuid, flock_id: Uuid, model: &str) {
                 scanned_by_user_id: None,
                 created_at: Utc::now(),
                 version_id: None,
-                commit_sha: String::new(),
+                commit_hash: String::new(),
             })
             .execute(&mut conn);
     }

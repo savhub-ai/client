@@ -62,6 +62,7 @@ pub fn index_skill(auth: &AuthContext, request: IndexRequest) -> Result<PublishR
             parsed_metadata: index.parsed_metadata.clone(),
             search_document: index.search_document.clone(),
             fingerprint: index.fingerprint.clone(),
+            scan_commit_hash: String::new(),
             created_by: auth.user.id,
             created_at: now,
             soft_deleted_at: None,
