@@ -11,11 +11,10 @@ use std::{fs, thread};
 use anyhow::{Context, Result, anyhow, bail};
 use chrono::{DateTime, Utc};
 use clap::{ArgAction, Args, Parser, Subcommand};
-use dialoguer::{Confirm, Select};
+use dialoguer::Confirm;
 use savhub_local::api::ApiClient;
 use savhub_local::config::{read_global_config, write_global_config};
 use savhub_local::presets::{
-    EnableProjectRepoSkillResult, ProjectSkillConflictChoice, ResolvedSkillSources,
     disable_project_skill, enable_repo_skill_in_project, read_project_added_skills,
     write_project_added_skills,
 };
@@ -316,10 +315,6 @@ struct EnableArgs {
     repo: String,
     #[arg(long = "selector", alias = "detector")]
     selectors: Vec<String>,
-    #[arg(long, action = ArgAction::SetTrue)]
-    use_repo: bool,
-    #[arg(long, action = ArgAction::SetTrue)]
-    keep_existing: bool,
 }
 
 #[derive(Debug, Args)]
@@ -860,110 +855,28 @@ async fn cmd_search(opts: &GlobalOpts, args: SearchArgs) -> Result<()> {
 }
 
 fn cmd_enable(opts: &GlobalOpts, args: EnableArgs) -> Result<()> {
-    if args.use_repo && args.keep_existing {
-        bail!("use only one of --use-repo or --keep-existing");
-    }
+    let result = enable_repo_skill_in_project(&opts.workdir, &args.repo, &args.slug)?;
 
-    let sources = ResolvedSkillSources {
-        selectors: args.selectors.clone(),
-        flocks: Vec::new(),
-        manual: true,
-    };
-    let initial_choice = if args.use_repo {
-        ProjectSkillConflictChoice::UseRepo
-    } else if args.keep_existing {
-        ProjectSkillConflictChoice::KeepExisting
+    let revision = result
+        .version
+        .as_deref()
+        .map(|v| format!("v{v}"))
+        .or(result
+            .git_commit
+            .as_deref()
+            .map(|v| v.chars().take(12).collect::<String>()))
+        .unwrap_or_else(|| "latest".to_string());
+
+    if result.local_name != result.slug {
+        println!(
+            "Enabled {} from repo '{}' as '{}' (renamed to avoid conflict) ({revision}).",
+            result.slug, args.repo, result.local_name
+        );
     } else {
-        ProjectSkillConflictChoice::Ask
-    };
-
-    match enable_repo_skill_in_project(
-        &opts.workdir,
-        &args.repo,
-        &args.slug,
-        initial_choice,
-        sources.clone(),
-    )? {
-        EnableProjectRepoSkillResult::Enabled {
-            slug,
-            overwritten,
-            version,
-            git_commit,
-        } => {
-            let revision = version
-                .map(|value| format!("v{value}"))
-                .or(git_commit.map(|value| value.chars().take(12).collect::<String>()))
-                .unwrap_or_else(|| "latest".to_string());
-            if overwritten {
-                println!(
-                    "Enabled {slug} from repo '{}' and replaced the existing project skill ({revision}).",
-                    args.repo
-                );
-            } else {
-                println!("Enabled {slug} from repo '{}' ({revision}).", args.repo);
-            }
-        }
-        EnableProjectRepoSkillResult::KeptExisting { slug } => {
-            println!("Kept the existing project skill for {slug}.");
-        }
-        EnableProjectRepoSkillResult::Conflict(conflict) => {
-            if !opts.input_allowed {
-                bail!(
-                    "skill '{}' already exists at {}. Re-run with --use-repo or --keep-existing.",
-                    conflict.slug,
-                    conflict.existing_skill_path.display()
-                );
-            }
-
-            let selection = Select::new()
-                .with_prompt(format!(
-                    "Skill '{}' already exists. Which one should be used?",
-                    conflict.slug
-                ))
-                .items([
-                    format!("Use repo skill from {}", conflict.repo_skill_path.display()),
-                    format!(
-                        "Keep existing project skill at {}",
-                        conflict.existing_skill_path.display()
-                    ),
-                ])
-                .default(0)
-                .interact()
-                .map_err(|error| anyhow!("failed to read selection: {error}"))?;
-
-            let chosen = if selection == 0 {
-                ProjectSkillConflictChoice::UseRepo
-            } else {
-                ProjectSkillConflictChoice::KeepExisting
-            };
-
-            match enable_repo_skill_in_project(
-                &opts.workdir,
-                &args.repo,
-                &args.slug,
-                chosen,
-                sources,
-            )? {
-                EnableProjectRepoSkillResult::Enabled {
-                    slug, overwritten, ..
-                } => {
-                    if overwritten {
-                        println!(
-                            "Enabled {slug} from repo '{}' and replaced the existing project skill.",
-                            args.repo
-                        );
-                    } else {
-                        println!("Enabled {slug} from repo '{}'.", args.repo);
-                    }
-                }
-                EnableProjectRepoSkillResult::KeptExisting { slug } => {
-                    println!("Kept the existing project skill for {slug}.");
-                }
-                EnableProjectRepoSkillResult::Conflict(_) => {
-                    bail!("unexpected conflict state while enabling project skill");
-                }
-            }
-        }
+        println!(
+            "Enabled {} from repo '{}' ({revision}).",
+            result.slug, args.repo
+        );
     }
 
     Ok(())

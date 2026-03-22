@@ -181,33 +181,31 @@ impl Default for ProjectLockFile {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProjectSkillConflictChoice {
-    Ask,
-    UseRepo,
-    KeepExisting,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProjectSkillConflict {
+pub struct EnableProjectRepoSkillResult {
     pub slug: String,
-    pub repo_name: String,
-    pub repo_skill_path: PathBuf,
-    pub existing_skill_path: PathBuf,
+    /// The local folder name under `skills/`. Differs from `slug` when auto-renamed to avoid conflicts.
+    pub local_name: String,
+    pub version: Option<String>,
+    pub git_commit: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EnableProjectRepoSkillResult {
-    Enabled {
-        slug: String,
-        overwritten: bool,
-        version: Option<String>,
-        git_commit: Option<String>,
-    },
-    KeptExisting {
-        slug: String,
-    },
-    Conflict(ProjectSkillConflict),
+/// Find a unique folder name under `skills_dir` for the given slug.
+/// If `skills_dir/{slug}/` doesn't exist, returns `slug` as-is.
+/// Otherwise appends `-2`, `-3`, ... until a free name is found.
+fn unique_skill_folder_name(skills_dir: &Path, slug: &str) -> String {
+    let candidate = skills_dir.join(slug);
+    if !candidate.exists() {
+        return slug.to_string();
+    }
+    let mut counter = 2u32;
+    loop {
+        let name = format!("{slug}-{counter}");
+        if !skills_dir.join(&name).exists() {
+            return name;
+        }
+        counter += 1;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -615,31 +613,12 @@ pub fn enable_repo_skill_in_project(
     workdir: &Path,
     repo_name: &str,
     slug: &str,
-    conflict_choice: ProjectSkillConflictChoice,
-    _sources: ResolvedSkillSources,
 ) -> Result<EnableProjectRepoSkillResult> {
     let repo_skill = find_repo_skill(repo_name, slug)?;
     let slug = repo_skill.skill.slug.clone();
-    let target = project_skills_dir(workdir).join(&slug);
-    let overwritten = target.exists();
-
-    if overwritten {
-        let conflict = ProjectSkillConflict {
-            slug: slug.clone(),
-            repo_name: repo_skill.repo_name.clone(),
-            repo_skill_path: repo_skill.skill.folder.clone(),
-            existing_skill_path: target.clone(),
-        };
-        match conflict_choice {
-            ProjectSkillConflictChoice::Ask => {
-                return Ok(EnableProjectRepoSkillResult::Conflict(conflict));
-            }
-            ProjectSkillConflictChoice::KeepExisting => {
-                return Ok(EnableProjectRepoSkillResult::KeptExisting { slug });
-            }
-            ProjectSkillConflictChoice::UseRepo => {}
-        }
-    }
+    let skills_dir = project_skills_dir(workdir);
+    let local_name = unique_skill_folder_name(&skills_dir, &slug);
+    let target = skills_dir.join(&local_name);
 
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)?;
@@ -668,6 +647,11 @@ pub fn enable_repo_skill_in_project(
         },
     )?;
 
+    let local_field = if local_name != slug {
+        Some(local_name.clone())
+    } else {
+        None
+    };
     upsert_project_added_skill(
         workdir,
         ProjectAddedSkill {
@@ -675,15 +659,15 @@ pub fn enable_repo_skill_in_project(
             path: slug.clone(),
             slug: slug.clone(),
             repo: None,
-            local: None,
+            local: local_field,
             version: version_info.version.clone(),
             fetched_at,
         },
     )?;
 
-    Ok(EnableProjectRepoSkillResult::Enabled {
+    Ok(EnableProjectRepoSkillResult {
         slug,
-        overwritten,
+        local_name,
         version: version_info.version,
         git_commit: version_info.git_commit,
     })
@@ -694,7 +678,6 @@ pub fn enable_fetched_skill_in_project(
     repo_url: &str,
     skill_path: &str,
     slug: &str,
-    conflict_choice: ProjectSkillConflictChoice,
 ) -> Result<EnableProjectRepoSkillResult> {
     let slug = sanitize_slug(slug);
     if slug.is_empty() {
@@ -721,26 +704,9 @@ pub fn enable_fetched_skill_in_project(
         bail!("fetched skill not found at {}", skill_folder.display());
     }
 
-    let target = project_skills_dir(workdir).join(&slug);
-    let overwritten = target.exists();
-
-    if overwritten {
-        let conflict = ProjectSkillConflict {
-            slug: slug.clone(),
-            repo_name: stripped.to_string(),
-            repo_skill_path: skill_folder.clone(),
-            existing_skill_path: target.clone(),
-        };
-        match conflict_choice {
-            ProjectSkillConflictChoice::Ask => {
-                return Ok(EnableProjectRepoSkillResult::Conflict(conflict));
-            }
-            ProjectSkillConflictChoice::KeepExisting => {
-                return Ok(EnableProjectRepoSkillResult::KeptExisting { slug });
-            }
-            ProjectSkillConflictChoice::UseRepo => {}
-        }
-    }
+    let skills_dir = project_skills_dir(workdir);
+    let local_name = unique_skill_folder_name(&skills_dir, &slug);
+    let target = skills_dir.join(&local_name);
 
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)?;
@@ -765,6 +731,11 @@ pub fn enable_fetched_skill_in_project(
         },
     )?;
 
+    let local_field = if local_name != slug {
+        Some(local_name.clone())
+    } else {
+        None
+    };
     upsert_project_added_skill(
         workdir,
         ProjectAddedSkill {
@@ -772,15 +743,15 @@ pub fn enable_fetched_skill_in_project(
             path: slug.clone(),
             slug: slug.clone(),
             repo: Some(repo_url.to_string()),
-            local: None,
+            local: local_field,
             version: version_info.version.clone(),
             fetched_at,
         },
     )?;
 
-    Ok(EnableProjectRepoSkillResult::Enabled {
+    Ok(EnableProjectRepoSkillResult {
         slug,
-        overwritten,
+        local_name,
         version: version_info.version,
         git_commit: version_info.git_commit,
     })
