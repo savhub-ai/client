@@ -19,9 +19,9 @@ pub struct ProjectSelectorMatch {
     #[serde(alias = "selector")]
     pub selector: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub flocks: Vec<String>,
+    pub flocks: Vec<crate::selectors::SelectorSkillRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub skills: Vec<String>,
+    pub skills: Vec<crate::selectors::SelectorSkillRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub repos: Vec<crate::selectors::SelectorRepo>,
 }
@@ -274,18 +274,12 @@ pub fn repo_checkout_root() -> PathBuf {
     home_dir().join(".savhub").join("repos")
 }
 
-fn normalize_unique_slugs<I>(values: I) -> Vec<String>
-where
-    I: IntoIterator<Item = String>,
-{
-    let mut normalized = Vec::new();
-    for value in values {
-        let slug = sanitize_slug(&value);
-        if !slug.is_empty() && !normalized.contains(&slug) {
-            normalized.push(slug);
-        }
-    }
-    normalized
+fn dedup_skill_refs(refs: &[crate::selectors::SelectorSkillRef]) -> Vec<crate::selectors::SelectorSkillRef> {
+    let mut seen = std::collections::BTreeSet::new();
+    refs.iter()
+        .filter(|r| !r.repo.trim().is_empty() && seen.insert((*r).clone()))
+        .cloned()
+        .collect()
 }
 
 fn normalize_selector_matches(matches: &[ProjectSelectorMatch]) -> Vec<ProjectSelectorMatch> {
@@ -295,8 +289,8 @@ fn normalize_selector_matches(matches: &[ProjectSelectorMatch]) -> Vec<ProjectSe
         if selector.is_empty() {
             continue;
         }
-        let flocks = normalize_unique_slugs(matched.flocks.clone());
-        let skills = normalize_unique_slugs(matched.skills.clone());
+        let flocks = dedup_skill_refs(&matched.flocks);
+        let skills = dedup_skill_refs(&matched.skills);
         let repos = {
             let mut seen = std::collections::BTreeSet::new();
             matched
@@ -898,28 +892,28 @@ fn resolve_project_skills_internal(workdir: &Path) -> Result<Vec<ResolvedProject
 
     // Expand skills from matched selectors
     for matched in &config.selectors.matched {
-        for skill_slug in &matched.skills {
-            let entry = sources.entry(skill_slug.clone()).or_default();
+        for skill_ref in &matched.skills {
+            let entry = sources.entry(skill_ref.path.clone()).or_default();
             add_unique(&mut entry.selectors, &matched.selector);
         }
         // Expand flocks from each matched selector
-        for flock_slug in &matched.flocks {
-            if let Ok(skill_slugs) = crate::registry::list_flock_skill_slugs(flock_slug) {
+        for flock_ref in &matched.flocks {
+            if let Ok(skill_slugs) = crate::registry::list_flock_skill_slugs(&flock_ref.path) {
                 for skill_slug in skill_slugs {
                     let entry = sources.entry(skill_slug).or_default();
-                    add_unique(&mut entry.flocks, flock_slug);
+                    add_unique(&mut entry.flocks, &flock_ref.path);
                     add_unique(&mut entry.selectors, &matched.selector);
                 }
             }
         }
         // Expand repos: look up all flocks in each repo, then expand those flocks
         for repo in &matched.repos {
-            if let Ok(repo_flocks) = crate::registry::list_repo_flock_signs(&repo.git_url) {
-                for flock_slug in &repo_flocks {
-                    if let Ok(skill_slugs) = crate::registry::list_flock_skill_slugs(flock_slug) {
+            if let Ok(repo_flocks) = crate::registry::list_repo_flock_refs(&repo.git_url) {
+                for flock_ref in &repo_flocks {
+                    if let Ok(skill_slugs) = crate::registry::list_flock_skill_slugs(&flock_ref.path) {
                         for skill_slug in skill_slugs {
                             let entry = sources.entry(skill_slug).or_default();
-                            add_unique(&mut entry.flocks, flock_slug);
+                            add_unique(&mut entry.flocks, &flock_ref.path);
                             add_unique(&mut entry.selectors, &matched.selector);
                         }
                     }

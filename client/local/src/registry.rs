@@ -662,14 +662,19 @@ pub fn list_flock_skill_slugs(flock_slug: &str) -> Result<Vec<String>> {
         .collect())
 }
 
-pub fn list_repo_flock_signs(repo_sign: &str) -> Result<Vec<String>> {
+pub fn list_repo_flock_refs(
+    repo_sign: &str,
+) -> Result<Vec<crate::selectors::SelectorSkillRef>> {
     let Some(detail) = remote_repo_detail(repo_sign)? else {
         return Ok(Vec::new());
     };
     Ok(detail
         .flocks
         .into_iter()
-        .map(|flock| format!("{}/{}", flock.repo_url, flock.slug))
+        .map(|flock| crate::selectors::SelectorSkillRef {
+            repo: flock.repo_url,
+            path: flock.slug,
+        })
         .collect())
 }
 

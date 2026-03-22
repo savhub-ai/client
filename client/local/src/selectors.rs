@@ -147,20 +147,23 @@ pub struct SelectorSkillRef {
 
 impl std::fmt::Display for SelectorSkillRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.sign())
+        if self.path.is_empty() {
+            write!(f, "{}", self.repo)
+        } else {
+            write!(f, "{}/{}", self.repo, self.path)
+        }
     }
 }
 
 impl SelectorSkillRef {
-    /// Build from a sign string like `"github.com/org/repo/path/to/skill"`.
+    /// Parse a `"domain/owner/repo/path"` string into `{repo, path}`.
     /// Splits on the third `/` to separate repo from path.
-    pub fn from_sign(sign: &str) -> Self {
-        let trimmed = sign
+    pub fn parse(input: &str) -> Self {
+        let trimmed = input
             .trim()
             .trim_start_matches("https://")
             .trim_start_matches("http://")
             .trim_end_matches('/');
-        // Split: domain/owner/repo  /  remaining-path
         let mut slashes = 0;
         let mut split_at = None;
         for (i, ch) in trimmed.char_indices() {
@@ -182,15 +185,6 @@ impl SelectorSkillRef {
                 repo: trimmed.to_string(),
                 path: String::new(),
             }
-        }
-    }
-
-    /// Reconstruct the full sign string: `"{repo}/{path}"`.
-    pub fn sign(&self) -> String {
-        if self.path.is_empty() {
-            self.repo.clone()
-        } else {
-            format!("{}/{}", self.repo, self.path)
         }
     }
 }
@@ -778,11 +772,11 @@ pub fn generate_selector_id() -> String {
 /// Deduplicate skills, flocks, and repos in a selector before saving.
 fn dedup_selector(mut d: SelectorDefinition) -> SelectorDefinition {
     let mut seen = std::collections::BTreeSet::new();
-    d.skills.retain(|s| seen.insert(s.sign()));
+    d.skills.retain(|s| seen.insert(s.clone()));
     let mut seen = std::collections::BTreeSet::new();
-    d.flocks.retain(|s| seen.insert(s.sign()));
+    d.flocks.retain(|s| seen.insert(s.clone()));
     let mut seen = std::collections::BTreeSet::new();
-    d.repos.retain(|r| seen.insert(r.git_url.clone()));
+    d.repos.retain(|r| seen.insert(r.clone()));
     d
 }
 
@@ -892,13 +886,12 @@ pub fn run_selectors(project_root: &Path) -> Result<SelectorRunResult> {
             continue;
         }
         if selector.evaluate(project_root) {
-            // Expand repos into flocks: look up all flock signs for each repo
+            // Expand repos into flocks: look up all flock refs for each repo
             let mut expanded_flocks = selector.flocks.clone();
             for repo in &selector.repos {
-                if let Ok(repo_flocks) = crate::registry::list_repo_flock_signs(&repo.git_url) {
-                    for flock_sign in repo_flocks {
-                        let flock_ref = SelectorSkillRef::from_sign(&flock_sign);
-                        if !expanded_flocks.iter().any(|f| f.sign() == flock_ref.sign()) {
+                if let Ok(repo_flocks) = crate::registry::list_repo_flock_refs(&repo.git_url) {
+                    for flock_ref in repo_flocks {
+                        if !expanded_flocks.contains(&flock_ref) {
                             expanded_flocks.push(flock_ref);
                         }
                     }
@@ -922,7 +915,7 @@ pub fn run_selectors(project_root: &Path) -> Result<SelectorRunResult> {
     let mut skills = Vec::new();
     for m in &matched {
         for skill in &m.skills {
-            if seen_skills.insert(skill.sign()) {
+            if seen_skills.insert(skill.clone()) {
                 skills.push(skill.clone());
             }
         }
@@ -933,7 +926,7 @@ pub fn run_selectors(project_root: &Path) -> Result<SelectorRunResult> {
     let mut flocks = Vec::new();
     for m in &matched {
         for flock in &m.flocks {
-            if seen_flocks.insert(flock.sign()) {
+            if seen_flocks.insert(flock.clone()) {
                 flocks.push(flock.clone());
             }
         }
@@ -1069,7 +1062,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             custom_expression: String::new(),
 
             skills: vec![],
-            flocks: vec![SelectorSkillRef::from_sign("github.com/salvo-rs/salvo-skills/salvo-skills")],
+            flocks: vec![SelectorSkillRef { repo: "github.com/salvo-rs/salvo-skills".to_string(), path: "salvo-skills".to_string() }],
             repos: vec![],
             enabled: true,
             priority: 20,
