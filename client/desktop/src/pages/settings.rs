@@ -790,7 +790,9 @@ pub fn save_config(
         .unwrap_or_else(|| std::path::PathBuf::from(".savhub"));
 
     let config = savhub_local::config::GlobalConfig {
-        registry: Some(base.to_string()),
+        rest_api: Some(savhub_local::config::RestApiConfig {
+            base_url: Some(base.to_string()),
+        }),
         token: if token.trim().is_empty() {
             None
         } else {

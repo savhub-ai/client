@@ -20,7 +20,7 @@ use savhub_shared::{
     SecurityStatus, SecuritySummary, SkillDetailResponse, SkillListItem,
 };
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value;
 
 use crate::config::get_config_dir;
@@ -29,50 +29,17 @@ use crate::skills::{RepoSkillOrigin, copy_skill_folder, write_repo_skill_origin}
 const DEFAULT_API_BASE: &str = "https://savhub.ai/api/v1";
 const PAGE_LIMIT: usize = 100;
 
-#[derive(Debug, Clone, Default, Deserialize)]
-struct UserConfigFile {
-    #[serde(default)]
-    rest_api: Option<UserRestApi>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct UserRestApi {
-    #[serde(default)]
-    base_url: Option<String>,
-}
-
-fn user_config_path() -> Option<PathBuf> {
-    let dir = get_config_dir().ok()?;
-    Some(dir.join("config.toml"))
-}
-
 pub fn read_api_base_url() -> Option<String> {
-    if let Some(path) = user_config_path()
-        && let Ok(raw) = fs::read_to_string(&path)
-    {
-        let parsed = toml::from_str::<UserConfigFile>(&raw).ok();
-        if let Some(cfg) = parsed
-            && let Some(url) = cfg
-                .rest_api
-                .and_then(|rest| rest.base_url)
-                .filter(|value| !value.trim().is_empty())
-        {
-            return Some(url);
-        }
-    }
-    None
+    crate::config::read_global_config()
+        .ok()
+        .flatten()
+        .and_then(|cfg| cfg.rest_api)
+        .and_then(|rest| rest.base_url)
+        .filter(|value| !value.trim().is_empty())
 }
 
 fn registry_api_base() -> String {
-    read_api_base_url()
-        .or_else(|| {
-            crate::config::read_global_config()
-                .ok()
-                .flatten()
-                .and_then(|cfg| cfg.registry)
-                .filter(|value| !value.trim().is_empty())
-        })
-        .unwrap_or_else(|| DEFAULT_API_BASE.to_string())
+    read_api_base_url().unwrap_or_else(|| DEFAULT_API_BASE.to_string())
 }
 
 fn registry_api_token() -> Option<String> {

@@ -19,9 +19,8 @@ fn default_workdir() -> PathBuf {
 /// Read global config.
 ///
 /// API base URL priority (highest first):
-///   1. `~/.savhub/config.toml` → `[rest_api] base_url` (legacy override)
-///   2. `~/.savhub/config.toml` → `registry`
-///   3. Default fallback
+///   1. `~/.savhub/config.toml` → `[rest_api] base_url`
+///   2. Default fallback
 fn load_config() -> (
     String,
     Option<String>,
@@ -48,10 +47,7 @@ fn load_config() -> (
     let agents = cfg.agents;
     let security_level = cfg.security_level;
 
-    // Priority: config [rest_api] override > config registry > default
-    let registry = api_override
-        .or(cfg.registry)
-        .unwrap_or_else(|| DEFAULT_API_BASE.to_string());
+    let registry = api_override.unwrap_or_else(|| DEFAULT_API_BASE.to_string());
 
     (registry, token, lang, workdir, agents, security_level)
 }

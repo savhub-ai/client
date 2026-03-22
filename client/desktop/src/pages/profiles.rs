@@ -657,29 +657,31 @@ fn AddProjectSkillDialog(
                                     let project_path = project_path.clone();
                                     let pending = pending.clone();
                                     move |_| {
-                                        let wd = PathBuf::from(&project_path);
-                                        match enable_fetched_skill_in_project(
-                                            &wd,
-                                            &pending.repo_url,
-                                            &pending.path,
-                                            &pending.slug,
-                                            ProjectSkillConflictChoice::UseRepo,
-                                        ) {
-                                            Ok(EnableProjectRepoSkillResult::Enabled { .. }) => {
-                                                pending_conflict.set(None);
-                                                status_msg.set(None);
-                                                version.with_mut(|value| *value += 1);
-                                                on_close.call(());
+                                        let pp = project_path.clone();
+                                        let p = pending.clone();
+                                        spawn(async move {
+                                            let result = tokio::task::spawn_blocking(move || {
+                                                let wd = PathBuf::from(&pp);
+                                                enable_fetched_skill_in_project(&wd, &p.repo_url, &p.path, &p.slug, ProjectSkillConflictChoice::UseRepo)
+                                            }).await;
+                                            match result {
+                                                Ok(Ok(EnableProjectRepoSkillResult::Enabled { .. })) => {
+                                                    pending_conflict.set(None);
+                                                    status_msg.set(None);
+                                                    version.with_mut(|value| *value += 1);
+                                                    on_close.call(());
+                                                }
+                                                Ok(Ok(EnableProjectRepoSkillResult::KeptExisting { .. })) => {
+                                                    pending_conflict.set(None);
+                                                    on_close.call(());
+                                                }
+                                                Ok(Ok(EnableProjectRepoSkillResult::Conflict(_))) => {
+                                                    status_msg.set(Some("unexpected conflict state".to_string()));
+                                                }
+                                                Ok(Err(error)) => status_msg.set(Some(error.to_string())),
+                                                Err(error) => status_msg.set(Some(error.to_string())),
                                             }
-                                            Ok(EnableProjectRepoSkillResult::KeptExisting { .. }) => {
-                                                pending_conflict.set(None);
-                                                on_close.call(());
-                                            }
-                                            Ok(EnableProjectRepoSkillResult::Conflict(_)) => {
-                                                status_msg.set(Some("unexpected conflict state".to_string()));
-                                            }
-                                            Err(error) => status_msg.set(Some(error.to_string())),
-                                        }
+                                        });
                                     }
                                 },
                                 "{use_repo_label}"
@@ -690,25 +692,27 @@ fn AddProjectSkillDialog(
                                     let project_path = project_path.clone();
                                     let pending = pending.clone();
                                     move |_| {
-                                        let wd = PathBuf::from(&project_path);
-                                        match enable_fetched_skill_in_project(
-                                            &wd,
-                                            &pending.repo_url,
-                                            &pending.path,
-                                            &pending.slug,
-                                            ProjectSkillConflictChoice::KeepExisting,
-                                        ) {
-                                            Ok(EnableProjectRepoSkillResult::Enabled { .. })
-                                            | Ok(EnableProjectRepoSkillResult::KeptExisting { .. }) => {
-                                                pending_conflict.set(None);
-                                                status_msg.set(None);
-                                                on_close.call(());
+                                        let pp = project_path.clone();
+                                        let p = pending.clone();
+                                        spawn(async move {
+                                            let result = tokio::task::spawn_blocking(move || {
+                                                let wd = PathBuf::from(&pp);
+                                                enable_fetched_skill_in_project(&wd, &p.repo_url, &p.path, &p.slug, ProjectSkillConflictChoice::KeepExisting)
+                                            }).await;
+                                            match result {
+                                                Ok(Ok(EnableProjectRepoSkillResult::Enabled { .. }))
+                                                | Ok(Ok(EnableProjectRepoSkillResult::KeptExisting { .. })) => {
+                                                    pending_conflict.set(None);
+                                                    status_msg.set(None);
+                                                    on_close.call(());
+                                                }
+                                                Ok(Ok(EnableProjectRepoSkillResult::Conflict(_))) => {
+                                                    status_msg.set(Some("unexpected conflict state".to_string()));
+                                                }
+                                                Ok(Err(error)) => status_msg.set(Some(error.to_string())),
+                                                Err(error) => status_msg.set(Some(error.to_string())),
                                             }
-                                            Ok(EnableProjectRepoSkillResult::Conflict(_)) => {
-                                                status_msg.set(Some("unexpected conflict state".to_string()));
-                                            }
-                                            Err(error) => status_msg.set(Some(error.to_string())),
-                                        }
+                                        });
                                     }
                                 },
                                 "{keep_existing_label}"
@@ -775,36 +779,39 @@ fn AddProjectSkillDialog(
                                                                     let project_path = project_path.clone();
                                                                     let skill = (*skill).clone();
                                                                     move |_| {
-                                                                        let wd = PathBuf::from(&project_path);
-                                                                        match enable_fetched_skill_in_project(
-                                                                            &wd,
-                                                                            &skill.repo_url,
-                                                                            &skill.path,
-                                                                            &skill.slug,
-                                                                            ProjectSkillConflictChoice::Ask,
-                                                                        ) {
-                                                                            Ok(EnableProjectRepoSkillResult::Enabled { .. }) => {
-                                                                                pending_conflict.set(None);
-                                                                                status_msg.set(None);
-                                                                                version.with_mut(|value| *value += 1);
-                                                                                on_close.call(());
+                                                                        let pp = project_path.clone();
+                                                                        let sk = skill.clone();
+                                                                        spawn(async move {
+                                                                            let sk2 = sk.clone();
+                                                                            let result = tokio::task::spawn_blocking(move || {
+                                                                                let wd = PathBuf::from(&pp);
+                                                                                enable_fetched_skill_in_project(&wd, &sk2.repo_url, &sk2.path, &sk2.slug, ProjectSkillConflictChoice::Ask)
+                                                                            }).await;
+                                                                            match result {
+                                                                                Ok(Ok(EnableProjectRepoSkillResult::Enabled { .. })) => {
+                                                                                    pending_conflict.set(None);
+                                                                                    status_msg.set(None);
+                                                                                    version.with_mut(|value| *value += 1);
+                                                                                    on_close.call(());
+                                                                                }
+                                                                                Ok(Ok(EnableProjectRepoSkillResult::KeptExisting { .. })) => {
+                                                                                    pending_conflict.set(None);
+                                                                                    status_msg.set(None);
+                                                                                    on_close.call(());
+                                                                                }
+                                                                                Ok(Ok(EnableProjectRepoSkillResult::Conflict(conflict))) => {
+                                                                                    pending_conflict.set(Some(PendingConflictState {
+                                                                                        conflict,
+                                                                                        repo_url: sk.repo_url.clone(),
+                                                                                        path: sk.path.clone(),
+                                                                                        slug: sk.slug.clone(),
+                                                                                    }));
+                                                                                    status_msg.set(None);
+                                                                                }
+                                                                                Ok(Err(error)) => status_msg.set(Some(error.to_string())),
+                                                                                Err(error) => status_msg.set(Some(error.to_string())),
                                                                             }
-                                                                            Ok(EnableProjectRepoSkillResult::KeptExisting { .. }) => {
-                                                                                pending_conflict.set(None);
-                                                                                status_msg.set(None);
-                                                                                on_close.call(());
-                                                                            }
-                                                                            Ok(EnableProjectRepoSkillResult::Conflict(conflict)) => {
-                                                                                pending_conflict.set(Some(PendingConflictState {
-                                                                                    conflict,
-                                                                                    repo_url: skill.repo_url.clone(),
-                                                                                    path: skill.path.clone(),
-                                                                                    slug: skill.slug.clone(),
-                                                                                }));
-                                                                                status_msg.set(None);
-                                                                            }
-                                                                            Err(error) => status_msg.set(Some(error.to_string())),
-                                                                        }
+                                                                        });
                                                                     }
                                                                 },
                                                                 "{add_label}"
@@ -852,36 +859,39 @@ fn AddProjectSkillDialog(
                                                     let project_path = project_path.clone();
                                                     let skill = (*skill).clone();
                                                     move |_| {
-                                                        let wd = PathBuf::from(&project_path);
-                                                        match enable_fetched_skill_in_project(
-                                                            &wd,
-                                                            &skill.repo_url,
-                                                            &skill.path,
-                                                            &skill.slug,
-                                                            ProjectSkillConflictChoice::Ask,
-                                                        ) {
-                                                            Ok(EnableProjectRepoSkillResult::Enabled { .. }) => {
-                                                                pending_conflict.set(None);
-                                                                status_msg.set(None);
-                                                                version.with_mut(|value| *value += 1);
-                                                                on_close.call(());
+                                                        let pp = project_path.clone();
+                                                        let sk = skill.clone();
+                                                        spawn(async move {
+                                                            let sk2 = sk.clone();
+                                                            let result = tokio::task::spawn_blocking(move || {
+                                                                let wd = PathBuf::from(&pp);
+                                                                enable_fetched_skill_in_project(&wd, &sk2.repo_url, &sk2.path, &sk2.slug, ProjectSkillConflictChoice::Ask)
+                                                            }).await;
+                                                            match result {
+                                                                Ok(Ok(EnableProjectRepoSkillResult::Enabled { .. })) => {
+                                                                    pending_conflict.set(None);
+                                                                    status_msg.set(None);
+                                                                    version.with_mut(|value| *value += 1);
+                                                                    on_close.call(());
+                                                                }
+                                                                Ok(Ok(EnableProjectRepoSkillResult::KeptExisting { .. })) => {
+                                                                    pending_conflict.set(None);
+                                                                    status_msg.set(None);
+                                                                    on_close.call(());
+                                                                }
+                                                                Ok(Ok(EnableProjectRepoSkillResult::Conflict(conflict))) => {
+                                                                    pending_conflict.set(Some(PendingConflictState {
+                                                                        conflict,
+                                                                        repo_url: sk.repo_url.clone(),
+                                                                        path: sk.path.clone(),
+                                                                        slug: sk.slug.clone(),
+                                                                    }));
+                                                                    status_msg.set(None);
+                                                                }
+                                                                Ok(Err(error)) => status_msg.set(Some(error.to_string())),
+                                                                Err(error) => status_msg.set(Some(error.to_string())),
                                                             }
-                                                            Ok(EnableProjectRepoSkillResult::KeptExisting { .. }) => {
-                                                                pending_conflict.set(None);
-                                                                status_msg.set(None);
-                                                                on_close.call(());
-                                                            }
-                                                            Ok(EnableProjectRepoSkillResult::Conflict(conflict)) => {
-                                                                pending_conflict.set(Some(PendingConflictState {
-                                                                    conflict,
-                                                                    repo_url: skill.repo_url.clone(),
-                                                                    path: skill.path.clone(),
-                                                                    slug: skill.slug.clone(),
-                                                                }));
-                                                                status_msg.set(None);
-                                                            }
-                                                            Err(error) => status_msg.set(Some(error.to_string())),
-                                                        }
+                                                        });
                                                     }
                                                 },
                                                 "{add_label}"

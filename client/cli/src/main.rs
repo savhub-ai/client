@@ -563,15 +563,13 @@ fn resolve_global_opts(cli: &Cli) -> Result<GlobalOpts> {
         .clone()
         .or_else(|| std::env::var("SAVHUB_SITE").ok())
         .unwrap_or_else(|| DEFAULT_SITE.to_string());
-    let cached = read_global_config()?;
-    // Priority: --registry flag > env > config [rest_api] override > config registry > site default
+    // Priority: --registry flag > env > config [rest_api] base_url > site default
     let api_override = savhub_local::registry::read_api_base_url();
     let registry = cli
         .registry
         .clone()
         .or_else(|| std::env::var("SAVHUB_REGISTRY").ok())
         .or(api_override)
-        .or_else(|| cached.as_ref().and_then(|config| config.registry.clone()))
         .unwrap_or_else(|| site.clone());
     Ok(GlobalOpts {
         workdir,
@@ -640,18 +638,17 @@ async fn cmd_login(opts: &GlobalOpts, args: LoginArgs) -> Result<()> {
         bail!("login failed: token is not valid");
     };
     let mut existing = read_global_config()?.unwrap_or_default();
-    existing.registry = Some(opts.registry.clone());
+    existing.rest_api = Some(savhub_local::config::RestApiConfig {
+        base_url: Some(opts.registry.clone()),
+    });
     existing.token = Some(token);
     write_global_config(&existing)?;
     println!("Logged in as @{} via GitHub", user.handle);
     Ok(())
 }
 
-fn cmd_logout(opts: &GlobalOpts) -> Result<()> {
+fn cmd_logout(_opts: &GlobalOpts) -> Result<()> {
     let mut existing = read_global_config()?.unwrap_or_default();
-    if existing.registry.is_none() {
-        existing.registry = Some(opts.registry.clone());
-    }
     existing.token = None;
     write_global_config(&existing)?;
     println!("Logged out locally.");
