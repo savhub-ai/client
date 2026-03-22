@@ -22,11 +22,7 @@ pub struct ProjectSelectorMatch {
     pub flocks: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skills: Vec<String>,
-    #[serde(
-        default,
-        skip_serializing_if = "Vec::is_empty",
-        deserialize_with = "crate::selectors::deserialize_repos"
-    )]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub repos: Vec<crate::selectors::SelectorRepo>,
 }
 
@@ -55,7 +51,7 @@ pub struct ProjectAddedSkill {
     /// If provided, `path` and `slug` can be omitted (derived at resolve time).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sign: Option<String>,
-    /// Registry path that uniquely identifies the skill (legacy / explicit).
+    /// Registry path that uniquely identifies the skill.
     #[serde(default)]
     pub path: String,
     /// Skill slug in the registry (e.g. `claude-api`).

@@ -104,8 +104,8 @@ impl SelectorForm {
                 MatchMode::Custom => 2,
             },
             custom_expr: d.custom_expression.clone(),
-            skills: d.skills.iter().cloned().collect(),
-            flocks: d.flocks.iter().cloned().collect(),
+            skills: d.skills.iter().map(|s| s.sign()).collect(),
+            flocks: d.flocks.iter().map(|s| s.sign()).collect(),
             repos: d.repos.iter().map(|r| r.git_url.clone()).collect(),
             priority: d.priority,
             enabled: d.enabled,
@@ -156,8 +156,8 @@ impl SelectorForm {
                 _ => MatchMode::AllMatch,
             },
             custom_expression: self.custom_expr.clone(),
-            skills: self.skills.iter().cloned().collect(),
-            flocks: self.flocks.iter().cloned().collect(),
+            skills: self.skills.iter().map(|s| savhub_local::selectors::SelectorSkillRef::from_sign(s)).collect(),
+            flocks: self.flocks.iter().map(|s| savhub_local::selectors::SelectorSkillRef::from_sign(s)).collect(),
             repos: self
                 .repos
                 .iter()
@@ -468,8 +468,8 @@ fn SelectorDetailPopup(selector: Signal<Option<SelectorDefinition>>) -> Element 
         MatchMode::Custom => t.selectors_match_custom,
     };
     let rules = d.rules.clone();
-    let skills = d.skills.clone();
-    let flocks = d.flocks.clone();
+    let skills: Vec<String> = d.skills.iter().map(|s| s.sign()).collect();
+    let flocks: Vec<String> = d.flocks.iter().map(|s| s.sign()).collect();
     let repos: Vec<String> = d.repos.iter().map(|r| r.git_url.clone()).collect();
     let priority = d.priority;
     drop(guard);

@@ -137,31 +137,62 @@ impl SelectorRepo {
     }
 }
 
-/// Helper enum for backward-compatible deserialization: accepts both
-/// a plain string (legacy) and a full `SelectorRepo` object.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-enum SelectorRepoOrString {
-    Repo(SelectorRepo),
-    Url(String),
+/// A skill or flock reference used in selectors.
+/// Uses `{repo, path}` to uniquely identify the resource.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SelectorSkillRef {
+    pub repo: String,
+    pub path: String,
 }
 
-impl From<SelectorRepoOrString> for SelectorRepo {
-    fn from(value: SelectorRepoOrString) -> Self {
-        match value {
-            SelectorRepoOrString::Repo(r) => r,
-            SelectorRepoOrString::Url(s) => SelectorRepo::from_url(&s),
-        }
+impl std::fmt::Display for SelectorSkillRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.sign())
     }
 }
 
-/// Deserialize repos as either `["string"]` (legacy) or `[{git_url: "..."}]`.
-pub fn deserialize_repos<'de, D>(deserializer: D) -> Result<Vec<SelectorRepo>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let items: Vec<SelectorRepoOrString> = Vec::deserialize(deserializer)?;
-    Ok(items.into_iter().map(SelectorRepo::from).collect())
+impl SelectorSkillRef {
+    /// Build from a sign string like `"github.com/org/repo/path/to/skill"`.
+    /// Splits on the third `/` to separate repo from path.
+    pub fn from_sign(sign: &str) -> Self {
+        let trimmed = sign
+            .trim()
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .trim_end_matches('/');
+        // Split: domain/owner/repo  /  remaining-path
+        let mut slashes = 0;
+        let mut split_at = None;
+        for (i, ch) in trimmed.char_indices() {
+            if ch == '/' {
+                slashes += 1;
+                if slashes == 3 {
+                    split_at = Some(i);
+                    break;
+                }
+            }
+        }
+        if let Some(pos) = split_at {
+            Self {
+                repo: trimmed[..pos].to_string(),
+                path: trimmed[pos + 1..].to_string(),
+            }
+        } else {
+            Self {
+                repo: trimmed.to_string(),
+                path: String::new(),
+            }
+        }
+    }
+
+    /// Reconstruct the full sign string: `"{repo}/{path}"`.
+    pub fn sign(&self) -> String {
+        if self.path.is_empty() {
+            self.repo.clone()
+        } else {
+            format!("{}/{}", self.repo, self.path)
+        }
+    }
 }
 
 /// A complete selector definition.
@@ -179,12 +210,12 @@ pub struct SelectorDefinition {
     #[serde(default)]
     pub custom_expression: String,
     #[serde(default)]
-    pub skills: Vec<String>,
+    pub skills: Vec<SelectorSkillRef>,
     #[serde(default)]
-    pub flocks: Vec<String>,
+    pub flocks: Vec<SelectorSkillRef>,
     /// Repository references. When this selector matches, all flocks and skills
     /// from these repos will be fetched.
-    #[serde(default, deserialize_with = "deserialize_repos")]
+    #[serde(default)]
     pub repos: Vec<SelectorRepo>,
     /// Priority (higher value = higher priority). When multiple selectors
     /// contribute conflicting skills, the selector with the higher priority wins.
@@ -747,9 +778,9 @@ pub fn generate_selector_id() -> String {
 /// Deduplicate skills, flocks, and repos in a selector before saving.
 fn dedup_selector(mut d: SelectorDefinition) -> SelectorDefinition {
     let mut seen = std::collections::BTreeSet::new();
-    d.skills.retain(|s| seen.insert(s.clone()));
+    d.skills.retain(|s| seen.insert(s.sign()));
     let mut seen = std::collections::BTreeSet::new();
-    d.flocks.retain(|s| seen.insert(s.clone()));
+    d.flocks.retain(|s| seen.insert(s.sign()));
     let mut seen = std::collections::BTreeSet::new();
     d.repos.retain(|r| seen.insert(r.git_url.clone()));
     d
@@ -828,8 +859,8 @@ pub fn update_match_counts(matched_names: &[String], unmatched_names: &[String])
 #[derive(Debug, Clone)]
 pub struct SelectorMatch {
     pub selector: SelectorDefinition,
-    pub skills: Vec<String>,
-    pub flocks: Vec<String>,
+    pub skills: Vec<SelectorSkillRef>,
+    pub flocks: Vec<SelectorSkillRef>,
     pub repos: Vec<SelectorRepo>,
 }
 
@@ -840,9 +871,9 @@ pub struct SelectorRunResult {
     pub matched: Vec<SelectorMatch>,
     /// Merged skills with priority-based conflict resolution.
     /// Higher-priority selectors' skills take precedence.
-    pub skills: Vec<String>,
+    pub skills: Vec<SelectorSkillRef>,
     /// Merged flocks from all matched selectors.
-    pub flocks: Vec<String>,
+    pub flocks: Vec<SelectorSkillRef>,
     /// Merged repos from all matched selectors.
     pub repos: Vec<SelectorRepo>,
 }
@@ -861,13 +892,14 @@ pub fn run_selectors(project_root: &Path) -> Result<SelectorRunResult> {
             continue;
         }
         if selector.evaluate(project_root) {
-            // Expand repos into flocks: look up all flock slugs for each repo
+            // Expand repos into flocks: look up all flock signs for each repo
             let mut expanded_flocks = selector.flocks.clone();
             for repo in &selector.repos {
                 if let Ok(repo_flocks) = crate::registry::list_repo_flock_signs(&repo.git_url) {
-                    for flock in repo_flocks {
-                        if !expanded_flocks.contains(&flock) {
-                            expanded_flocks.push(flock);
+                    for flock_sign in repo_flocks {
+                        let flock_ref = SelectorSkillRef::from_sign(&flock_sign);
+                        if !expanded_flocks.iter().any(|f| f.sign() == flock_ref.sign()) {
+                            expanded_flocks.push(flock_ref);
                         }
                     }
                 }
@@ -890,7 +922,7 @@ pub fn run_selectors(project_root: &Path) -> Result<SelectorRunResult> {
     let mut skills = Vec::new();
     for m in &matched {
         for skill in &m.skills {
-            if seen_skills.insert(skill.clone()) {
+            if seen_skills.insert(skill.sign()) {
                 skills.push(skill.clone());
             }
         }
@@ -901,7 +933,7 @@ pub fn run_selectors(project_root: &Path) -> Result<SelectorRunResult> {
     let mut flocks = Vec::new();
     for m in &matched {
         for flock in &m.flocks {
-            if seen_flocks.insert(flock.clone()) {
+            if seen_flocks.insert(flock.sign()) {
                 flocks.push(flock.clone());
             }
         }
@@ -1037,7 +1069,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             custom_expression: String::new(),
 
             skills: vec![],
-            flocks: vec!["github.com/salvo-rs/salvo-skills/salvo-skills".to_string()],
+            flocks: vec![SelectorSkillRef::from_sign("github.com/salvo-rs/salvo-skills/salvo-skills")],
             repos: vec![],
             enabled: true,
             priority: 20,

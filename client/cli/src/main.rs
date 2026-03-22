@@ -2522,10 +2522,10 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
                     println!("  {}. {}", i + 1, rule.display());
                 }
                 if !d.skills.is_empty() {
-                    println!("Skills:     {}", d.skills.join(", "));
+                    println!("Skills:     {}", d.skills.iter().map(|s| s.sign()).collect::<Vec<_>>().join(", "));
                 }
                 if !d.flocks.is_empty() {
-                    println!("Flocks:     {}", d.flocks.join(", "));
+                    println!("Flocks:     {}", d.flocks.iter().map(|s| s.sign()).collect::<Vec<_>>().join(", "));
                 }
                 if !d.repos.is_empty() {
                     let repo_strs: Vec<_> = d.repos.iter().map(|r| r.git_url.as_str()).collect();
@@ -2549,10 +2549,10 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
                 );
             }
             if !result.skills.is_empty() {
-                println!("Skills:  {}", result.skills.join(", "));
+                println!("Skills:  {}", result.skills.iter().map(|s| s.sign()).collect::<Vec<_>>().join(", "));
             }
             if !result.flocks.is_empty() {
-                println!("Flocks:  {}", result.flocks.join(", "));
+                println!("Flocks:  {}", result.flocks.iter().map(|s| s.sign()).collect::<Vec<_>>().join(", "));
             }
             if !result.repos.is_empty() {
                 let repo_strs: Vec<_> = result.repos.iter().map(|r| r.git_url.as_str()).collect();
@@ -2850,7 +2850,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         .iter()
         .map(|m| m.selector.name.clone())
         .collect();
-    let matched_flocks: Vec<String> = result.flocks.clone();
+    let matched_flocks: Vec<String> = result.flocks.iter().map(|s| s.sign()).collect();
 
     // ── Collect previously matched selectors that no longer match ──
     let unmatched: Vec<tui::UnmatchedSelector> = existing_config
@@ -2900,7 +2900,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             .iter()
             .map(|m| {
                 let pri = m.selector.priority;
-                let sel_flocks = m.flocks.clone();
+                let sel_flocks: Vec<String> = m.flocks.iter().map(|s| s.sign()).collect();
                 tui::MatchedSelector {
                     name: m.selector.name.clone(),
                     label: format!("{} (P{pri}) — {}", m.selector.name, m.selector.description),
@@ -2985,8 +2985,9 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             continue;
         }
         for skill in &m.skills {
-            if !all_skills.contains(skill) {
-                all_skills.push(skill.clone());
+            let skill_sign = skill.sign();
+            if !all_skills.contains(&skill_sign) {
+                all_skills.push(skill_sign);
             }
         }
     }
@@ -3122,13 +3123,13 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
                 let selector_flocks: Vec<String> = m
                     .flocks
                     .iter()
+                    .map(|f| f.sign())
                     .filter(|f| selected_flocks.contains(f))
-                    .cloned()
                     .collect();
                 savhub_local::presets::ProjectSelectorMatch {
                     selector: m.selector.name.clone(),
                     flocks: selector_flocks,
-                    skills: m.skills.clone(),
+                    skills: m.skills.iter().map(|s| s.sign()).collect(),
                     repos: m.repos.clone(),
                 }
             })

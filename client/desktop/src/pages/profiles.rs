@@ -832,8 +832,8 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                             .iter()
                             .map(|m| m.selector.name.clone())
                             .collect();
-                        let flocks = result.flocks.clone();
-                        let mut skills: Vec<String> = result.skills.clone();
+                        let flocks: Vec<String> = result.flocks.iter().map(|s| s.sign()).collect();
+                        let mut skills: Vec<String> = result.skills.iter().map(|s| s.sign()).collect();
                         for flock_sign in &flocks {
                             if let Ok(flock_skills) =
                                 savhub_local::registry::list_flock_skill_slugs(flock_sign)
@@ -919,8 +919,8 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                                     .iter()
                                     .map(|m| savhub_local::presets::ProjectSelectorMatch {
                                         selector: m.selector.name.clone(),
-                                        flocks: m.flocks.clone(),
-                                        skills: m.skills.clone(),
+                                        flocks: m.flocks.iter().map(|s| s.sign()).collect(),
+                                        skills: m.skills.iter().map(|s| s.sign()).collect(),
                                         repos: m.repos.clone(),
                                     })
                                     .collect();
