@@ -52,6 +52,7 @@ pub fn spawn_worker(pool: PgPool) -> JoinHandle<()> {
         let mut repo_check_tick = tokio::time::interval(repo_check_interval);
         let mut cleanup_tick = tokio::time::interval(std::time::Duration::from_secs(24 * 60 * 60));
         let mut scan_tick = tokio::time::interval(std::time::Duration::from_secs(5));
+        let mut ai_scan_tick = tokio::time::interval(std::time::Duration::from_secs(10));
 
         let mut index_tasks: JoinSet<(Uuid, String)> = JoinSet::new();
         let mut running_url_hashes: HashSet<String> = HashSet::new();
@@ -93,6 +94,14 @@ pub fn spawn_worker(pool: PgPool) -> JoinHandle<()> {
                     if let Err(e) = process_security_scan_queue(&pool) {
                         tracing::warn!("security scan queue error: {e}");
                     }
+                }
+                _ = ai_scan_tick.tick() => {
+                    let pool = pool.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = process_ai_scan_queue(&pool).await {
+                            tracing::warn!("AI scan queue error: {e}");
+                        }
+                    });
                 }
                 _ = cleanup_tick.tick() => {
                     match pool.get() {
@@ -341,7 +350,25 @@ async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------------------
-// Security scan queue processor
+// AI scan queue processor (picks up skills with security_status='checked')
+// ---------------------------------------------------------------------------
+
+async fn process_ai_scan_queue(pool: &PgPool) -> Result<(), String> {
+    let mut conn = pool.get().map_err(|e| e.to_string())?;
+    match crate::service::security::process_ai_scan_queue(&mut conn).await {
+        Ok(true) => {
+            tracing::debug!("[ai-scan] processed one skill");
+        }
+        Ok(false) => { /* no pending skills */ }
+        Err(e) => {
+            tracing::warn!("[ai-scan] error: {e}");
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Security scan queue processor (static scans)
 // ---------------------------------------------------------------------------
 
 /// Atomically claim the oldest pending scan task and run it.

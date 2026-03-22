@@ -16,6 +16,8 @@ use uuid::Uuid;
 pub enum SecurityStatus {
     /// Passed static scan only (AI not enabled).
     Checked,
+    /// AI scan in progress (atomically claimed from `checked`).
+    Scanning,
     /// Passed both static and AI scans.
     Verified,
     Suspicious,

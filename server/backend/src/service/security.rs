@@ -153,8 +153,8 @@ pub struct ScanContext {
 
 /// Run all automated scans (static + legacy content_analysis + license_audit).
 ///
-/// Returns the worst verdict as a string. Also spawns an async LLM evaluation
-/// if AI is configured.
+/// Returns the worst verdict as a string. Skills that pass static scan are set
+/// to "checked" and will be picked up by `process_ai_scan_queue` separately.
 pub fn run_automated_scans(
     conn: &mut PgConnection,
     flock_id: Uuid,
@@ -164,11 +164,11 @@ pub fn run_automated_scans(
 }
 
 /// Enhanced version of `run_automated_scans` that also accepts file contents
-/// for deep static scanning and async LLM evaluation.
+/// for deep static scanning.
 ///
-/// The enhanced pipeline (static file scanning + LLM eval) only runs when
-/// `SAVHUB_AI_SECURITY_SCAN=true`. Otherwise only the legacy content_analysis
-/// and license_audit scanners execute.
+/// The enhanced pipeline (static file scanning) only runs when
+/// `SAVHUB_AI_SECURITY_SCAN=true`. Skills that pass static scan are set to
+/// "checked"; the AI scan queue processor will pick them up independently.
 pub fn run_automated_scans_with_files(
     conn: &mut PgConnection,
     flock_id: Uuid,
@@ -322,11 +322,7 @@ pub fn run_automated_scans_with_files(
                 _ => {}
             }
 
-            // Static scan passed → "checked". AI eval will upgrade to "verified" if enabled.
-            let ai_enabled = {
-                let cfg = &crate::state::app_state().config;
-                cfg.ai_provider.is_some() && cfg.ai_api_key.is_some()
-            };
+            // Static scan passed → "checked". AI eval queue will upgrade to "verified" later.
             let security_status = match static_result.verdict {
                 ModerationVerdict::Malicious => "malicious",
                 ModerationVerdict::Suspicious => "suspicious",
@@ -346,10 +342,8 @@ pub fn run_automated_scans_with_files(
                 }
             }
 
-            // ----- Spawn async LLM evaluation (only if AI scan is enabled and configured) -----
-            if ai_scan_enabled && ai_enabled {
-                schedule_llm_eval(skill, flock_id, scan_input, &static_result);
-            }
+            // AI scan runs separately via process_ai_scan_queue — skills with
+            // security_status="checked" are picked up there.
         }
     }
 
@@ -403,26 +397,70 @@ pub fn run_automated_scans_with_files(
     Ok(worst_str)
 }
 
-/// Spawn the LLM security evaluation as an async background task.
-fn schedule_llm_eval(
-    skill: &SkillRow,
-    flock_id: Uuid,
-    scan_input: &SkillScanInput,
-    static_result: &StaticScanResult,
-) {
-    // Only schedule if AI provider is configured
+// ---------------------------------------------------------------------------
+// AI scan queue processor
+// ---------------------------------------------------------------------------
+
+/// Atomically claim one skill with `security_status = 'checked'` and run
+/// LLM evaluation on it. The atomic UPDATE prevents concurrent workers from
+/// picking the same skill.
+///
+/// Flow:
+///   1. `UPDATE skills SET security_status='scanning' WHERE id = (SELECT ...
+///      WHERE security_status='checked' LIMIT 1 FOR UPDATE SKIP LOCKED)`
+///   2. Load the skill's files from the scan queue or version data
+///   3. Run LLM evaluation
+///   4. Set final status: verified / suspicious / malicious
+pub async fn process_ai_scan_queue(conn: &mut PgConnection) -> Result<bool, AppError> {
+    // Check if AI is configured
     let config = &crate::state::app_state().config;
     if config.ai_provider.is_none() || config.ai_api_key.is_none() {
-        tracing::info!(
-            "[security] AI provider not configured — skipping LLM eval for {}",
+        return Ok(false);
+    }
+
+    // Atomically claim one skill: checked → scanning
+    let claimed: Option<SkillRow> = diesel::sql_query(
+        "UPDATE skills SET security_status = 'scanning', updated_at = NOW() \
+         WHERE id = ( \
+           SELECT id FROM skills \
+           WHERE security_status = 'checked' \
+             AND soft_deleted_at IS NULL \
+           ORDER BY updated_at ASC \
+           LIMIT 1 \
+           FOR UPDATE SKIP LOCKED \
+         ) \
+         RETURNING *",
+    )
+    .get_result::<SkillRow>(conn)
+    .optional()?;
+
+    let Some(skill) = claimed else {
+        return Ok(false);
+    };
+
+    tracing::info!(
+        "[ai-scan] claimed skill {} ({}), running LLM eval",
+        skill.slug,
+        skill.id,
+    );
+
+    // Load file contents from the latest security_scan_queue entry or
+    // reconstruct from skill_versions.
+    let files = load_skill_files_for_ai_eval(conn, &skill);
+
+    if files.is_empty() {
+        tracing::warn!(
+            "[ai-scan] no files found for {} — marking as checked (skip AI)",
             skill.slug,
         );
-        return;
+        diesel::update(skills::table.find(skill.id))
+            .set(skills::security_status.eq("checked"))
+            .execute(conn)?;
+        return Ok(true);
     }
 
     // Find SKILL.md content
-    let skill_md_content = scan_input
-        .files
+    let skill_md_content = files
         .iter()
         .find(|f| {
             let lower = f.path.to_lowercase();
@@ -433,30 +471,26 @@ fn schedule_llm_eval(
 
     if skill_md_content.is_empty() {
         tracing::debug!(
-            "[security] skipping LLM eval for {}: no SKILL.md",
-            skill.slug
+            "[ai-scan] no SKILL.md for {} — marking as checked (skip AI)",
+            skill.slug,
         );
-        return;
+        diesel::update(skills::table.find(skill.id))
+            .set(skills::security_status.eq("checked"))
+            .execute(conn)?;
+        return Ok(true);
     }
 
-    // Detect injection patterns across all content
-    let all_content: String = scan_input
-        .files
-        .iter()
-        .map(|f| f.content.as_str())
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Detect injection patterns
+    let all_content: String = files.iter().map(|f| f.content.as_str()).collect::<Vec<_>>().join("\n");
     let injection_signals = detect_injection_patterns(&all_content);
 
-    // Build eval context
     let eval_ctx = SkillEvalContext {
         slug: skill.slug.clone(),
         display_name: skill.name.clone(),
         summary: skill.description.clone(),
         version: skill.version.clone(),
         skill_md_content,
-        file_contents: scan_input
-            .files
+        file_contents: files
             .iter()
             .filter(|f| {
                 let lower = f.path.to_lowercase();
@@ -467,8 +501,7 @@ fn schedule_llm_eval(
                 content: f.content.clone(),
             })
             .collect(),
-        file_manifest: scan_input
-            .files
+        file_manifest: files
             .iter()
             .map(|f| FileManifestEntry {
                 path: f.path.clone(),
@@ -476,69 +509,126 @@ fn schedule_llm_eval(
             })
             .collect(),
         injection_signals,
-        metadata_json: scan_input.metadata_json.clone(),
-        frontmatter_always: scan_input.frontmatter_always,
+        metadata_json: None,
+        frontmatter_always: None,
     };
 
-    let skill_id = skill.id;
-    let skill_slug = skill.slug.clone();
-    let static_result_clone = static_result.clone();
-    let version_id = scan_input.version_id;
+    // Load the most recent static_moderation scan for this skill (for combined verdict)
+    let static_result_opt: Option<StaticScanResult> = security_scans::table
+        .filter(security_scans::target_id.eq(skill.id))
+        .filter(security_scans::scan_module.eq("static_moderation"))
+        .order(security_scans::created_at.desc())
+        .select(security_scans::details)
+        .first::<serde_json::Value>(conn)
+        .optional()?
+        .and_then(|details| serde_json::from_value(details).ok());
 
-    tokio::spawn(async move {
-        match llm_eval::evaluate_skill_with_llm(
-            skill_id,
-            flock_id,
-            eval_ctx,
-            Some(&static_result_clone),
-        )
-        .await
-        {
-            Ok(result) => {
-                // Update security_status based on combined verdict
-                let (combined_verdict, _codes, _summary) =
-                    build_moderation_verdict(Some(&static_result_clone), Some(&result.verdict));
-                let final_status = match combined_verdict {
-                    ModerationVerdict::Malicious => "malicious",
-                    ModerationVerdict::Suspicious => "suspicious",
-                    ModerationVerdict::Clean => "verified",
+    // Run the LLM evaluation
+    match llm_eval::evaluate_skill_with_llm(
+        skill.id,
+        skill.flock_id,
+        eval_ctx,
+        static_result_opt.as_ref(),
+    )
+    .await
+    {
+        Ok(result) => {
+            let (combined_verdict, _codes, _summary) =
+                build_moderation_verdict(static_result_opt.as_ref(), Some(&result.verdict));
+            let final_status = match combined_verdict {
+                ModerationVerdict::Malicious => "malicious",
+                ModerationVerdict::Suspicious => "suspicious",
+                ModerationVerdict::Clean => "verified",
+            };
+
+            // Re-acquire a sync connection for DB updates
+            let conn2 = &mut db_conn()?;
+
+            diesel::update(skills::table.find(skill.id))
+                .set(skills::security_status.eq(final_status))
+                .execute(conn2)?;
+            diesel::update(flocks::table.find(skill.flock_id))
+                .set(flocks::security_status.eq(final_status))
+                .execute(conn2)?;
+
+            // Merge LLM verdict into the version scan_summary
+            if let Some(vid) = skill.latest_version_id {
+                let llm_verdict = match result.verdict.as_str() {
+                    "malicious" => ScanVerdict::Malicious,
+                    "suspicious" => ScanVerdict::Suspicious,
+                    "benign" | "clean" => ScanVerdict::Benign,
+                    _ => ScanVerdict::Pending,
                 };
-                if let Ok(mut conn) = db_conn() {
-                    let _ = diesel::update(skills::table.find(skill_id))
-                        .set(skills::security_status.eq(final_status))
-                        .execute(&mut conn);
-                    let _ = diesel::update(flocks::table.find(flock_id))
-                        .set(flocks::security_status.eq(final_status))
-                        .execute(&mut conn);
-
-                    // Merge LLM verdict into the version scan_summary
-                    if let Some(vid) = version_id {
-                        let llm_verdict = match result.verdict.as_str() {
-                            "malicious" => ScanVerdict::Malicious,
-                            "suspicious" => ScanVerdict::Suspicious,
-                            "benign" | "clean" => ScanVerdict::Benign,
-                            _ => ScanVerdict::Pending,
-                        };
-                        merge_llm_into_scan_summary(
-                            &mut conn,
-                            vid,
-                            llm_verdict,
-                            Some(&result.verdict),
-                        );
-                    }
-                }
-                tracing::info!(
-                    "[security] LLM eval complete for {}: {} → status={}",
-                    skill_slug,
-                    result.verdict,
-                    final_status,
-                );
+                merge_llm_into_scan_summary(conn2, vid, llm_verdict, Some(&result.verdict));
             }
-            Err(e) => {
-                tracing::error!("[security] LLM eval failed for {}: {}", skill_slug, e);
+
+            tracing::info!(
+                "[ai-scan] LLM eval complete for {}: {} → status={}",
+                skill.slug,
+                result.verdict,
+                final_status,
+            );
+        }
+        Err(e) => {
+            tracing::error!(
+                "[ai-scan] LLM eval failed for {}: {} — reverting to checked",
+                skill.slug,
+                e,
+            );
+            // Revert to "checked" so it can be retried
+            let _ = diesel::update(skills::table.find(skill.id))
+                .set(skills::security_status.eq("checked"))
+                .execute(conn);
+        }
+    }
+
+    Ok(true)
+}
+
+/// Load file contents for AI evaluation from the security_scan_queue or
+/// skill_versions table.
+fn load_skill_files_for_ai_eval(
+    conn: &mut PgConnection,
+    skill: &SkillRow,
+) -> Vec<FileContent> {
+    use crate::schema::security_scan_queue;
+
+    // Try to find scan files from the security_scan_queue (keyed by flock_id)
+    let queue_files: Option<serde_json::Value> = security_scan_queue::table
+        .filter(security_scan_queue::flock_id.eq(skill.flock_id))
+        .order(security_scan_queue::updated_at.desc())
+        .select(security_scan_queue::scan_files)
+        .first::<serde_json::Value>(conn)
+        .optional()
+        .ok()
+        .flatten();
+
+    if let Some(files_json) = queue_files {
+        // The scan_files JSON is Vec<SkillScanInput>; find the one matching this skill
+        if let Ok(scan_inputs) = serde_json::from_value::<Vec<SkillScanInput>>(files_json) {
+            if let Some(input) = scan_inputs.into_iter().find(|si| si.slug == skill.slug) {
+                return input.files;
             }
         }
-    });
+    }
+
+    // Fallback: load from skill_versions
+    if let Some(vid) = skill.latest_version_id {
+        let files_json: Option<serde_json::Value> = skill_versions::table
+            .find(vid)
+            .select(skill_versions::files)
+            .first::<serde_json::Value>(conn)
+            .optional()
+            .ok()
+            .flatten();
+        if let Some(val) = files_json {
+            if let Ok(files) = serde_json::from_value::<Vec<FileContent>>(val) {
+                return files;
+            }
+        }
+    }
+
+    vec![]
 }
 
 // ---------------------------------------------------------------------------
@@ -791,6 +881,7 @@ pub fn security_status_to_str(status: SecurityStatus) -> &'static str {
     match status {
         SecurityStatus::Unscanned => "unscanned",
         SecurityStatus::Checked => "checked",
+        SecurityStatus::Scanning => "scanning",
         SecurityStatus::Verified => "verified",
         SecurityStatus::Suspicious => "suspicious",
         SecurityStatus::Malicious => "malicious",
@@ -800,6 +891,7 @@ pub fn security_status_to_str(status: SecurityStatus) -> &'static str {
 pub fn parse_security_status(value: &str) -> SecurityStatus {
     match value {
         "checked" => SecurityStatus::Checked,
+        "scanning" => SecurityStatus::Scanning,
         "verified" => SecurityStatus::Verified,
         "suspicious" => SecurityStatus::Suspicious,
         "malicious" => SecurityStatus::Malicious,

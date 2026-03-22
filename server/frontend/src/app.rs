@@ -2191,6 +2191,7 @@ fn security_badge_modifier(status: &SecurityStatus) -> &'static str {
     match status {
         SecurityStatus::Verified => "sb-verified",
         SecurityStatus::Checked => "sb-checked",
+        SecurityStatus::Scanning => "sb-scanning",
         SecurityStatus::Suspicious => "sb-suspicious",
         SecurityStatus::Malicious => "sb-malicious",
         SecurityStatus::Unscanned => "sb-unscanned",
@@ -2201,6 +2202,7 @@ fn security_badge_value<'a>(status: &SecurityStatus, t: &'a T) -> &'a str {
     match status {
         SecurityStatus::Verified => t.security_verified,
         SecurityStatus::Checked => t.security_checked,
+        SecurityStatus::Scanning => t.security_scanning,
         SecurityStatus::Suspicious => t.security_suspicious,
         SecurityStatus::Malicious => t.security_malicious,
         SecurityStatus::Unscanned => t.security_unscanned,

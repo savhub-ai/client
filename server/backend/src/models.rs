@@ -207,7 +207,7 @@ pub struct FlockChangeset {
     pub stats_max_unique_users: Option<i64>,
 }
 
-#[derive(Debug, Clone, Queryable, Selectable, Identifiable, Associations)]
+#[derive(Debug, Clone, Queryable, Selectable, Identifiable, Associations, QueryableByName)]
 #[diesel(table_name = skills)]
 #[diesel(belongs_to(FlockRow, foreign_key = flock_id))]
 pub struct SkillRow {

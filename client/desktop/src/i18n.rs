@@ -149,6 +149,7 @@ pub struct Texts {
     // Security
     pub security_unscanned: &'static str,
     pub security_checked: &'static str,
+    pub security_scanning: &'static str,
     pub security_verified: &'static str,
     pub security_suspicious: &'static str,
     pub security_malicious: &'static str,
@@ -435,6 +436,7 @@ static EN: Texts = Texts {
 
     security_unscanned: "Unscanned",
     security_checked: "Validated",
+    security_scanning: "Scanning",
     security_verified: "Verified",
     security_suspicious: "Suspicious",
     security_malicious: "Malicious",
@@ -653,6 +655,7 @@ static ZH: Texts = Texts {
 
     security_unscanned: "未扫描",
     security_checked: "已检查",
+    security_scanning: "扫描中",
     security_verified: "已验证",
     security_suspicious: "可疑",
     security_malicious: "恶意",

@@ -22,7 +22,7 @@ use crate::auth::AuthContext;
 use crate::error::AppError;
 use crate::models::{
     FlockChangeset, FlockRow, IndexJobChangeset, IndexJobRow, NewAiRequestCacheRow, NewFlockRow,
-    NewIndexJobRow, NewRepoRow, NewSecurityScanQueueRow, NewSkillRow, RepoRow, SkillRow,
+    NewIndexJobRow, NewRepoRow, NewSecurityScanQueueRow, NewSkillRow, RepoRow,
 };
 use crate::schema::{ai_request_cache, flocks, index_jobs, repos, security_scan_queue, skills};
 use crate::state::app_state;
