@@ -291,7 +291,6 @@ CREATE TABLE security_scan_queue (
     flock_id UUID NOT NULL REFERENCES flocks(id) ON DELETE CASCADE,
     commit_hash TEXT NOT NULL,
     scan_files JSONB NOT NULL DEFAULT '[]'::jsonb,
-    status TEXT NOT NULL DEFAULT 'pending',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (repo_url, path)
