@@ -434,7 +434,7 @@ static EN: Texts = Texts {
     compat_update_now: "Check for Updates",
 
     security_unscanned: "Unscanned",
-    security_validated: "Partially",
+    security_validated: "Validated",
     security_verified: "Verified",
     security_suspicious: "Suspicious",
     security_malicious: "Malicious",

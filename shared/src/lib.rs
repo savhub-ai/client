@@ -15,7 +15,7 @@ use uuid::Uuid;
 #[serde(rename_all = "snake_case")]
 pub enum SecurityStatus {
     /// Passed static scan only (AI not enabled).
-    Partially,
+    Validated,
     /// Passed both static and AI scans.
     Verified,
     Suspicious,

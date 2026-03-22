@@ -495,7 +495,7 @@ static EN: T = T {
     confirm_delete_repo: "Are you sure you want to delete this repo and all its data?",
     repo_deleted: "Repo deleted.",
     security_unscanned: "Unscanned",
-    security_validated: "Partially",
+    security_validated: "Validated",
     security_verified: "Verified",
     security_suspicious: "Suspicious",
     security_malicious: "Malicious",

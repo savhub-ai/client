@@ -326,7 +326,7 @@ pub fn run_automated_scans_with_files(
                 _ => {}
             }
 
-            // Static scan passed → "partially". AI eval will upgrade to "verified" if enabled.
+            // Static scan passed → "validated". AI eval will upgrade to "verified" if enabled.
             let ai_enabled = {
                 let cfg = &crate::state::app_state().config;
                 cfg.ai_provider.is_some() && cfg.ai_api_key.is_some()
@@ -334,7 +334,7 @@ pub fn run_automated_scans_with_files(
             let security_status = match static_result.verdict {
                 ModerationVerdict::Malicious => "malicious",
                 ModerationVerdict::Suspicious => "suspicious",
-                ModerationVerdict::Clean => "partially",
+                ModerationVerdict::Clean => "validated",
             };
             diesel::update(skills::table.find(skill.id))
                 .set(skills::security_status.eq(security_status))
@@ -393,12 +393,12 @@ pub fn run_automated_scans_with_files(
         })
         .execute(conn)?;
 
-    // Update flock security_status. Static clean → "partially".
+    // Update flock security_status. Static clean → "validated".
     // AI eval will upgrade to "verified" later if enabled.
     let flock_status = match worst_verdict {
         ModerationVerdict::Malicious => "malicious",
         ModerationVerdict::Suspicious => "suspicious",
-        ModerationVerdict::Clean => "partially",
+        ModerationVerdict::Clean => "validated",
     };
     diesel::update(flocks::table.find(flock_id))
         .set(flocks::security_status.eq(flock_status))
@@ -794,7 +794,7 @@ fn license_audit_scan(license: &str) -> String {
 pub fn security_status_to_str(status: SecurityStatus) -> &'static str {
     match status {
         SecurityStatus::Unscanned => "unscanned",
-        SecurityStatus::Partially => "partially",
+        SecurityStatus::Validated => "validated",
         SecurityStatus::Verified => "verified",
         SecurityStatus::Suspicious => "suspicious",
         SecurityStatus::Malicious => "malicious",
@@ -803,7 +803,7 @@ pub fn security_status_to_str(status: SecurityStatus) -> &'static str {
 
 pub fn parse_security_status(value: &str) -> SecurityStatus {
     match value {
-        "partially" => SecurityStatus::Partially,
+        "validated" => SecurityStatus::Validated,
         "verified" => SecurityStatus::Verified,
         "suspicious" => SecurityStatus::Suspicious,
         "malicious" => SecurityStatus::Malicious,

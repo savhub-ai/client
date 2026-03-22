@@ -32,7 +32,7 @@ pub struct AppState {
     pub pool: PgPool,
     pub events_tx: broadcast::Sender<WsEvent>,
     /// Per-repo locks that serialise clone/pull operations so that
-    /// `collect_skill_candidates` never runs against a partially-cloned checkout.
+    /// `collect_skill_candidates` never runs against a validated-cloned checkout.
     pub repo_checkout_locks: Arc<Mutex<HashMap<PathBuf, Arc<tokio::sync::Mutex<()>>>>>,
     /// Semaphore limiting concurrent AI chat requests (flock/repo metadata).
     pub ai_chat_semaphore: Arc<tokio::sync::Semaphore>,
