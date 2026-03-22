@@ -45,7 +45,9 @@ async fn main() -> Result<()> {
     if config.ai_security_scan_enabled {
         tracing::info!("  ai_security_scan = enabled");
     } else {
-        tracing::warn!("  ai_security_scan = DISABLED (set SAVHUB_AI_SECURITY_SCAN=true to enable)");
+        tracing::warn!(
+            "  ai_security_scan = DISABLED (set SAVHUB_AI_SECURITY_SCAN=true to enable)"
+        );
     }
     match (&config.ai_provider, &config.ai_api_key) {
         (Some(provider), Some(_)) => {

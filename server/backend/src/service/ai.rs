@@ -9,7 +9,7 @@ use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::helpers::db_conn;
+use super::helpers::{db_conn, take_chars};
 use crate::error::AppError;
 use crate::models::NewAiUsageLogRow;
 use crate::schema::ai_usage_logs;
@@ -111,7 +111,7 @@ pub async fn generate_flock_metadata(
     // Build a concise summary of skills (truncate to ~2000 chars total)
     let mut skill_text = String::new();
     for (name, desc) in skills {
-        let desc_short = if desc.len() > 120 { &desc[..120] } else { desc };
+        let desc_short = take_chars(desc, 120);
         let line = format!("- {name}: {desc_short}\n");
         if skill_text.len() + line.len() > 2000 {
             skill_text.push_str("- ...\n");
@@ -122,11 +122,7 @@ pub async fn generate_flock_metadata(
 
     let readme_section = match readme_content {
         Some(text) => {
-            let truncated = if text.len() > 2000 {
-                &text[..2000]
-            } else {
-                text
-            };
+            let truncated = take_chars(text, 2000);
             format!("\nHere is the repository README for additional context:\n\n{truncated}\n")
         }
         None => String::new(),
@@ -257,11 +253,7 @@ pub async fn generate_repo_metadata(readme_content: &str) -> Option<GeneratedRep
         .as_deref()
         .unwrap_or_else(|| default_model(provider));
 
-    let truncated = if readme_content.len() > 4000 {
-        &readme_content[..4000]
-    } else {
-        readme_content
-    };
+    let truncated = take_chars(readme_content, 4000);
 
     let prompt = format!(
         r#"Given this README file content:

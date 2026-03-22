@@ -7,9 +7,8 @@ use uuid::Uuid;
 
 use crate::schema::{
     ai_request_cache, ai_usage_logs, audit_logs, browse_histories, flocks, index_jobs, index_rules,
-    reports, repos, security_scan_queue, security_scans, site_admins, skill_blocks,
-    skill_comments, skill_installs,
-    skill_ratings, skill_stars, skill_versions, skills, user_tokens, users,
+    reports, repos, security_scan_queue, security_scans, site_admins, skill_blocks, skill_comments,
+    skill_installs, skill_ratings, skill_stars, skill_versions, skills, user_tokens, users,
 };
 
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable)]

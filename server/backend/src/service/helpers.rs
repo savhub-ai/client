@@ -20,6 +20,21 @@ use crate::models::{AuditLogRow, FlockRow, NewAuditLogRow, SkillRow, SkillVersio
 use crate::schema::{audit_logs, flocks, repos, skill_versions, skills, users};
 use crate::state::app_state;
 
+/// Return the first `max_chars` Unicode scalar values from `value`.
+pub fn take_chars(value: &str, max_chars: usize) -> String {
+    value.chars().take(max_chars).collect()
+}
+
+/// Truncate arbitrary user/repo text without slicing through a UTF-8 boundary.
+pub fn truncate_chars(value: &str, max_chars: usize) -> String {
+    let prefix = take_chars(value, max_chars);
+    if prefix.len() == value.len() {
+        prefix
+    } else {
+        format!("{prefix}...")
+    }
+}
+
 /// Normalize a git URL to a canonical HTTPS form.
 ///
 /// - `git@github.com:org/repo` → `https://github.com/org/repo.git`

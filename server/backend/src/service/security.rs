@@ -19,8 +19,8 @@ use super::security_scan::{
 };
 use crate::auth::{AuthContext, require_staff};
 use crate::error::AppError;
-use crate::models::{FlockChangeset, NewSecurityScanRow, SecurityScanRow, SkillRow};
-use crate::schema::{flocks, security_scans, skill_versions, skills};
+use crate::models::{FlockChangeset, NewSecurityScanRow, RepoRow, SecurityScanRow, SkillRow};
+use crate::schema::{flocks, repos, security_scans, skill_versions, skills};
 
 // ---------------------------------------------------------------------------
 // Staff endpoints (unchanged)
@@ -144,6 +144,83 @@ pub struct SkillScanInput {
     pub files: Vec<FileContent>,
     /// The skill_version id this scan is for.
     pub version_id: Option<Uuid>,
+}
+
+/// Rebuild static-scan inputs from the cached repo checkout instead of
+/// collecting file contents during the index job itself.
+pub fn build_skill_scan_inputs_from_repo_checkout(
+    conn: &mut PgConnection,
+    repo_id: Uuid,
+    skills_in_flock: &[SkillRow],
+) -> Vec<SkillScanInput> {
+    let repo = repos::table
+        .find(repo_id)
+        .select(RepoRow::as_select())
+        .first::<RepoRow>(conn)
+        .optional()
+        .ok()
+        .flatten();
+
+    let Some(repo) = repo else {
+        return vec![];
+    };
+
+    let config = &crate::state::app_state().config;
+    let base_path = config.repo_checkout_base_path();
+    let git_ref = repo.git_ref.as_deref().unwrap_or("main");
+    let repo_dir = super::git_ops::cached_repo_dir(&base_path, &repo.git_url, git_ref);
+
+    if !repo_dir.is_dir() {
+        tracing::debug!(
+            "[security] repo checkout dir not found for flock scan: {}",
+            repo_dir.display(),
+        );
+        return vec![];
+    }
+
+    skills_in_flock
+        .iter()
+        .filter_map(|skill| {
+            let skill_dir = repo_dir.join(&skill.path);
+            if !skill_dir.is_dir() {
+                tracing::debug!(
+                    "[security] skill dir not found for static scan: {}",
+                    skill_dir.display(),
+                );
+                return None;
+            }
+
+            let files = walkdir::WalkDir::new(&skill_dir)
+                .max_depth(3)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().is_file())
+                .filter_map(|e| {
+                    let rel = e
+                        .path()
+                        .strip_prefix(&skill_dir)
+                        .ok()?
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                    let content = std::fs::read_to_string(e.path()).ok()?;
+                    Some(FileContent { path: rel, content })
+                })
+                .collect();
+
+            Some(SkillScanInput {
+                skill_id: skill.id,
+                slug: skill.slug.clone(),
+                name: skill.name.clone(),
+                description: skill.description.clone(),
+                license: skill.license.clone().unwrap_or_default(),
+                version: skill.version.clone(),
+                metadata_json: None,
+                frontmatter_always: None,
+                files,
+                version_id: skill.latest_version_id,
+            })
+        })
+        .collect()
 }
 
 /// Context for the scan pipeline that ties results to a specific git commit.
@@ -481,7 +558,11 @@ pub async fn process_ai_scan_queue(conn: &mut PgConnection) -> Result<bool, AppE
     }
 
     // Detect injection patterns
-    let all_content: String = files.iter().map(|f| f.content.as_str()).collect::<Vec<_>>().join("\n");
+    let all_content: String = files
+        .iter()
+        .map(|f| f.content.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
     let injection_signals = detect_injection_patterns(&all_content);
 
     let eval_ctx = SkillEvalContext {
@@ -587,10 +668,7 @@ pub async fn process_ai_scan_queue(conn: &mut PgConnection) -> Result<bool, AppE
 
 /// Load file contents for AI evaluation from the security_scan_queue or
 /// skill_versions table.
-fn load_skill_files_for_ai_eval(
-    conn: &mut PgConnection,
-    skill: &SkillRow,
-) -> Vec<FileContent> {
+fn load_skill_files_for_ai_eval(conn: &mut PgConnection, skill: &SkillRow) -> Vec<FileContent> {
     use crate::schema::security_scan_queue;
 
     // Try to find scan files from the security_scan_queue (keyed by flock_id)
@@ -622,7 +700,9 @@ fn load_skill_files_for_ai_eval(
             .ok()
             .flatten();
         if let Some(val) = files_json {
-            if let Ok(stored) = serde_json::from_value::<Vec<savhub_shared::StoredBundleFile>>(val.clone()) {
+            if let Ok(stored) =
+                serde_json::from_value::<Vec<savhub_shared::StoredBundleFile>>(val.clone())
+            {
                 if !stored.is_empty() {
                     return stored
                         .into_iter()

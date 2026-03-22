@@ -15,9 +15,8 @@ use super::git_ops::{
     refresh_cached_repo, resolve_remote_sha, sanitize_skill_slug,
 };
 use super::helpers::{
-    db_conn, hash_string, insert_audit_log, normalize_git_url, parse_git_url_parts,
+    db_conn, hash_string, insert_audit_log, normalize_git_url, parse_git_url_parts, take_chars,
 };
-use super::security::SkillScanInput;
 use crate::auth::AuthContext;
 use crate::error::AppError;
 use crate::models::{
@@ -232,10 +231,7 @@ pub async fn submit_index(
                 // Different commit — supersede old job, create new one
                 println!(
                     "[index] superseding active job {} for {} (old={} new={})",
-                    active.id,
-                    git_url,
-                    &active.git_sha,
-                    commit_sha
+                    active.id, git_url, &active.git_sha, commit_sha
                 );
                 supersede_index_job(&mut conn, active.id)?;
             }
@@ -637,12 +633,16 @@ async fn do_auto_import(
             diesel::update(repos::table.find(existing.id))
                 .set(crate::models::RepoChangeset {
                     name: Some(repo_name.to_string()),
+                    git_sha: Some(checkout.head_sha.clone()),
+                    git_ref: Some(Some(job.git_ref.clone())),
                     updated_at: Some(Utc::now()),
                     ..Default::default()
                 })
                 .execute(&mut conn)?;
             RepoRow {
                 name: repo_name.to_string(),
+                git_sha: checkout.head_sha.clone(),
+                git_ref: Some(job.git_ref.clone()),
                 ..existing
             }
         } else {
@@ -661,7 +661,7 @@ async fn do_auto_import(
                 updated_at: now,
                 last_indexed_at: None,
                 git_sha: checkout.head_sha.clone(),
-                git_ref: None,
+                git_ref: Some(job.git_ref.clone()),
             };
             diesel::insert_into(repos::table)
                 .values(&row)
@@ -819,57 +819,6 @@ async fn do_auto_import(
             continue;
         }
 
-        // Build file contents for security scanning
-        let scan_files: Vec<super::security::SkillScanInput> = skills
-            .iter()
-            .map(|skill_rec| {
-                let skill_dir = group
-                    .candidate_indices
-                    .iter()
-                    .find_map(|&i| {
-                        let c = &candidates[i];
-                        if c.relative_dir.ends_with(&skill_rec.path)
-                            || skill_rec.slug == sanitize_skill_slug(&c.relative_dir)
-                        {
-                            Some(c.path.clone())
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_else(|| checkout.path.join(&skill_rec.path));
-
-                let files = walkdir::WalkDir::new(&skill_dir)
-                    .max_depth(3)
-                    .into_iter()
-                    .filter_map(|e| e.ok())
-                    .filter(|e| e.file_type().is_file())
-                    .filter_map(|e| {
-                        let rel = e
-                            .path()
-                            .strip_prefix(&skill_dir)
-                            .ok()?
-                            .to_string_lossy()
-                            .to_string();
-                        let content = fs::read_to_string(e.path()).ok()?;
-                        Some(super::security_scan::FileContent { path: rel, content })
-                    })
-                    .collect();
-
-                super::security::SkillScanInput {
-                    skill_id: skill_rec.id.unwrap_or_default(),
-                    slug: skill_rec.slug.clone(),
-                    name: skill_rec.name.clone(),
-                    description: skill_rec.description.clone(),
-                    license: skill_rec.license.clone(),
-                    version: skill_rec.version.clone(),
-                    metadata_json: None,
-                    frontmatter_always: None,
-                    files,
-                    version_id: None,
-                }
-            })
-            .collect();
-
         let source_path = join_repo_relative_path(effective_subdir, &group.source_path);
 
         // Acquire a fresh connection per flock to avoid holding a connection
@@ -887,7 +836,6 @@ async fn do_auto_import(
                 job.requested_by_user_id,
                 &skills,
                 "scan_job.auto_import",
-                &scan_files,
             )?;
         }
 
@@ -950,7 +898,7 @@ async fn do_auto_import(
                 "[index] single flock — updating repo {} with flock name={:?} desc={:?}",
                 repo_sign,
                 flock_row.name,
-                &flock_row.description[..flock_row.description.len().min(60)],
+                take_chars(&flock_row.description, 60),
             );
             repo_update.name = Some(flock_row.name.clone());
             repo_update.description = Some(flock_row.description.clone());
@@ -1100,10 +1048,9 @@ fn enqueue_security_scan(
     source_path: &str,
     flock_id: Uuid,
     commit_sha: &str,
-    skill_scan_files: &[SkillScanInput],
 ) -> Result<(), AppError> {
     let now = Utc::now();
-    let scan_files_json = serde_json::to_value(skill_scan_files).unwrap_or_default();
+    let scan_files_json = serde_json::json!([]);
 
     diesel::insert_into(security_scan_queue::table)
         .values(NewSecurityScanQueueRow {
@@ -1150,7 +1097,6 @@ pub(crate) fn persist_auto_import_flock(
     user_id: Uuid,
     skills: &[ImportedSkillRecord],
     audit_action: &str,
-    skill_scan_files: &[super::security::SkillScanInput],
 ) -> Result<(), AppError> {
     let now = Utc::now();
     let existing_flock = flocks::table
@@ -1252,9 +1198,7 @@ pub(crate) fn persist_auto_import_flock(
                     version: skill.version.clone(),
                     license: Some(skill.license.clone()),
                     source: Some(flock_source.clone()),
-                    metadata: Some(
-                        serde_json::to_value(&skill.metadata).unwrap_or_default(),
-                    ),
+                    metadata: Some(serde_json::to_value(&skill.metadata).unwrap_or_default()),
                     runtime_data: Some(
                         skill
                             .runtime
@@ -1330,7 +1274,7 @@ pub(crate) fn persist_auto_import_flock(
 
     // Enqueue security scan (or skip if already scanned at this commit).
     if !already_scanned {
-        enqueue_security_scan(conn, repo, source_path, flock_id, commit_sha, skill_scan_files)?;
+        enqueue_security_scan(conn, repo, source_path, flock_id, commit_sha)?;
     } else {
         // Propagate the existing flock security_status to newly-inserted skills
         // so they inherit the previous scan result.

@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
 
-use super::helpers::db_conn;
+use super::helpers::{db_conn, take_chars};
 use super::security_scan::StaticScanResult;
 use crate::error::AppError;
 use crate::models::{NewAiUsageLogRow, NewSecurityScanRow};
@@ -366,13 +366,11 @@ fn assemble_eval_user_message(ctx: &SkillEvalContext) -> String {
     }
 
     // SKILL.md content
-    let skill_md = if ctx.skill_md_content.len() > MAX_SKILL_MD_CHARS {
-        format!(
-            "{}\n...[truncated]",
-            &ctx.skill_md_content[..MAX_SKILL_MD_CHARS]
-        )
+    let skill_md_preview = take_chars(&ctx.skill_md_content, MAX_SKILL_MD_CHARS);
+    let skill_md = if skill_md_preview.len() < ctx.skill_md_content.len() {
+        format!("{}\n...[truncated]", skill_md_preview)
     } else {
-        ctx.skill_md_content.clone()
+        skill_md_preview
     };
     sections.push(format!(
         "### SKILL.md content (runtime instructions)\n{skill_md}"
@@ -390,10 +388,11 @@ fn assemble_eval_user_message(ctx: &SkillEvalContext) -> String {
                 ));
                 break;
             }
-            let content = if f.content.len() > MAX_FILE_CHARS {
-                format!("{}\n...[truncated]", &f.content[..MAX_FILE_CHARS])
+            let content_preview = take_chars(&f.content, MAX_FILE_CHARS);
+            let content = if content_preview.len() < f.content.len() {
+                format!("{content_preview}\n...[truncated]")
             } else {
-                f.content.clone()
+                content_preview
             };
             file_blocks.push(format!("#### {}\n```\n{content}\n```", f.path));
             total_chars += content.len();
@@ -647,7 +646,7 @@ pub async fn evaluate_skill_with_llm(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        let err_msg = format!("LLM API error ({status}): {}", &body[..body.len().min(200)]);
+        let err_msg = format!("LLM API error ({status}): {}", take_chars(&body, 200));
         store_llm_error(&err_msg, skill_id, flock_id, model);
         return Err(AppError::Internal(err_msg));
     }
@@ -692,7 +691,7 @@ pub async fn evaluate_skill_with_llm(
     let result = parse_llm_eval_response(&raw_content).ok_or_else(|| {
         tracing::error!(
             "[llm_eval] parse failure, raw (first 500 chars): {}",
-            &raw_content[..raw_content.len().min(500)]
+            take_chars(&raw_content, 500)
         );
         store_llm_error(
             "Failed to parse LLM evaluation response",

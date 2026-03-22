@@ -422,17 +422,29 @@ fn run_claimed_scan_task(pool: &PgPool, task: SecurityScanQueueRow) {
         &task.commit_hash[..task.commit_hash.len().min(8)],
     );
 
-    let result = (|| -> Result<(), String> {
+    let result = (|| -> Result<(String, serde_json::Value), String> {
         let mut conn = pool.get().map_err(|e| e.to_string())?;
-
-        let skill_scan_files: Vec<crate::service::security::SkillScanInput> =
-            serde_json::from_value(task.scan_files.clone()).unwrap_or_default();
 
         let entry_rows = crate::schema::skills::table
             .filter(crate::schema::skills::flock_id.eq(task.flock_id))
+            .filter(crate::schema::skills::soft_deleted_at.is_null())
             .select(crate::models::SkillRow::as_select())
             .load::<crate::models::SkillRow>(&mut conn)
             .map_err(|e| e.to_string())?;
+
+        let mut skill_scan_files: Vec<crate::service::security::SkillScanInput> =
+            serde_json::from_value(task.scan_files.clone()).unwrap_or_default();
+
+        if skill_scan_files.is_empty() {
+            skill_scan_files = crate::service::security::build_skill_scan_inputs_from_repo_checkout(
+                &mut conn,
+                task.repo_id,
+                &entry_rows,
+            );
+        }
+
+        let scan_files_json =
+            serde_json::to_value(&skill_scan_files).unwrap_or_else(|_| serde_json::json!([]));
 
         let scan_ctx = crate::service::security::ScanContext {
             commit_hash: Some(task.commit_hash.clone()),
@@ -451,24 +463,56 @@ fn run_claimed_scan_task(pool: &PgPool, task: SecurityScanQueueRow) {
                     task.flock_id,
                     verdict,
                 );
+                Ok(("done".to_string(), scan_files_json))
+            }
+            Err(e) => {
+                tracing::error!("[static-scan] failed for flock {}: {}", task.flock_id, e,);
+                Ok(("failed".to_string(), scan_files_json))
+            }
+        }
+    })();
+
+    match result {
+        Ok((status, scan_files_json)) => match pool.get() {
+            Ok(mut conn) => {
+                if let Err(e) = diesel::update(security_scan_queue::table.find(task.id))
+                    .set((
+                        security_scan_queue::status.eq(status),
+                        security_scan_queue::scan_files.eq(scan_files_json),
+                        security_scan_queue::updated_at.eq(Utc::now()),
+                    ))
+                    .execute(&mut conn)
+                {
+                    tracing::error!("[static-scan] failed to finalize task {}: {}", task.id, e,);
+                }
             }
             Err(e) => {
                 tracing::error!(
-                    "[static-scan] failed for flock {}: {}",
-                    task.flock_id,
+                    "[static-scan] failed to get DB connection to finalize task {}: {}",
+                    task.id,
                     e,
                 );
             }
+        },
+        Err(e) => {
+            tracing::error!("[static-scan] task {} error: {}", task.id, e);
+            match pool.get() {
+                Ok(mut conn) => {
+                    let _ = diesel::update(security_scan_queue::table.find(task.id))
+                        .set((
+                            security_scan_queue::status.eq("failed"),
+                            security_scan_queue::updated_at.eq(Utc::now()),
+                        ))
+                        .execute(&mut conn);
+                }
+                Err(conn_err) => {
+                    tracing::error!(
+                        "[static-scan] failed to mark task {} as failed: {}",
+                        task.id,
+                        conn_err,
+                    );
+                }
+            }
         }
-
-        diesel::delete(security_scan_queue::table.find(task.id))
-            .execute(&mut conn)
-            .map_err(|e| e.to_string())?;
-
-        Ok(())
-    })();
-
-    if let Err(e) = result {
-        tracing::error!("[static-scan] task {} error: {}", task.id, e);
     }
 }
