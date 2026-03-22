@@ -666,6 +666,108 @@ pub fn enable_repo_skill_in_project(
     })
 }
 
+pub fn enable_fetched_skill_in_project(
+    workdir: &Path,
+    repo_url: &str,
+    skill_path: &str,
+    slug: &str,
+    conflict_choice: ProjectSkillConflictChoice,
+) -> Result<EnableProjectRepoSkillResult> {
+    let slug = sanitize_slug(slug);
+    if slug.is_empty() {
+        bail!("invalid skill slug");
+    }
+
+    let config_dir = crate::config::get_config_dir()?;
+    let stripped = repo_url
+        .trim()
+        .trim_end_matches('/')
+        .trim_end_matches(".git")
+        .strip_prefix("https://")
+        .or_else(|| {
+            repo_url
+                .trim()
+                .trim_end_matches('/')
+                .trim_end_matches(".git")
+                .strip_prefix("http://")
+        })
+        .unwrap_or(repo_url.trim());
+    let skill_folder = config_dir
+        .join("repos")
+        .join(stripped)
+        .join(skill_path);
+
+    if !skill_folder.is_dir() {
+        bail!(
+            "fetched skill not found at {}",
+            skill_folder.display()
+        );
+    }
+
+    let target = project_skills_dir(workdir).join(&slug);
+    let overwritten = target.exists();
+
+    if overwritten {
+        let conflict = ProjectSkillConflict {
+            slug: slug.clone(),
+            repo_name: stripped.to_string(),
+            repo_skill_path: skill_folder.clone(),
+            existing_skill_path: target.clone(),
+        };
+        match conflict_choice {
+            ProjectSkillConflictChoice::Ask => {
+                return Ok(EnableProjectRepoSkillResult::Conflict(conflict));
+            }
+            ProjectSkillConflictChoice::KeepExisting => {
+                return Ok(EnableProjectRepoSkillResult::KeptExisting { slug });
+            }
+            ProjectSkillConflictChoice::UseRepo => {}
+        }
+    }
+
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    copy_skill_folder(&skill_folder, &target)?;
+
+    let version_info = read_skill_version_info(&skill_folder).unwrap_or_default();
+    let fetched_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    write_repo_skill_origin(
+        &target,
+        &RepoSkillOrigin {
+            version: 1,
+            repo: repo_url.to_string(),
+            repo_sign: repo_url.to_string(),
+            repo_commit: version_info.git_commit.clone(),
+            slug: slug.clone(),
+            skill_version: version_info.version.clone(),
+            fetched_at,
+        },
+    )?;
+
+    upsert_project_added_skill(
+        workdir,
+        ProjectAddedSkill {
+            sign: None,
+            path: slug.clone(),
+            slug: slug.clone(),
+            local: None,
+            version: version_info.version.clone(),
+            fetched_at,
+        },
+    )?;
+
+    Ok(EnableProjectRepoSkillResult::Enabled {
+        slug,
+        overwritten,
+        version: version_info.version,
+        git_commit: version_info.git_commit,
+    })
+}
+
 pub fn disable_project_skill(workdir: &Path, slug: &str) -> Result<bool> {
     let slug = sanitize_slug(slug);
     if slug.is_empty() {

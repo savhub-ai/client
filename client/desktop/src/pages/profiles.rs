@@ -6,7 +6,7 @@ use savhub_local::config::{add_project, read_projects_list, remove_project};
 use savhub_local::presets::{
     EnableProjectRepoSkillResult, ProjectSelectorMatch, ProjectSkillConflict,
     ProjectSkillConflictChoice, ResolvedProjectSkill, ResolvedSkillSources, disable_project_skill,
-    enable_repo_skill_in_project, read_project_selector_matches,
+    enable_fetched_skill_in_project, read_project_selector_matches,
     resolve_project_skills_with_sources,
 };
 
@@ -25,7 +25,6 @@ use crate::theme::Theme;
 const PROJECTS_PAGE_SIZE: usize = 10;
 const PROJECT_SELECTORS_PAGE_SIZE: usize = 8;
 const PROJECT_SKILLS_PAGE_SIZE: usize = 8;
-const LOCAL_SKILLS_PAGE_SIZE: usize = 10;
 
 #[component]
 fn FolderBrowseIcon(size: u32) -> Element {
@@ -479,8 +478,11 @@ struct RepoSkillOption {
     flock_slug: Option<String>,
 }
 
-fn collect_repo_skill_options(workdir: &Path) -> Vec<RepoSkillOption> {
-    let lock = savhub_local::skills::read_lockfile(workdir).unwrap_or_default();
+fn collect_repo_skill_options(_workdir: &Path) -> Vec<RepoSkillOption> {
+    let savhub_dir = savhub_local::config::get_config_dir().unwrap_or_else(|_| {
+        savhub_local::clients::home_dir().join(".savhub")
+    });
+    let lock = savhub_local::skills::read_lockfile(&savhub_dir).unwrap_or_default();
     let mut options: Vec<RepoSkillOption> = savhub_local::skills::flatten_lockfile(&lock)
         .into_iter()
         .map(|e| {
@@ -544,6 +546,14 @@ fn SelectorMatchRow(selector: String) -> Element {
     }
 }
 
+#[derive(Clone, PartialEq, Eq)]
+struct PendingConflictState {
+    conflict: ProjectSkillConflict,
+    repo_url: String,
+    path: String,
+    slug: String,
+}
+
 #[component]
 fn AddProjectSkillDialog(
     project_path: String,
@@ -560,15 +570,36 @@ fn AddProjectSkillDialog(
     keep_existing_label: &'static str,
     on_close: EventHandler<()>,
 ) -> Element {
+    let state = use_context::<AppState>();
+    let t = i18n::texts(*state.lang.read());
     let enabled = enabled_skill_slugs.into_iter().collect::<BTreeSet<_>>();
-    let mut skills_page = use_signal(|| 0usize);
-    let mut pending_conflict = use_signal(|| Option::<ProjectSkillConflict>::None);
+    let mut pending_conflict = use_signal(|| Option::<PendingConflictState>::None);
     let mut status_msg = use_signal(|| Option::<String>::None);
     let mut backdrop_pressed = use_signal(|| false);
-    let current_page =
-        pagination::clamp_page(*skills_page.read(), skills.len(), LOCAL_SKILLS_PAGE_SIZE);
-    let visible_skills = pagination::slice_for_page(&skills, current_page, LOCAL_SKILLS_PAGE_SIZE);
-    let total_pages = pagination::total_pages(skills.len(), LOCAL_SKILLS_PAGE_SIZE);
+    let mut search_query = use_signal(String::new);
+    let mut grouped_view = use_signal(|| true);
+
+    let query = search_query.read().trim().to_lowercase();
+    let filtered_skills: Vec<&RepoSkillOption> = skills
+        .iter()
+        .filter(|skill| {
+            if query.is_empty() {
+                return true;
+            }
+            skill.display_name.to_lowercase().contains(&query)
+                || skill.slug.to_lowercase().contains(&query)
+                || skill.repo_url.to_lowercase().contains(&query)
+                || skill
+                    .flock_slug
+                    .as_deref()
+                    .map(|f| f.to_lowercase().contains(&query))
+                    .unwrap_or(false)
+        })
+        .collect();
+
+    let is_grouped = *grouped_view.read();
+    let toggle_bg = if is_grouped { Theme::ACCENT } else { Theme::BG_ELEVATED };
+    let toggle_color = if is_grouped { "white" } else { Theme::TEXT };
 
     rsx! {
         div {
@@ -576,21 +607,29 @@ fn AddProjectSkillDialog(
             onmousedown: move |_| backdrop_pressed.set(true),
             onmouseup: move |_| { if *backdrop_pressed.read() { on_close.call(()); } backdrop_pressed.set(false); },
             div {
-                style: "width: 100%; max-width: 760px; background: {Theme::PANEL}; border: 1px solid {Theme::LINE}; border-radius: 12px; box-shadow: 0 24px 64px rgba(26, 46, 24, 0.18); padding: 20px;",
+                style: "width: 100%; max-width: 760px; max-height: 90vh; display: flex; flex-direction: column; background: {Theme::PANEL}; border: 1px solid {Theme::LINE}; border-radius: 12px; box-shadow: 0 24px 64px rgba(26, 46, 24, 0.18); padding: 20px;",
                 onmousedown: move |evt| evt.stop_propagation(),
                 onmouseup: move |evt| evt.stop_propagation(),
-                div { style: "display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px;",
-                    h2 { style: "font-size: 18px; font-weight: 700; color: {Theme::TEXT};",
+
+                // Header: title + search + toggle + close
+                div { style: "display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-shrink: 0;",
+                    h2 { style: "font-size: 18px; font-weight: 700; color: {Theme::TEXT}; white-space: nowrap;",
                         "{title}"
                     }
-                    div { style: "display: flex; align-items: center; gap: 8px;",
-                        PaginationControls {
-                            current_page: current_page,
-                            total_pages: Some(total_pages),
-                            has_prev: current_page > 0,
-                            has_next: current_page + 1 < total_pages,
-                            on_prev: move |_| skills_page.set(current_page.saturating_sub(1)),
-                            on_next: move |_| skills_page.set(current_page + 1),
+                    div { style: "flex: 1; min-width: 0;",
+                        input {
+                            r#type: "text",
+                            placeholder: t.search_placeholder,
+                            style: "width: 100%; padding: 7px 12px; background: {Theme::BG_ELEVATED}; border: 1px solid {Theme::LINE}; border-radius: 8px; font-size: 13px; color: {Theme::TEXT}; outline: none;",
+                            value: "{search_query}",
+                            oninput: move |evt| search_query.set(evt.value()),
+                        }
+                    }
+                    div { style: "display: flex; align-items: center; gap: 6px; flex-shrink: 0;",
+                        button {
+                            style: "padding: 6px 12px; background: {toggle_bg}; color: {toggle_color}; border: 1px solid {Theme::LINE}; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;",
+                            onclick: move |_| grouped_view.set(!is_grouped),
+                            "{t.grouped_label}"
                         }
                         button {
                             style: "width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid {Theme::LINE}; border-radius: 8px; font-size: 16px; color: {Theme::MUTED}; cursor: pointer;",
@@ -600,35 +639,31 @@ fn AddProjectSkillDialog(
                     }
                 }
 
-                if let Some(conflict) = pending_conflict.read().as_ref() {
-                    div { style: "margin-bottom: 14px; padding: 12px 14px; background: rgba(191, 126, 26, 0.08); border: 1px solid rgba(191, 126, 26, 0.22); border-radius: 8px;",
+                if let Some(pending) = pending_conflict.read().as_ref() {
+                    div { style: "margin-bottom: 14px; padding: 12px 14px; background: rgba(191, 126, 26, 0.08); border: 1px solid rgba(191, 126, 26, 0.22); border-radius: 8px; flex-shrink: 0;",
                         p { style: "font-size: 12px; font-weight: 600; color: {Theme::TEXT}; margin-bottom: 8px;",
                             "{conflict_label}"
                         }
                         p { style: "font-size: 11px; color: {Theme::MUTED}; margin-bottom: 4px; font-family: Consolas, 'SFMono-Regular', monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;",
-                            "{conflict.repo_skill_path.display()}"
+                            "{pending.conflict.repo_skill_path.display()}"
                         }
                         p { style: "font-size: 11px; color: {Theme::MUTED}; margin-bottom: 10px; font-family: Consolas, 'SFMono-Regular', monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;",
-                            "{conflict.existing_skill_path.display()}"
+                            "{pending.conflict.existing_skill_path.display()}"
                         }
                         div { style: "display: flex; gap: 8px; flex-wrap: wrap;",
                             button {
                                 style: "padding: 6px 12px; background: linear-gradient(135deg, #6aa84f 0%, #7bc25a 100%); color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;",
                                 onclick: {
                                     let project_path = project_path.clone();
-                                    let conflict = conflict.clone();
+                                    let pending = pending.clone();
                                     move |_| {
                                         let wd = PathBuf::from(&project_path);
-                                        let sources = ResolvedSkillSources {
-                                            manual: true,
-                                            ..ResolvedSkillSources::default()
-                                        };
-                                        match enable_repo_skill_in_project(
+                                        match enable_fetched_skill_in_project(
                                             &wd,
-                                            &conflict.repo_name,
-                                            &conflict.slug,
+                                            &pending.repo_url,
+                                            &pending.path,
+                                            &pending.slug,
                                             ProjectSkillConflictChoice::UseRepo,
-                                            sources,
                                         ) {
                                             Ok(EnableProjectRepoSkillResult::Enabled { .. }) => {
                                                 pending_conflict.set(None);
@@ -653,19 +688,15 @@ fn AddProjectSkillDialog(
                                 style: "padding: 6px 12px; background: {Theme::BG_ELEVATED}; color: {Theme::TEXT}; border: 1px solid {Theme::LINE}; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;",
                                 onclick: {
                                     let project_path = project_path.clone();
-                                    let conflict = conflict.clone();
+                                    let pending = pending.clone();
                                     move |_| {
                                         let wd = PathBuf::from(&project_path);
-                                        let sources = ResolvedSkillSources {
-                                            manual: true,
-                                            ..ResolvedSkillSources::default()
-                                        };
-                                        match enable_repo_skill_in_project(
+                                        match enable_fetched_skill_in_project(
                                             &wd,
-                                            &conflict.repo_name,
-                                            &conflict.slug,
+                                            &pending.repo_url,
+                                            &pending.path,
+                                            &pending.slug,
                                             ProjectSkillConflictChoice::KeepExisting,
-                                            sources,
                                         ) {
                                             Ok(EnableProjectRepoSkillResult::Enabled { .. })
                                             | Ok(EnableProjectRepoSkillResult::KeptExisting { .. }) => {
@@ -687,19 +718,111 @@ fn AddProjectSkillDialog(
                 }
 
                 if let Some(message) = status_msg.read().as_ref() {
-                    p { style: "font-size: 12px; color: {Theme::DANGER}; margin-bottom: 12px;",
+                    p { style: "font-size: 12px; color: {Theme::DANGER}; margin-bottom: 12px; flex-shrink: 0;",
                         "{message}"
                     }
                 }
 
-                if skills.is_empty() {
+                if filtered_skills.is_empty() {
                     p { style: "font-size: 13px; color: {Theme::MUTED};",
                         "{empty_label}"
                     }
+                } else if is_grouped {
+                    // Grouped by flock_slug (or repo_url for ungrouped skills)
+                    div { style: "display: flex; flex-direction: column; gap: 14px; overflow-y: auto; flex: 1; min-height: 0;",
+                        {
+                            let mut groups: Vec<(String, Vec<&RepoSkillOption>)> = Vec::new();
+                            for skill in &filtered_skills {
+                                let group_key = skill.flock_slug.clone()
+                                    .unwrap_or_else(|| strip_url_scheme(&skill.repo_url).to_string());
+                                if let Some(existing) = groups.iter_mut().find(|(k, _)| k == &group_key) {
+                                    existing.1.push(skill);
+                                } else {
+                                    groups.push((group_key, vec![skill]));
+                                }
+                            }
+                            rsx! {
+                                for (group_name, group_skills) in groups.iter() {
+                                    div { style: "background: {Theme::BG_ELEVATED}; border: 1px solid {Theme::LINE}; border-radius: 8px; overflow: hidden;",
+                                        div { style: "padding: 8px 14px; background: rgba(238, 246, 232, 0.62); border-bottom: 1px solid {Theme::LINE};",
+                                            p { style: "font-size: 12px; font-weight: 700; color: {Theme::TEXT};",
+                                                "{group_name} ({group_skills.len()})"
+                                            }
+                                        }
+                                        for skill in group_skills.iter() {
+                                            {
+                                                let is_enabled = enabled.contains(&skill.slug);
+                                                let repo_display = strip_url_scheme(&skill.repo_url);
+                                                rsx! {
+                                                    div { style: "display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-bottom: 1px solid {Theme::LINE};",
+                                                        div { style: "min-width: 0; flex: 1;",
+                                                            p { style: "font-size: 13px; font-weight: 600; color: {Theme::TEXT}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;",
+                                                                "{skill.display_name}"
+                                                            }
+                                                            p { style: "font-size: 11px; color: {Theme::MUTED}; margin-top: 2px; font-family: Consolas, 'SFMono-Regular', monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;",
+                                                                "{repo_display}/{skill.path}"
+                                                            }
+                                                        }
+                                                        div { style: "display: flex; align-items: center; gap: 8px; flex-shrink: 0;",
+                                                            if is_enabled {
+                                                                span { style: "font-size: 11px; font-weight: 600; color: {Theme::ACCENT_STRONG};",
+                                                                    "{enabled_label}"
+                                                                }
+                                                            }
+                                                            button {
+                                                                style: "padding: 5px 10px; background: linear-gradient(135deg, #6aa84f 0%, #7bc25a 100%); color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;",
+                                                                onclick: {
+                                                                    let project_path = project_path.clone();
+                                                                    let skill = (*skill).clone();
+                                                                    move |_| {
+                                                                        let wd = PathBuf::from(&project_path);
+                                                                        match enable_fetched_skill_in_project(
+                                                                            &wd,
+                                                                            &skill.repo_url,
+                                                                            &skill.path,
+                                                                            &skill.slug,
+                                                                            ProjectSkillConflictChoice::Ask,
+                                                                        ) {
+                                                                            Ok(EnableProjectRepoSkillResult::Enabled { .. }) => {
+                                                                                pending_conflict.set(None);
+                                                                                status_msg.set(None);
+                                                                                version.with_mut(|value| *value += 1);
+                                                                                on_close.call(());
+                                                                            }
+                                                                            Ok(EnableProjectRepoSkillResult::KeptExisting { .. }) => {
+                                                                                pending_conflict.set(None);
+                                                                                status_msg.set(None);
+                                                                                on_close.call(());
+                                                                            }
+                                                                            Ok(EnableProjectRepoSkillResult::Conflict(conflict)) => {
+                                                                                pending_conflict.set(Some(PendingConflictState {
+                                                                                    conflict,
+                                                                                    repo_url: skill.repo_url.clone(),
+                                                                                    path: skill.path.clone(),
+                                                                                    slug: skill.slug.clone(),
+                                                                                }));
+                                                                                status_msg.set(None);
+                                                                            }
+                                                                            Err(error) => status_msg.set(Some(error.to_string())),
+                                                                        }
+                                                                    }
+                                                                },
+                                                                "{add_label}"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 } else {
-                    // Group skills by flock_slug
-                    div { style: "display: flex; flex-direction: column; gap: 10px; max-height: 520px; overflow-y: auto;",
-                        for skill in visible_skills.iter() {
+                    // Flat list
+                    div { style: "display: flex; flex-direction: column; gap: 10px; overflow-y: auto; flex: 1; min-height: 0;",
+                        for skill in filtered_skills.iter() {
                             {
                                 let is_enabled = enabled.contains(&skill.slug);
                                 let repo_display = strip_url_scheme(&skill.repo_url);
@@ -727,19 +850,15 @@ fn AddProjectSkillDialog(
                                                 style: "padding: 6px 12px; background: linear-gradient(135deg, #6aa84f 0%, #7bc25a 100%); color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;",
                                                 onclick: {
                                                     let project_path = project_path.clone();
-                                                    let skill = skill.clone();
+                                                    let skill = (*skill).clone();
                                                     move |_| {
                                                         let wd = PathBuf::from(&project_path);
-                                                        let sources = ResolvedSkillSources {
-                                                            manual: true,
-                                                            ..ResolvedSkillSources::default()
-                                                        };
-                                                        match enable_repo_skill_in_project(
+                                                        match enable_fetched_skill_in_project(
                                                             &wd,
-                                                            &strip_url_scheme(&skill.repo_url),
+                                                            &skill.repo_url,
+                                                            &skill.path,
                                                             &skill.slug,
                                                             ProjectSkillConflictChoice::Ask,
-                                                            sources,
                                                         ) {
                                                             Ok(EnableProjectRepoSkillResult::Enabled { .. }) => {
                                                                 pending_conflict.set(None);
@@ -753,7 +872,12 @@ fn AddProjectSkillDialog(
                                                                 on_close.call(());
                                                             }
                                                             Ok(EnableProjectRepoSkillResult::Conflict(conflict)) => {
-                                                                pending_conflict.set(Some(conflict));
+                                                                pending_conflict.set(Some(PendingConflictState {
+                                                                    conflict,
+                                                                    repo_url: skill.repo_url.clone(),
+                                                                    path: skill.path.clone(),
+                                                                    slug: skill.slug.clone(),
+                                                                }));
                                                                 status_msg.set(None);
                                                             }
                                                             Err(error) => status_msg.set(Some(error.to_string())),
