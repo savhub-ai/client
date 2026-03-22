@@ -338,8 +338,9 @@ async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
 
     let git_url = normalize_git_url(&repo.git_url);
     let url_hash = hash_string(&git_url);
+    let git_ref = repo.git_ref.as_deref().unwrap_or("HEAD");
 
-    let current_sha = match resolve_remote_sha(&git_url, "HEAD").await {
+    let current_sha = match resolve_remote_sha(&git_url, git_ref).await {
         Ok(sha) => sha,
         Err(e) => {
             tracing::debug!(repo_id = %repo.id, "failed to ls-remote for auto-index: {e}");
@@ -397,7 +398,7 @@ async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
             status: "pending".to_string(),
             job_type: "auto_import".to_string(),
             git_url,
-            git_ref: "HEAD".to_string(),
+            git_ref: git_ref.to_string(),
             git_subdir: ".".to_string(),
             repo_slug: None,
             requested_by_user_id: {

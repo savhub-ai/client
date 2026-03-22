@@ -168,8 +168,7 @@ pub fn build_skill_scan_inputs_from_repo_checkout(
 
     let config = &crate::state::app_state().config;
     let base_path = config.repo_checkout_base_path();
-    let git_ref = repo.git_ref.as_deref().unwrap_or("main");
-    let repo_dir = super::git_ops::cached_repo_dir(&base_path, &repo.git_url, git_ref);
+    let repo_dir = super::git_ops::cached_repo_dir(&base_path, &repo.git_url);
 
     if !repo_dir.is_dir() {
         tracing::debug!(
@@ -232,7 +231,7 @@ pub struct ScanContext {
 /// Run all automated scans (static + legacy content_analysis + license_audit).
 ///
 /// Returns the worst verdict as a string. Skills that pass static scan are set
-/// to "checked" and will be picked up by `process_ai_scan_queue` separately.
+/// to "checked" and will be picked up by the AI scan worker separately.
 pub fn run_automated_scans(
     conn: &mut PgConnection,
     flock_id: Uuid,
@@ -420,7 +419,7 @@ pub fn run_automated_scans_with_files(
                 }
             }
 
-            // AI scan runs separately via process_ai_scan_queue — skills with
+            // AI scan runs separately via the background worker — skills with
             // security_status="checked" are picked up there.
         }
     }
@@ -763,8 +762,7 @@ fn load_skill_files_from_repo_checkout(
 
     let config = &crate::state::app_state().config;
     let base_path = config.repo_checkout_base_path();
-    let git_ref = repo.git_ref.as_deref().unwrap_or("main");
-    let repo_dir = super::git_ops::cached_repo_dir(&base_path, &repo.git_url, git_ref);
+    let repo_dir = super::git_ops::cached_repo_dir(&base_path, &repo.git_url);
     let skill_dir = repo_dir.join(&skill.path);
 
     if !skill_dir.is_dir() {

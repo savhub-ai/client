@@ -42,6 +42,14 @@ fn strip_url_scheme(url: &str) -> &str {
         .or_else(|| url.strip_prefix("http://"))
         .unwrap_or(url)
 }
+
+/// Strip only `https://` / `http://` prefix, keeping `.git` suffix intact.
+fn strip_url_scheme_keep_git(url: &str) -> &str {
+    let url = url.trim().trim_end_matches('/');
+    url.strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url)
+}
 const ADMIN_MODE_STORAGE_KEY: &str = "savhub.admin_mode";
 const CLIENT_REPO_URL: &str = "https://github.com/savhub-ai/savhub";
 const CLIENT_RELEASES_URL: &str = "https://github.com/savhub-ai/savhub/releases";
@@ -2310,7 +2318,7 @@ fn render_ws_index_progress(
 }
 
 fn render_copy_sign(repo_url: &str, path: &str) -> Element {
-    let display = format!("{}/{}", strip_url_scheme(repo_url), path);
+    let display = format!("{}/{}", strip_url_scheme_keep_git(repo_url), path);
     let copy_json = format!("{{\"repo\":\"{}\",\"path\":\"{}\"}}", repo_url, path);
     let mut copied = use_signal(|| false);
     rsx! {
@@ -2348,7 +2356,7 @@ fn render_copy_sign(repo_url: &str, path: &str) -> Element {
 
 /// Compact copy button — just the icon, no sign text. For use in cards.
 fn render_copy_icon(repo_url: &str, path: &str) -> Element {
-    let display = format!("{}/{}", strip_url_scheme(repo_url), path);
+    let display = format!("{}/{}", strip_url_scheme_keep_git(repo_url), path);
     let copy_json = format!("{{\"repo\":\"{}\",\"path\":\"{}\"}}", repo_url, path);
     let mut copied = use_signal(|| false);
     rsx! {

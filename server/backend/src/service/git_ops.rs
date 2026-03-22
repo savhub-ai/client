@@ -3,7 +3,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use super::helpers::{extract_summary, parse_frontmatter};
@@ -276,30 +275,23 @@ pub(crate) fn sanitize_skill_slug(value: &str) -> String {
     slug
 }
 
-fn repo_cache_dir_name(url: &str, git_ref: &str) -> String {
-    let repo_name = repo_name_from_url(url);
-    let ref_slug = sanitize_skill_slug(git_ref);
-    let ref_part = if ref_slug.is_empty() {
-        "head"
-    } else {
-        &ref_slug
-    };
-    let mut hasher = Sha256::new();
-    hasher.update(url.as_bytes());
-    hasher.update(b"\n");
-    hasher.update(git_ref.as_bytes());
-    let hash = format!("{:x}", hasher.finalize());
-    format!("{repo_name}-{ref_part}-{}", &hash[..12])
-}
-
-fn repo_name_from_url(url: &str) -> String {
-    url.trim_end_matches('/')
-        .trim_end_matches(".git")
-        .rsplit('/')
-        .next()
-        .map(sanitize_skill_slug)
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "repo".to_string())
+/// Derive a stable, human-readable cache directory path from a git URL.
+///
+/// `https://github.com/openclaw/skills.git` → `github.com/openclaw/skills`
+///
+/// The same repo always maps to the same directory regardless of git_ref.
+fn repo_cache_dir_name(url: &str) -> String {
+    let url = url.trim().trim_end_matches('/');
+    let url = url.trim_end_matches(".git");
+    let url = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url);
+    // Sanitize each path segment to avoid illegal filesystem characters
+    url.split('/')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 fn skill_markdown_path(relative_dir: &str) -> String {
@@ -426,8 +418,8 @@ pub(crate) async fn changed_files_between(
     Ok(paths)
 }
 
-pub(crate) fn cached_repo_dir(base_path: &Path, url: &str, git_ref: &str) -> PathBuf {
-    base_path.join(repo_cache_dir_name(url, git_ref))
+pub(crate) fn cached_repo_dir(base_path: &Path, url: &str) -> PathBuf {
+    base_path.join(repo_cache_dir_name(url))
 }
 
 pub(crate) async fn refresh_cached_repo(
@@ -442,7 +434,7 @@ pub(crate) async fn refresh_cached_repo(
         ))
     })?;
 
-    let repo_dir = cached_repo_dir(base_path, url, git_ref);
+    let repo_dir = cached_repo_dir(base_path, url);
 
     let lock = app_state().repo_checkout_lock(&repo_dir);
     let _guard = lock.lock().await;
@@ -753,15 +745,19 @@ mod tests {
     }
 
     #[test]
-    fn cached_repo_dir_is_stable_per_url_and_ref() {
+    fn cached_repo_dir_is_stable_per_url() {
         let base = PathBuf::from("repos");
-        let a = cached_repo_dir(&base, "https://github.com/acme/skills.git", "main");
-        let b = cached_repo_dir(&base, "https://github.com/acme/skills.git", "main");
-        let c = cached_repo_dir(&base, "https://github.com/acme/skills.git", "develop");
+        let a = cached_repo_dir(&base, "https://github.com/acme/skills.git");
+        let b = cached_repo_dir(&base, "https://github.com/acme/skills.git");
+        // Same repo with different ref should produce the same directory
+        let c = cached_repo_dir(&base, "https://github.com/acme/other.git");
 
         assert_eq!(a, b);
         assert_ne!(a, c);
-        assert!(a.to_string_lossy().contains("skills-main-"));
+        assert_eq!(
+            a,
+            PathBuf::from("repos/github.com/acme/skills")
+        );
     }
 
     #[test]
