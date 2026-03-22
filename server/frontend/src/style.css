@@ -1791,7 +1791,7 @@ code {
 }
 
 .security-badge.sb-verified   .sb-value { background: #2e8b57; }
-.security-badge.sb-validated  .sb-value { background: #6a9f5b; }
+.security-badge.sb-checked    .sb-value { background: #6a9f5b; }
 .security-badge.sb-suspicious .sb-value { background: #b8860b; }
 .security-badge.sb-malicious  .sb-value { background: #e0413a; }
 .security-badge.sb-unscanned  .sb-value { background: #999; }

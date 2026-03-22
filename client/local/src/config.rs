@@ -14,7 +14,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SecurityLevel {
-    /// Only fetch skills with "verified" or "validated" status.
+    /// Only fetch skills with "verified" or "checked" status.
     #[default]
     Verified,
     /// Also allow "suspicious" skills.
@@ -49,9 +49,9 @@ impl SecurityLevel {
                 status.map_or(true, |s| s != "malicious")
             }
             SecurityLevel::Verified => {
-                // Only allow verified or validated verified + clean verdict
+                // Only allow verified or checked verified + clean verdict
                 let status_ok =
-                    status.map_or(false, |s| s == "verified" || s == "validated");
+                    status.map_or(false, |s| s == "verified" || s == "checked");
                 let verdict_ok = verdict.map_or(true, |v| v == "clean");
                 status_ok && verdict_ok
             }

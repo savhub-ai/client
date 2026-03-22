@@ -434,7 +434,7 @@ static EN: Texts = Texts {
     compat_update_now: "Check for Updates",
 
     security_unscanned: "Unscanned",
-    security_validated: "Validated",
+    security_checked: "Validated",
     security_verified: "Verified",
     security_suspicious: "Suspicious",
     security_malicious: "Malicious",
@@ -652,7 +652,7 @@ static ZH: Texts = Texts {
     compat_update_now: "检查更新",
 
     security_unscanned: "未扫描",
-    security_validated: "部分验证",
+    security_checked: "已检查",
     security_verified: "已验证",
     security_suspicious: "可疑",
     security_malicious: "恶意",
