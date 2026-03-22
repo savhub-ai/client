@@ -28,8 +28,8 @@ pub struct Config {
     pub auto_index_min_interval_secs: u64,
     /// Maximum number of index jobs that may execute in parallel. Default 10.
     pub max_parallel_index_jobs: usize,
-    /// Enable the enhanced security scanning pipeline (static + LLM). Default false.
-    pub security_scan_enabled: bool,
+    /// Enable the enhanced security scanning pipeline (LLM). Default false.
+    pub ai_security_scan_enabled: bool,
     /// Max concurrent AI chat requests (flock/repo metadata). Default 2.
     pub ai_chat_concurrency: usize,
     /// Max concurrent AI security scan requests. Default 2.
@@ -101,7 +101,7 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(10),
-            security_scan_enabled: env::var("SAVHUB_SECURITY_SCAN")
+            ai_security_scan_enabled: env::var("SAVHUB_AI_SECURITY_SCAN")
                 .map(|v| matches!(v.trim().to_lowercase().as_str(), "true" | "1" | "yes"))
                 .unwrap_or(false),
             ai_chat_concurrency: env::var("SAVHUB_AI_CHAT_CONCURRENCY")

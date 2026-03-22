@@ -166,7 +166,7 @@ pub fn run_automated_scans(
 /// for deep static scanning and async LLM evaluation.
 ///
 /// The enhanced pipeline (static file scanning + LLM eval) only runs when
-/// `SAVHUB_SECURITY_SCAN=true`. Otherwise only the legacy content_analysis
+/// `SAVHUB_AI_SECURITY_SCAN=true`. Otherwise only the legacy content_analysis
 /// and license_audit scanners execute.
 pub fn run_automated_scans_with_files(
     conn: &mut PgConnection,
@@ -199,28 +199,23 @@ pub fn run_automated_scans_with_files(
         }
     }
 
-    let scan_enabled = crate::state::app_state().config.security_scan_enabled;
+    let ai_scan_enabled = crate::state::app_state().config.ai_security_scan_enabled;
     let mut worst_verdict = ModerationVerdict::Clean;
     let mut static_scan_ran = false;
 
     tracing::info!(
-        "[security] running scans for flock {} ({} skills, scan_enabled={}, files={})",
+        "[security] running scans for flock {} ({} skills, ai_scan={}, files={})",
         flock_id,
         skills.len(),
-        scan_enabled,
+        ai_scan_enabled,
         skill_files.len(),
     );
 
-    // Build a lookup from skill slug → file contents.
-    // Only populate when security scanning is enabled.
-    let file_map: std::collections::HashMap<&str, &SkillScanInput> = if scan_enabled {
-        skill_files
-            .iter()
-            .map(|sf| (sf.slug.as_str(), sf))
-            .collect()
-    } else {
-        std::collections::HashMap::new()
-    };
+    // Build a lookup from skill slug → file contents (always populated for static scan).
+    let file_map: std::collections::HashMap<&str, &SkillScanInput> = skill_files
+        .iter()
+        .map(|sf| (sf.slug.as_str(), sf))
+        .collect();
 
     for skill in skills {
         // ----- Legacy content analysis (on name/description text) -----
@@ -326,7 +321,7 @@ pub fn run_automated_scans_with_files(
                 _ => {}
             }
 
-            // Static scan passed → "validated". AI eval will upgrade to "verified" if enabled.
+            // Static scan passed → "checked". AI eval will upgrade to "verified" if enabled.
             let ai_enabled = {
                 let cfg = &crate::state::app_state().config;
                 cfg.ai_provider.is_some() && cfg.ai_api_key.is_some()
@@ -334,7 +329,7 @@ pub fn run_automated_scans_with_files(
             let security_status = match static_result.verdict {
                 ModerationVerdict::Malicious => "malicious",
                 ModerationVerdict::Suspicious => "suspicious",
-                ModerationVerdict::Clean => "validated",
+                ModerationVerdict::Clean => "checked",
             };
             diesel::update(skills::table.find(skill.id))
                 .set(skills::security_status.eq(security_status))
@@ -350,8 +345,8 @@ pub fn run_automated_scans_with_files(
                 }
             }
 
-            // ----- Spawn async LLM evaluation (only if AI is configured) -----
-            if ai_enabled {
+            // ----- Spawn async LLM evaluation (only if AI scan is enabled and configured) -----
+            if ai_scan_enabled && ai_enabled {
                 schedule_llm_eval(skill, flock_id, scan_input, &static_result);
             }
         }
@@ -393,12 +388,12 @@ pub fn run_automated_scans_with_files(
         })
         .execute(conn)?;
 
-    // Update flock security_status. Static clean → "validated".
+    // Update flock security_status. Static clean → "checked".
     // AI eval will upgrade to "verified" later if enabled.
     let flock_status = match worst_verdict {
         ModerationVerdict::Malicious => "malicious",
         ModerationVerdict::Suspicious => "suspicious",
-        ModerationVerdict::Clean => "validated",
+        ModerationVerdict::Clean => "checked",
     };
     diesel::update(flocks::table.find(flock_id))
         .set(flocks::security_status.eq(flock_status))
