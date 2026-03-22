@@ -612,7 +612,7 @@ fn load_skill_files_for_ai_eval(
         }
     }
 
-    // Fallback: load from skill_versions (stored as Vec<StoredBundleFile>)
+    // Fallback 2: load from skill_versions (stored as Vec<StoredBundleFile>)
     if let Some(vid) = skill.latest_version_id {
         let files_json: Option<serde_json::Value> = skill_versions::table
             .find(vid)
@@ -622,24 +622,89 @@ fn load_skill_files_for_ai_eval(
             .ok()
             .flatten();
         if let Some(val) = files_json {
-            // Try StoredBundleFile format first (has path, content, size, sha256)
             if let Ok(stored) = serde_json::from_value::<Vec<savhub_shared::StoredBundleFile>>(val.clone()) {
-                return stored
-                    .into_iter()
-                    .map(|f| FileContent {
-                        path: f.path,
-                        content: f.content,
-                    })
-                    .collect();
+                if !stored.is_empty() {
+                    return stored
+                        .into_iter()
+                        .map(|f| FileContent {
+                            path: f.path,
+                            content: f.content,
+                        })
+                        .collect();
+                }
             }
-            // Try FileContent format directly
             if let Ok(files) = serde_json::from_value::<Vec<FileContent>>(val) {
-                return files;
+                if !files.is_empty() {
+                    return files;
+                }
             }
         }
     }
 
-    vec![]
+    // Fallback 3: read directly from the repo checkout on disk
+    load_skill_files_from_repo_checkout(conn, skill)
+}
+
+/// Read skill files directly from the repo checkout on disk.
+fn load_skill_files_from_repo_checkout(
+    conn: &mut PgConnection,
+    skill: &SkillRow,
+) -> Vec<FileContent> {
+    use crate::schema::repos;
+
+    // Look up the repo to get git_url and git_ref
+    let repo: Option<crate::models::RepoRow> = repos::table
+        .find(skill.repo_id)
+        .select(crate::models::RepoRow::as_select())
+        .first::<crate::models::RepoRow>(conn)
+        .optional()
+        .ok()
+        .flatten();
+
+    let Some(repo) = repo else {
+        return vec![];
+    };
+
+    let config = &crate::state::app_state().config;
+    let base_path = config.repo_checkout_base_path();
+    let git_ref = repo.git_ref.as_deref().unwrap_or("main");
+    let repo_dir = super::git_ops::cached_repo_dir(&base_path, &repo.git_url, git_ref);
+    let skill_dir = repo_dir.join(&skill.path);
+
+    if !skill_dir.is_dir() {
+        tracing::debug!(
+            "[ai-scan] repo checkout dir not found: {}",
+            skill_dir.display()
+        );
+        return vec![];
+    }
+
+    let files: Vec<FileContent> = walkdir::WalkDir::new(&skill_dir)
+        .max_depth(3)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter_map(|e| {
+            let rel = e
+                .path()
+                .strip_prefix(&skill_dir)
+                .ok()?
+                .to_string_lossy()
+                .replace('\\', "/");
+            if rel.is_empty() || rel.starts_with('.') {
+                return None;
+            }
+            let content = std::fs::read_to_string(e.path()).ok()?;
+            Some(FileContent { path: rel, content })
+        })
+        .collect();
+
+    tracing::debug!(
+        "[ai-scan] loaded {} files from repo checkout for {}",
+        files.len(),
+        skill.slug,
+    );
+    files
 }
 
 // ---------------------------------------------------------------------------
