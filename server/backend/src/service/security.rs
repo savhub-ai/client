@@ -304,8 +304,7 @@ pub fn run_automated_scans_with_files(
                 _ => {}
             }
 
-            // If AI is configured, static clean → "unverified" (LLM will upgrade).
-            // If AI is NOT configured, static clean → "verified" (static is final).
+            // Static scan passed → "partially". AI eval will upgrade to "verified" if enabled.
             let ai_enabled = {
                 let cfg = &crate::state::app_state().config;
                 cfg.ai_provider.is_some() && cfg.ai_api_key.is_some()
@@ -313,7 +312,6 @@ pub fn run_automated_scans_with_files(
             let security_status = match static_result.verdict {
                 ModerationVerdict::Malicious => "malicious",
                 ModerationVerdict::Suspicious => "suspicious",
-                ModerationVerdict::Clean if ai_enabled => "unscanned",
                 ModerationVerdict::Clean => "partially",
             };
             diesel::update(skills::table.find(skill.id))
@@ -373,17 +371,11 @@ pub fn run_automated_scans_with_files(
         })
         .execute(conn)?;
 
-    // Update flock security_status based on worst verdict.
-    // If AI is configured, LLM eval may upgrade to "verified" later.
-    // If AI is NOT configured, static scan is final — clean → "partially".
-    let ai_enabled = {
-        let cfg = &crate::state::app_state().config;
-        cfg.ai_provider.is_some() && cfg.ai_api_key.is_some()
-    };
+    // Update flock security_status. Static clean → "partially".
+    // AI eval will upgrade to "verified" later if enabled.
     let flock_status = match worst_verdict {
         ModerationVerdict::Malicious => "malicious",
         ModerationVerdict::Suspicious => "suspicious",
-        ModerationVerdict::Clean if ai_enabled => "unscanned",
         ModerationVerdict::Clean => "partially",
     };
     diesel::update(flocks::table.find(flock_id))
