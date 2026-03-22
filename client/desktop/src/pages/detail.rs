@@ -184,17 +184,7 @@ fn DetailContent(detail: SkillDetailResponse) -> Element {
                 div {
                     h1 { style: "font-size: 28px; font-weight: 700; color: {Theme::TEXT}; margin-bottom: 4px; display: flex; align-items: center; gap: 8px;",
                         "{detail.skill.display_name}"
-                        {
-                            let (badge_text, badge_color) = security_badge_info(
-                                detail.latest_version.as_ref().and_then(|v| v.scan_summary.as_ref()),
-                                &detail.skill.security_status,
-                            );
-                            rsx! {
-                                span { style: "font-size: 11px; padding: 2px 8px; border-radius: 10px; background: {badge_color}20; color: {badge_color}; font-weight: 600;",
-                                    "{badge_text}"
-                                }
-                            }
-                        }
+                        crate::components::security_badge::SecurityBadge { status: detail.skill.security_status }
                     }
                     div { style: "font-size: 14px; color: {Theme::MUTED}; margin-bottom: 8px; display: flex; align-items: center; gap: 4px;",
                         crate::components::copy_sign::CopySign { repo_url: detail.skill.repo_url.clone(), path: detail.skill.path.clone() }
@@ -418,30 +408,6 @@ fn verdict_label(verdict: ScanVerdict, t: &i18n::Texts) -> &'static str {
         ScanVerdict::Suspicious => t.scan_suspicious,
         ScanVerdict::Malicious => t.scan_malicious,
         ScanVerdict::Pending => t.scan_pending,
-    }
-}
-
-fn security_badge_info(
-    scan: Option<&VersionScanSummary>,
-    status: &savhub_shared::SecurityStatus,
-) -> (&'static str, &'static str) {
-    if let Some(s) = scan {
-        let v = s.overall_verdict();
-        let color = verdict_color(v);
-        let label = match v {
-            ScanVerdict::Benign => "Benign",
-            ScanVerdict::Suspicious => "Suspicious",
-            ScanVerdict::Malicious => "Malicious",
-            ScanVerdict::Pending => "Pending",
-        };
-        return (label, color);
-    }
-    match status {
-        savhub_shared::SecurityStatus::Verified => ("Verified", Theme::SUCCESS),
-        savhub_shared::SecurityStatus::Flagged => ("Flagged", "#d4a017"),
-        savhub_shared::SecurityStatus::Rejected => ("Rejected", Theme::DANGER),
-        savhub_shared::SecurityStatus::Scanning => ("Scanning", Theme::ACCENT),
-        savhub_shared::SecurityStatus::Unverified => ("Unverified", Theme::MUTED),
     }
 }
 

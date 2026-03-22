@@ -1,0 +1,50 @@
+use dioxus::prelude::*;
+use savhub_shared::SecurityStatus;
+
+use crate::i18n;
+use crate::state::AppState;
+
+/// Colors matching the frontend CSS (.security-badge .sb-* classes).
+fn badge_colors(status: &SecurityStatus) -> (&'static str, &'static str) {
+    // Returns (icon_bg, value_bg)
+    match status {
+        SecurityStatus::Verified => ("#555", "#2e8b57"),
+        SecurityStatus::Scanning => ("#555", "#1e82d2"),
+        SecurityStatus::Flagged => ("#555", "#b8860b"),
+        SecurityStatus::Rejected => ("#555", "#e0413a"),
+        SecurityStatus::Unverified => ("#555", "#999"),
+    }
+}
+
+fn badge_label<'a>(status: &SecurityStatus, t: &'a i18n::Texts) -> &'a str {
+    match status {
+        SecurityStatus::Verified => t.security_verified,
+        SecurityStatus::Scanning => t.security_scanning,
+        SecurityStatus::Flagged => t.security_flagged,
+        SecurityStatus::Rejected => t.security_rejected,
+        SecurityStatus::Unverified => t.security_unverified,
+    }
+}
+
+#[component]
+pub fn SecurityBadge(status: SecurityStatus) -> Element {
+    let state = use_context::<AppState>();
+    let t = i18n::texts(*state.lang.read());
+    let (icon_bg, value_bg) = badge_colors(&status);
+    let label = badge_label(&status, t);
+
+    rsx! {
+        span { style: "display: inline-flex; align-items: center; font-size: 11px; line-height: 1; border-radius: 3px; overflow: hidden; vertical-align: middle; white-space: nowrap; position: relative; top: -0.1em;",
+            span { style: "display: inline-flex; align-items: center; justify-content: center; padding: 3px 5px; background: {icon_bg}; color: #fff;",
+                if matches!(status, SecurityStatus::Verified) {
+                    crate::icons::LucideIcon { icon: crate::icons::Icon::ShieldCheck, size: 12 }
+                } else {
+                    crate::icons::LucideIcon { icon: crate::icons::Icon::Shield, size: 12 }
+                }
+            }
+            span { style: "padding: 3px 6px; color: #fff; font-weight: 600; background: {value_bg};",
+                "{label}"
+            }
+        }
+    }
+}

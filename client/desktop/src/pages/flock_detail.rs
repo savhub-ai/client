@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use dioxus::prelude::*;
-use savhub_shared::{FlockDetailResponse, ImportedSkillRecord, SecurityStatus};
+use savhub_shared::{FlockDetailResponse, ImportedSkillRecord};
 
 use crate::components::click_guard;
 use crate::state::AppState;
@@ -170,7 +170,7 @@ pub fn FlockDetailPage(slug: String) -> Element {
                     h1 { style: "font-size: 18px; font-weight: 700; color: {Theme::TEXT};",
                         "{payload.flock.name}"
                     }
-                    SecurityBadge { status: payload.flock.security_status }
+                    crate::components::security_badge::SecurityBadge { status: payload.flock.security_status }
                     span { style: "font-size: 12px; padding: 2px 10px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border-radius: 999px;",
                         "v{version_display}"
                     }
@@ -370,29 +370,6 @@ fn FlockSkillRow(
                         "{err}"
                     }
                 }
-            }
-        }
-    }
-}
-
-#[component]
-fn SecurityBadge(status: SecurityStatus) -> Element {
-    let state = use_context::<AppState>();
-    let t = i18n::texts(*state.lang.read());
-    let (color, title) = match status {
-        SecurityStatus::Verified => ("#2e8b57", t.security_verified),
-        SecurityStatus::Scanning => ("#1e82d2", t.security_scanning),
-        SecurityStatus::Flagged => ("#b8860b", t.security_flagged),
-        SecurityStatus::Rejected => ("#9f2b2b", t.security_rejected),
-        SecurityStatus::Unverified => ("#999", t.security_unverified),
-    };
-
-    rsx! {
-        span { title: "{title}", style: "display: inline-flex; align-items: center; vertical-align: middle; position: relative; top: -1px; cursor: help; color: {color};",
-            if matches!(status, SecurityStatus::Verified) {
-                crate::icons::LucideIcon { icon: crate::icons::Icon::ShieldCheck, size: 16 }
-            } else {
-                crate::icons::LucideIcon { icon: crate::icons::Icon::Shield, size: 16 }
             }
         }
     }

@@ -1053,7 +1053,7 @@ fn FlockListRow(
                     h3 { style: "font-size: 15px; font-weight: 600; color: {Theme::TEXT};",
                         "{flock.name}"
                     }
-                    SecurityBadge { status: flock.security_status }
+                    crate::components::security_badge::SecurityBadge { status: flock.security_status }
                     span { style: "font-size: 12px; padding: 2px 8px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border-radius: 999px; white-space: nowrap;",
                         "v{version_display}"
                     }
@@ -1157,7 +1157,7 @@ fn FlockCard(
                         h3 { style: "font-size: 15px; font-weight: 600; color: {Theme::TEXT};",
                             "{flock.name}"
                         }
-                        SecurityBadge { status: flock.security_status }
+                        crate::components::security_badge::SecurityBadge { status: flock.security_status }
                     }
                     p { style: "font-size: 12px; color: {Theme::MUTED};",
                         "{slug_display}"
@@ -1199,28 +1199,6 @@ fn FlockCard(
                 p { style: "font-size: 11px; color: {Theme::DANGER};",
                     "{err}"
                 }
-            }
-        }
-    }
-}
-
-#[component]
-fn SecurityBadge(status: SecurityStatus) -> Element {
-    let state = use_context::<AppState>();
-    let t = i18n::texts(*state.lang.read());
-    let (color, title) = match status {
-        SecurityStatus::Verified => ("#2e8b57", t.security_verified),
-        SecurityStatus::Scanning => ("#1e82d2", t.security_scanning),
-        SecurityStatus::Flagged => ("#b8860b", t.security_flagged),
-        SecurityStatus::Rejected => ("#9f2b2b", t.security_rejected),
-        SecurityStatus::Unverified => ("#999", t.security_unverified),
-    };
-    rsx! {
-        span { title: "{title}", style: "display: inline-flex; align-items: center; vertical-align: middle; position: relative; top: -1px; cursor: help; color: {color};",
-            if matches!(status, SecurityStatus::Verified) {
-                crate::icons::LucideIcon { icon: crate::icons::Icon::ShieldCheck, size: 16 }
-            } else {
-                crate::icons::LucideIcon { icon: crate::icons::Icon::Shield, size: 16 }
             }
         }
     }

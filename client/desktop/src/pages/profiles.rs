@@ -409,9 +409,19 @@ fn ProjectDetail(project_path: String, mut version: Signal<u32>) -> Element {
                                                         button {
                                                             style: "padding: 5px 10px; background: rgba(139, 30, 30, 0.08); color: {Theme::DANGER}; border: 1px solid rgba(139, 30, 30, 0.18); border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap;",
                                                             onclick: move |_| {
-                                                                let wd = PathBuf::from(&pp);
-                                                                let _ = disable_project_skill(&wd, &slug_for_remove);
-                                                                version.with_mut(|v| *v += 1);
+                                                                let pp = pp.clone();
+                                                                let slug = slug_for_remove.clone();
+                                                                spawn(async move {
+                                                                    let result = tokio::task::spawn_blocking(move || {
+                                                                        let wd = PathBuf::from(&pp);
+                                                                        disable_project_skill(&wd, &slug)
+                                                                    }).await;
+                                                                    match result {
+                                                                        Ok(Ok(_)) => version.with_mut(|v| *v += 1),
+                                                                        Ok(Err(e)) => eprintln!("failed to remove skill: {e}"),
+                                                                        Err(e) => eprintln!("failed to remove skill: {e}"),
+                                                                    }
+                                                                });
                                                             },
                                                             "{t.projects_remove}"
                                                         }
