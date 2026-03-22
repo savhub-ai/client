@@ -757,13 +757,15 @@ async fn do_auto_import(
 
         if is_incremental && !flock_has_changes {
             let mut conn = db_conn()?;
-            if let Ok(flock_row) = flocks::table
+            let existing_flock = flocks::table
                 .filter(flocks::repo_id.eq(repo.id))
                 .filter(flocks::slug.eq(&flock_slug))
                 .select(FlockRow::as_select())
                 .first::<FlockRow>(&mut conn)
-            {
-                // Update scan_commit_hash on all skills to the new sha.
+                .optional()?;
+
+            if let Some(flock_row) = existing_flock {
+                // Flock exists and is unchanged — just bump scan_commit_hash.
                 // security_status is preserved — no re-scan needed.
                 diesel::update(
                     skills::table
@@ -772,16 +774,23 @@ async fn do_auto_import(
                 )
                 .set(skills::scan_commit_hash.eq(&checkout.head_sha))
                 .execute(&mut conn)?;
+
+                tracing::debug!(
+                    "[index] unchanged flock {}/{} — sha bumped to {}",
+                    repo_sign,
+                    flock_slug,
+                    &checkout.head_sha[..checkout.head_sha.len().min(8)],
+                );
+                flock_slugs.push(flock_slug);
+                total_skill_count += skill_count;
+                continue;
             }
-            tracing::debug!(
-                "[index] unchanged flock {}/{} — sha bumped to {}",
+            // Flock doesn't exist yet — fall through to full persist
+            tracing::info!(
+                "[index] flock {}/{} not in DB yet — creating despite no file changes",
                 repo_sign,
                 flock_slug,
-                &checkout.head_sha[..checkout.head_sha.len().min(8)],
             );
-            flock_slugs.push(flock_slug);
-            total_skill_count += skill_count;
-            continue;
         }
 
         // Check ai_request_cache to see if flock metadata was already generated
