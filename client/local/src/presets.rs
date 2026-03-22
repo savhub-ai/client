@@ -22,7 +22,11 @@ pub struct ProjectSelectorMatch {
     pub flocks: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skills: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty", deserialize_with = "crate::selectors::deserialize_repos")]
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "crate::selectors::deserialize_repos"
+    )]
     pub repos: Vec<crate::selectors::SelectorRepo>,
 }
 
@@ -153,7 +157,11 @@ pub struct ProjectLockedSkill {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
     /// Git revision hash of the fetched commit.
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "commit_hash")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "commit_hash"
+    )]
     pub git_rev: Option<String>,
 }
 
@@ -297,7 +305,9 @@ fn normalize_selector_matches(matches: &[ProjectSelectorMatch]) -> Vec<ProjectSe
         let skills = normalize_unique_slugs(matched.skills.clone());
         let repos = {
             let mut seen = std::collections::BTreeSet::new();
-            matched.repos.iter()
+            matched
+                .repos
+                .iter()
                 .filter(|r| !r.git_url.trim().is_empty() && seen.insert(r.git_url.clone()))
                 .cloned()
                 .collect::<Vec<_>>()
@@ -425,7 +435,9 @@ fn lockfile_to_project_added_skills(lockfile: &Lockfile) -> Vec<ProjectAddedSkil
 fn project_added_skills_to_lockfile(skills: &[ProjectAddedSkill]) -> Lockfile {
     let mut lockfile = Lockfile::default();
     for skill in normalize_added_skills(skills) {
-        let repo_url = skill.repo.clone()
+        let repo_url = skill
+            .repo
+            .clone()
             .or_else(|| skill.sign.clone())
             .unwrap_or_else(|| "unknown".to_string());
         lockfile.repos.entry(repo_url).or_default().insert(
@@ -703,16 +715,10 @@ pub fn enable_fetched_skill_in_project(
                 .strip_prefix("http://")
         })
         .unwrap_or(repo_url.trim());
-    let skill_folder = config_dir
-        .join("repos")
-        .join(stripped)
-        .join(skill_path);
+    let skill_folder = config_dir.join("repos").join(stripped).join(skill_path);
 
     if !skill_folder.is_dir() {
-        bail!(
-            "fetched skill not found at {}",
-            skill_folder.display()
-        );
+        bail!("fetched skill not found at {}", skill_folder.display());
     }
 
     let target = project_skills_dir(workdir).join(&slug);
@@ -879,15 +885,15 @@ fn collect_skill_folders(workdir: &Path) -> Vec<SkillFolder> {
         }
     }
 
-    // 3. Repo-fetched skills (from fetched_skills.json)
-    if let Ok(fetched) = crate::registry::read_fetched_skills_file() {
-        for entry in fetched {
-            if let Some(path) = crate::registry::fetched_skill_local_path(&entry) {
-                if path.is_dir() {
-                    if let Some(skill) = skill_folder_from_path(&path) {
-                        if !all_folders.iter().any(|e| e.slug == skill.slug) {
-                            all_folders.push(skill);
-                        }
+    // 3. Repo-fetched skills (from skills.fetched.json)
+    let config_dir = crate::config::get_config_dir().unwrap_or_default();
+    let lock = crate::skills::read_lockfile(&config_dir).unwrap_or_default();
+    for flat in crate::skills::flatten_lockfile(&lock) {
+        if let Some(path) = crate::registry::repo_skill_local_path(&flat.repo_url, &flat.path) {
+            if path.is_dir() {
+                if let Some(skill) = skill_folder_from_path(&path) {
+                    if !all_folders.iter().any(|e| e.slug == skill.slug) {
+                        all_folders.push(skill);
                     }
                 }
             }
@@ -997,13 +1003,19 @@ fn resolve_project_skills_internal(workdir: &Path) -> Result<Vec<ResolvedProject
 pub fn sync_project_lock(workdir: &Path) -> Result<()> {
     let config = read_project_config(workdir)?;
     let resolved = resolve_project_skills_internal(workdir)?;
-    write_project_lockfile(workdir, &build_project_lockfile(&resolved, &config.skills.manual_added))
+    write_project_lockfile(
+        workdir,
+        &build_project_lockfile(&resolved, &config.skills.manual_added),
+    )
 }
 
 pub fn resolve_project_skills_with_sources(workdir: &Path) -> Result<Vec<ResolvedProjectSkill>> {
     let config = read_project_config(workdir)?;
     let resolved = resolve_project_skills_internal(workdir)?;
-    let _ = write_project_lockfile(workdir, &build_project_lockfile(&resolved, &config.skills.manual_added));
+    let _ = write_project_lockfile(
+        workdir,
+        &build_project_lockfile(&resolved, &config.skills.manual_added),
+    );
     Ok(resolved)
 }
 

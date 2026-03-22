@@ -489,9 +489,8 @@ struct RepoSkillOption {
 }
 
 fn collect_repo_skill_options(_workdir: &Path) -> Vec<RepoSkillOption> {
-    let savhub_dir = savhub_local::config::get_config_dir().unwrap_or_else(|_| {
-        savhub_local::clients::home_dir().join(".savhub")
-    });
+    let savhub_dir = savhub_local::config::get_config_dir()
+        .unwrap_or_else(|_| savhub_local::clients::home_dir().join(".savhub"));
     let lock = savhub_local::skills::read_lockfile(&savhub_dir).unwrap_or_default();
     let mut options: Vec<RepoSkillOption> = savhub_local::skills::flatten_lockfile(&lock)
         .into_iter()
@@ -608,7 +607,11 @@ fn AddProjectSkillDialog(
         .collect();
 
     let is_grouped = *grouped_view.read();
-    let toggle_bg = if is_grouped { Theme::ACCENT } else { Theme::BG_ELEVATED };
+    let toggle_bg = if is_grouped {
+        Theme::ACCENT
+    } else {
+        Theme::BG_ELEVATED
+    };
     let toggle_color = if is_grouped { "white" } else { Theme::TEXT };
 
     rsx! {
@@ -742,8 +745,8 @@ fn AddProjectSkillDialog(
                         "{empty_label}"
                     }
                 } else if is_grouped {
-                    // Grouped by flock_slug (or repo_url for ungrouped skills)
-                    div { style: "display: flex; flex-direction: column; gap: 14px; overflow-y: auto; flex: 1; min-height: 0;",
+                    // Grouped view: show only flock-level rows (not individual skills)
+                    div { style: "display: flex; flex-direction: column; gap: 10px; overflow-y: auto; flex: 1; min-height: 0;",
                         {
                             let mut groups: Vec<(String, Vec<&RepoSkillOption>)> = Vec::new();
                             for skill in &filtered_skills {
@@ -757,76 +760,68 @@ fn AddProjectSkillDialog(
                             }
                             rsx! {
                                 for (group_name, group_skills) in groups.iter() {
-                                    div { style: "background: {Theme::BG_ELEVATED}; border: 1px solid {Theme::LINE}; border-radius: 8px; overflow: hidden;",
-                                        div { style: "padding: 8px 14px; background: rgba(238, 246, 232, 0.62); border-bottom: 1px solid {Theme::LINE};",
-                                            p { style: "font-size: 12px; font-weight: 700; color: {Theme::TEXT};",
-                                                "{group_name} ({group_skills.len()})"
-                                            }
-                                        }
-                                        for skill in group_skills.iter() {
-                                            {
-                                                let is_enabled = enabled.contains(&skill.slug);
-                                                let repo_display = strip_url_scheme(&skill.repo_url);
-                                                rsx! {
-                                                    div { style: "display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-bottom: 1px solid {Theme::LINE};",
-                                                        div { style: "min-width: 0; flex: 1;",
-                                                            p { style: "font-size: 13px; font-weight: 600; color: {Theme::TEXT}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;",
-                                                                "{skill.display_name}"
-                                                            }
-                                                            p { style: "font-size: 11px; color: {Theme::MUTED}; margin-top: 2px; font-family: Consolas, 'SFMono-Regular', monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;",
-                                                                "{repo_display}/{skill.path}"
-                                                            }
+                                    {
+                                        let all_enabled = group_skills.iter().all(|s| enabled.contains(&s.slug));
+                                        let enabled_count = group_skills.iter().filter(|s| enabled.contains(&s.slug)).count();
+                                        let total_count = group_skills.len();
+                                        rsx! {
+                                            div { style: "display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; background: {Theme::BG_ELEVATED}; border: 1px solid {Theme::LINE}; border-radius: 8px;",
+                                                div { style: "min-width: 0; flex: 1;",
+                                                    p { style: "font-size: 14px; font-weight: 600; color: {Theme::TEXT}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;",
+                                                        "{group_name}"
+                                                    }
+                                                    p { style: "font-size: 11px; color: {Theme::MUTED}; margin-top: 2px;",
+                                                        "{enabled_count}/{total_count} skills"
+                                                    }
+                                                }
+                                                div { style: "display: flex; align-items: center; gap: 8px; flex-shrink: 0;",
+                                                    if all_enabled {
+                                                        span { style: "font-size: 11px; font-weight: 600; color: {Theme::ACCENT_STRONG};",
+                                                            "{enabled_label}"
                                                         }
-                                                        div { style: "display: flex; align-items: center; gap: 8px; flex-shrink: 0;",
-                                                            if is_enabled {
-                                                                span { style: "font-size: 11px; font-weight: 600; color: {Theme::ACCENT_STRONG};",
-                                                                    "{enabled_label}"
-                                                                }
-                                                            }
-                                                            button {
-                                                                style: "padding: 5px 10px; background: linear-gradient(135deg, #6aa84f 0%, #7bc25a 100%); color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;",
-                                                                onclick: {
-                                                                    let project_path = project_path.clone();
-                                                                    let skill = (*skill).clone();
-                                                                    move |_| {
-                                                                        let pp = project_path.clone();
-                                                                        let sk = skill.clone();
-                                                                        spawn(async move {
-                                                                            let sk2 = sk.clone();
-                                                                            let result = tokio::task::spawn_blocking(move || {
-                                                                                let wd = PathBuf::from(&pp);
-                                                                                enable_fetched_skill_in_project(&wd, &sk2.repo_url, &sk2.path, &sk2.slug, ProjectSkillConflictChoice::Ask)
-                                                                            }).await;
-                                                                            match result {
-                                                                                Ok(Ok(EnableProjectRepoSkillResult::Enabled { .. })) => {
-                                                                                    pending_conflict.set(None);
-                                                                                    status_msg.set(None);
-                                                                                    version.with_mut(|value| *value += 1);
-                                                                                    on_close.call(());
-                                                                                }
-                                                                                Ok(Ok(EnableProjectRepoSkillResult::KeptExisting { .. })) => {
-                                                                                    pending_conflict.set(None);
-                                                                                    status_msg.set(None);
-                                                                                    on_close.call(());
-                                                                                }
-                                                                                Ok(Ok(EnableProjectRepoSkillResult::Conflict(conflict))) => {
-                                                                                    pending_conflict.set(Some(PendingConflictState {
-                                                                                        conflict,
-                                                                                        repo_url: sk.repo_url.clone(),
-                                                                                        path: sk.path.clone(),
-                                                                                        slug: sk.slug.clone(),
-                                                                                    }));
-                                                                                    status_msg.set(None);
-                                                                                }
-                                                                                Ok(Err(error)) => status_msg.set(Some(error.to_string())),
-                                                                                Err(error) => status_msg.set(Some(error.to_string())),
+                                                    }
+                                                    button {
+                                                        style: "padding: 6px 12px; background: linear-gradient(135deg, #6aa84f 0%, #7bc25a 100%); color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;",
+                                                        onclick: {
+                                                            let project_path = project_path.clone();
+                                                            let skills_to_add: Vec<RepoSkillOption> = group_skills.iter().filter(|s| !enabled.contains(&s.slug)).map(|s| (*s).clone()).collect();
+                                                            move |_| {
+                                                                let pp = project_path.clone();
+                                                                let skills = skills_to_add.clone();
+                                                                spawn(async move {
+                                                                    let mut had_error = false;
+                                                                    for sk in skills {
+                                                                        let pp2 = pp.clone();
+                                                                        let result = tokio::task::spawn_blocking(move || {
+                                                                            let wd = PathBuf::from(&pp2);
+                                                                            enable_fetched_skill_in_project(&wd, &sk.repo_url, &sk.path, &sk.slug, ProjectSkillConflictChoice::UseRepo)
+                                                                        }).await;
+                                                                        match result {
+                                                                            Ok(Ok(EnableProjectRepoSkillResult::Enabled { .. }))
+                                                                            | Ok(Ok(EnableProjectRepoSkillResult::KeptExisting { .. })) => {}
+                                                                            Ok(Err(error)) => {
+                                                                                status_msg.set(Some(error.to_string()));
+                                                                                had_error = true;
+                                                                                break;
                                                                             }
-                                                                        });
+                                                                            Err(error) => {
+                                                                                status_msg.set(Some(error.to_string()));
+                                                                                had_error = true;
+                                                                                break;
+                                                                            }
+                                                                            _ => {}
+                                                                        }
                                                                     }
-                                                                },
-                                                                "{add_label}"
+                                                                    if !had_error {
+                                                                        pending_conflict.set(None);
+                                                                        status_msg.set(None);
+                                                                        version.with_mut(|value| *value += 1);
+                                                                        on_close.call(());
+                                                                    }
+                                                                });
                                                             }
-                                                        }
+                                                        },
+                                                        "{add_label}"
                                                     }
                                                 }
                                             }

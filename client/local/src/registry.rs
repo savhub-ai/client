@@ -13,18 +13,21 @@ use chrono::Utc;
 use reqwest::blocking::{Client, Response};
 use reqwest::{Method, Url};
 pub use savhub_shared::{
-    DataSource, FetchedSkillEntry, RegistryFlock, RegistrySkill, RemoteSkillFetchSpec, SkillEntry,
+    DataSource, RegistryFlock, RegistrySkill, RemoteSkillFetchSpec, SkillEntry,
 };
 use savhub_shared::{
     FlockDetailResponse, FlockSummary, ImportedSkillRecord, PagedResponse, RepoDetailResponse,
     SecurityStatus, SecuritySummary, SkillDetailResponse, SkillListItem,
 };
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::config::get_config_dir;
-use crate::skills::{RepoSkillOrigin, copy_skill_folder, write_repo_skill_origin};
+use crate::skills::{
+    FetchedSkillMetadata, RepoSkillOrigin, copy_skill_folder, update_lockfile_with_metadata,
+    write_repo_skill_origin,
+};
 
 const DEFAULT_API_BASE: &str = "https://savhub.ai/api/v1";
 const PAGE_LIMIT: usize = 100;
@@ -146,40 +149,6 @@ pub struct FetchedSkillInfo {
     pub local_path: PathBuf,
 }
 
-fn fetched_skills_path() -> Result<PathBuf> {
-    Ok(get_config_dir()?.join("fetched_skills.json"))
-}
-
-fn legacy_installed_skills_path() -> Result<PathBuf> {
-    Ok(get_config_dir()?.join("installed_skills.json"))
-}
-
-fn ensure_fetched_skills_path() -> Result<PathBuf> {
-    let path = fetched_skills_path()?;
-    if path.exists() {
-        return Ok(path);
-    }
-
-    let legacy_path = legacy_installed_skills_path()?;
-    if !legacy_path.exists() {
-        return Ok(path);
-    }
-
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    match fs::rename(&legacy_path, &path) {
-        Ok(()) => Ok(path),
-        Err(_) => {
-            let raw = fs::read(&legacy_path)?;
-            fs::write(&path, raw)?;
-            let _ = fs::remove_file(&legacy_path);
-            Ok(path)
-        }
-    }
-}
-
 fn repos_dir() -> Result<PathBuf> {
     Ok(get_config_dir()?.join("repos"))
 }
@@ -192,61 +161,15 @@ fn normalize_skill_repo_path(value: &str) -> String {
         .to_string()
 }
 
-pub fn read_fetched_skills_file() -> Result<Vec<FetchedSkillEntry>> {
-    let path = ensure_fetched_skills_path()?;
-    let Ok(raw) = fs::read_to_string(path) else {
-        return Ok(Vec::new());
-    };
-    Ok(serde_json::from_str::<Vec<FetchedSkillEntry>>(&raw).unwrap_or_default())
-}
-
-fn write_fetched_skills_file(entries: &[FetchedSkillEntry]) -> Result<()> {
-    let path = ensure_fetched_skills_path()?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(
-        path,
-        format!("{}\n", serde_json::to_string_pretty(entries)?),
-    )?;
-    Ok(())
-}
-
-fn upsert_fetched_entry(entries: &mut Vec<FetchedSkillEntry>, entry: FetchedSkillEntry) {
-    if let Some(existing) = entries
-        .iter_mut()
-        .find(|current| current.slug == entry.slug)
-    {
-        existing.fetched_at = entry.fetched_at;
-        if !entry.repo.is_empty() {
-            existing.repo = entry.repo;
-        }
-        if !entry.path.is_empty() {
-            existing.path = entry.path;
-        }
-        if entry.local_path.is_some() {
-            existing.local_path = entry.local_path;
-        }
-    } else {
-        entries.push(entry);
-    }
-}
-
-pub fn fetched_skill_local_path(entry: &FetchedSkillEntry) -> Option<PathBuf> {
-    if let Some(local_path) = entry
-        .local_path
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        return Some(PathBuf::from(local_path));
-    }
-    if entry.repo.is_empty() || entry.path.is_empty() {
+/// Compute the local cached path for a repo skill given its repo URL and skill path.
+pub fn repo_skill_local_path(repo_url: &str, skill_path: &str) -> Option<PathBuf> {
+    if repo_url.is_empty() || skill_path.is_empty() {
         return None;
     }
     let root = repos_dir().ok()?;
     Some(
-        root.join(strip_git_url_scheme(&entry.repo))
-            .join(Path::new(&entry.path)),
+        root.join(strip_git_url_scheme(repo_url))
+            .join(Path::new(skill_path)),
     )
 }
 
@@ -760,7 +683,7 @@ pub fn fetch_skills_batch(slugs: &[String]) -> Result<Vec<FetchedSkillInfo>> {
         }
     }
 
-    let mut fetched_entries = read_fetched_skills_file().unwrap_or_default();
+    let config_dir = get_config_dir()?;
     let mut results = Vec::new();
 
     for slug in requested {
@@ -809,21 +732,25 @@ pub fn fetch_skills_batch(slugs: &[String]) -> Result<Vec<FetchedSkillInfo>> {
                 version: 1,
                 repo: registry_api_base(),
                 repo_sign: descriptor.repo_sign.clone(),
-                repo_commit: Some(git_rev),
+                repo_commit: Some(git_rev.clone()),
                 slug: slug.clone(),
                 skill_version: descriptor.skill_version.clone(),
                 fetched_at: Utc::now().timestamp_millis(),
             },
         );
 
-        upsert_fetched_entry(
-            &mut fetched_entries,
-            FetchedSkillEntry {
-                slug: slug.clone(),
-                fetched_at: Utc::now().to_rfc3339(),
-                repo: descriptor.repo_sign.clone(),
-                path: normalize_skill_repo_path(&descriptor.skill_path),
-                local_path: Some(local_path.display().to_string()),
+        let version = descriptor.skill_version.as_deref().unwrap_or(&git_rev);
+        update_lockfile_with_metadata(
+            &config_dir,
+            &slug,
+            version,
+            &FetchedSkillMetadata {
+                remote_id: None,
+                remote_slug: Some(slug.clone()),
+                repo_url: Some(descriptor.repo_sign.clone()),
+                path: Some(normalize_skill_repo_path(&descriptor.skill_path)),
+                flock_slug: None,
+                git_rev: Some(git_rev.clone()),
             },
         );
 
@@ -835,6 +762,5 @@ pub fn fetch_skills_batch(slugs: &[String]) -> Result<Vec<FetchedSkillInfo>> {
         });
     }
 
-    write_fetched_skills_file(&fetched_entries)?;
     Ok(results)
 }

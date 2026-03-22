@@ -1135,7 +1135,9 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
 
             skills: vec![],
             flocks: vec![],
-            repos: vec![SelectorRepo::from_url("github.com/ZhangHanDong/makepad-skills")],
+            repos: vec![SelectorRepo::from_url(
+                "github.com/ZhangHanDong/makepad-skills",
+            )],
             enabled: true,
             priority: 20,
             match_count: 0,

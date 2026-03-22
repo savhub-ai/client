@@ -158,7 +158,11 @@ impl SelectorForm {
             custom_expression: self.custom_expr.clone(),
             skills: self.skills.iter().cloned().collect(),
             flocks: self.flocks.iter().cloned().collect(),
-            repos: self.repos.iter().map(|url| savhub_local::selectors::SelectorRepo::from_url(url)).collect(),
+            repos: self
+                .repos
+                .iter()
+                .map(|url| savhub_local::selectors::SelectorRepo::from_url(url))
+                .collect(),
             priority: self.priority,
             enabled: self.enabled,
             match_count: 0,

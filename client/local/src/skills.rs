@@ -52,7 +52,7 @@ pub struct RepoSkillFolder {
 }
 
 pub fn read_lockfile(workdir: &Path) -> Result<Lockfile> {
-    let path = workdir.join("skills.lock.json");
+    let path = workdir.join("skills.fetched.json");
     let Ok(raw) = fs::read_to_string(&path) else {
         return Ok(Lockfile::default());
     };
@@ -63,7 +63,7 @@ pub fn read_lockfile(workdir: &Path) -> Result<Lockfile> {
 }
 
 pub fn write_lockfile(workdir: &Path, lockfile: &Lockfile) -> Result<()> {
-    let path = workdir.join("skills.lock.json");
+    let path = workdir.join("skills.fetched.json");
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -587,7 +587,7 @@ pub fn update_lockfile_with_metadata(
         Some(v) if !v.is_empty() => v,
         _ => return,
     };
-    let lock_path = workdir.join("skills.lock.json");
+    let lock_path = workdir.join("skills.fetched.json");
     let mut lock = fs::read_to_string(&lock_path)
         .ok()
         .and_then(|raw| serde_json::from_str::<Lockfile>(&raw).ok())
@@ -688,7 +688,7 @@ pub fn fetched_flock_slugs(workdir: &Path) -> std::collections::HashSet<String> 
 
 /// Remove a skill entry from the lockfile by slug.
 pub fn prune_skill(workdir: &Path, slug: &str) -> Result<()> {
-    let lock_path = workdir.join("skills.lock.json");
+    let lock_path = workdir.join("skills.fetched.json");
     let mut lock = fs::read_to_string(&lock_path)
         .ok()
         .and_then(|raw| serde_json::from_str::<Lockfile>(&raw).ok())
