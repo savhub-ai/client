@@ -213,7 +213,7 @@ CREATE TABLE index_jobs (
     started_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL,
-    updated_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE TABLE index_rules (
@@ -312,7 +312,7 @@ CREATE INDEX idx_reports_target ON reports(target_type, target_id);
 CREATE INDEX idx_reports_reporter ON reports(reporter_user_id);
 CREATE INDEX idx_reports_status ON reports(status);
 
-CREATE INDEX idx_index_jobs_dedup ON index_jobs (git_url, commit_sha) WHERE status = 'completed' AND commit_sha IS NOT NULL;
+CREATE INDEX idx_index_jobs_dedup ON index_jobs (git_url, git_sha) WHERE status = 'completed' AND git_sha IS NOT NULL;
 CREATE INDEX idx_index_jobs_url_hash_active ON index_jobs (url_hash) WHERE status IN ('pending', 'running');
 
 CREATE INDEX idx_browse_histories_user ON browse_histories (user_id, viewed_at DESC);
