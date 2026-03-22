@@ -79,6 +79,7 @@ CREATE TABLE skills (
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     entry_data JSONB NULL,
     runtime_data JSONB NULL,
+    scan_commit_hash TEXT NOT NULL,
     security_status TEXT NOT NULL DEFAULT 'unverified',
     latest_version_id UUID NULL,
     tags JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -112,6 +113,7 @@ CREATE TABLE skill_versions (
     parsed_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     search_document TEXT NOT NULL,
     fingerprint TEXT NOT NULL,
+    scan_commit_hash TEXT NOT NULL,
     scan_summary JSONB,
     created_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL,
@@ -230,7 +232,7 @@ CREATE TABLE security_scans (
     id UUID PRIMARY KEY,
     target_type TEXT NOT NULL,
     target_id UUID NOT NULL,
-    commit_sha TEXT NOT NULL,
+    commit_hash TEXT NOT NULL,
     scan_module TEXT NOT NULL,
     result TEXT NOT NULL,
     severity TEXT,
@@ -274,7 +276,7 @@ CREATE TABLE ai_request_cache (
     task_type TEXT NOT NULL,
     target_type TEXT NOT NULL,
     target_id UUID NOT NULL,
-    commit_sha TEXT NOT NULL,
+    commit_hash TEXT NOT NULL,
     success BOOLEAN NOT NULL DEFAULT FALSE,
     error_message TEXT,
     created_at TIMESTAMPTZ NOT NULL
@@ -321,7 +323,7 @@ CREATE INDEX idx_browse_histories_cleanup ON browse_histories (viewed_at);
 CREATE INDEX idx_ai_usage_logs_task_type ON ai_usage_logs (task_type);
 CREATE INDEX idx_ai_usage_logs_created_at ON ai_usage_logs (created_at);
 
-CREATE UNIQUE INDEX idx_ai_request_cache_lookup ON ai_request_cache (task_type, target_id, commit_sha);
+CREATE UNIQUE INDEX idx_ai_request_cache_lookup ON ai_request_cache (task_type, target_id, commit_hash);
 
 -- Seed index rules
 INSERT INTO index_rules (id, repo_url, path_regex, strategy, description, created_at, updated_at) VALUES
