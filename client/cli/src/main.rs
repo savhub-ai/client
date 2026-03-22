@@ -2794,7 +2794,7 @@ fn cmd_pilot(command: PilotCommand) -> Result<()> {
         PilotCommand::Install(args) => {
             let agents = resolve_agents(&args)?;
             let (shared, agent_dirs) = pilot::install(&agents)?;
-            println!("Installed savhub skills (savhub-config, savhub-cli):\n");
+            println!("Installed savhub skills (savhub-selector-editor, savhub-skill-manager):\n");
             println!("  shared:");
             println!("    {}", shared.join("SKILL.md").display());
             for (agent, dir) in &agent_dirs {

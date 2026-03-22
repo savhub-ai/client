@@ -1,9 +1,9 @@
 ---
-name: savhub-config
+name: savhub-selector-editor
 description: Manage Savhub selectors and configuration that detect project types and fetch the right AI skills.
 ---
 
-# savhub-config
+# savhub-selector-editor
 
 You are an AI assistant with access to the **savhub** skill management system. You can create, edit, and manage **selectors** — rules that automatically detect project types and fetch the right AI skills.
 

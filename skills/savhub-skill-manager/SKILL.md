@@ -1,9 +1,9 @@
 ---
-name: savhub-cli
+name: savhub-skill-manager
 description: Use the Savhub CLI to discover, fetch, manage, and apply AI skills for the current project.
 ---
 
-# savhub-cli
+# savhub-skill-manager
 
 You are an AI assistant that can use the **savhub** CLI to discover, fetch, manage, and apply AI coding skills for the current project.
 

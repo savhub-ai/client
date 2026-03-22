@@ -6,8 +6,8 @@ use anyhow::{Context, Result};
 use crate::config::get_config_dir;
 
 /// The embedded skill markdowns shipped with the binary.
-const CONFIG_SKILL_CONTENT: &str = include_str!("../../../skills/savhub-config/SKILL.md");
-const CLI_SKILL_CONTENT: &str = include_str!("../../../skills/savhub-cli/SKILL.md");
+const CONFIG_SKILL_CONTENT: &str = include_str!("../../../skills/savhub-selector-editor/SKILL.md");
+const CLI_SKILL_CONTENT: &str = include_str!("../../../skills/savhub-skill-manager/SKILL.md");
 
 // ---------------------------------------------------------------------------
 // Agent skill directories
@@ -15,8 +15,8 @@ const CLI_SKILL_CONTENT: &str = include_str!("../../../skills/savhub-cli/SKILL.m
 
 /// Skill names bundled with the pilot installer.
 const BUNDLED_SKILLS: &[(&str, &str)] = &[
-    ("savhub-config", CONFIG_SKILL_CONTENT),
-    ("savhub-cli", CLI_SKILL_CONTENT),
+    ("savhub-selector-editor", CONFIG_SKILL_CONTENT),
+    ("savhub-skill-manager", CLI_SKILL_CONTENT),
 ];
 
 /// Return the skill installation directory for a given agent and skill name.
@@ -52,13 +52,13 @@ fn write_skill_to(dir: &PathBuf, content: &str) -> Result<()> {
     Ok(())
 }
 
-/// Install bundled skills (savhub-config + savhub-cli) for the given agents.
+/// Install bundled skills (savhub-selector-editor + savhub-skill-manager) for the given agents.
 ///
 /// Always installs to:
 /// - `~/.agents/skills/<skill>/` (shared, for any agent)
 /// - Agent-specific directories (e.g. `~/.claude/skills/<skill>/`)
 ///
-/// Returns `(shared_dir, Vec<(agent_name, dir)>)` for the primary skill (savhub-config).
+/// Returns `(shared_dir, Vec<(agent_name, dir)>)` for the primary skill (savhub-selector-editor).
 pub fn install(agents: &[String]) -> Result<(PathBuf, Vec<(String, PathBuf)>)> {
     let mut primary_shared = None;
     let mut primary_agent_dirs = Vec::new();
@@ -77,7 +77,7 @@ pub fn install(agents: &[String]) -> Result<(PathBuf, Vec<(String, PathBuf)>)> {
                 continue;
             }
             write_skill_to(&dir, content)?;
-            if skill_name == "savhub-config" {
+            if skill_name == "savhub-selector-editor" {
                 primary_agent_dirs.push((agent.clone(), dir));
             }
         }
