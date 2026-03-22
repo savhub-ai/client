@@ -299,6 +299,7 @@ pub struct SkillChangeset {
     pub metadata: Option<Value>,
     pub entry_data: Option<Option<Value>>,
     pub runtime_data: Option<Option<Value>>,
+    pub scan_commit_hash: Option<String>,
     pub security_status: Option<String>,
     pub latest_version_id: Option<Uuid>,
     pub tags: Option<Value>,

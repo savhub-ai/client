@@ -22,7 +22,8 @@ use crate::auth::AuthContext;
 use crate::error::AppError;
 use crate::models::{
     FlockChangeset, FlockRow, IndexJobChangeset, IndexJobRow, NewAiRequestCacheRow, NewFlockRow,
-    NewIndexJobRow, NewRepoRow, NewSecurityScanQueueRow, NewSkillRow, RepoRow,
+    NewIndexJobRow, NewRepoRow, NewSecurityScanQueueRow, NewSkillRow, RepoRow, SkillChangeset,
+    SkillRow,
 };
 use crate::schema::{ai_request_cache, flocks, index_jobs, repos, security_scan_queue, skills};
 use crate::state::app_state;
@@ -672,26 +673,9 @@ async fn do_auto_import(
                 .first::<RepoRow>(&mut conn)?
         };
 
-        // Clean up previous index data: delete all skills and flocks for this repo
-        // so re-indexing starts fresh
-        {
-            let old_flocks = flocks::table
-                .filter(flocks::repo_id.eq(repo.id))
-                .select(FlockRow::as_select())
-                .load::<FlockRow>(&mut conn)?;
-            for old_flock in &old_flocks {
-                diesel::delete(skills::table.filter(skills::flock_id.eq(old_flock.id)))
-                    .execute(&mut conn)?;
-            }
-            diesel::delete(flocks::table.filter(flocks::repo_id.eq(repo.id))).execute(&mut conn)?;
-            if !old_flocks.is_empty() {
-                println!(
-                    "[index{}] cleaned up {} previous flock(s) for re-indexing",
-                    job.id,
-                    old_flocks.len()
-                );
-            }
-        }
+        // NOTE: previous flocks/skills are preserved and updated via upsert
+        // in persist_auto_import_flock. Stale skills (no longer in the repo)
+        // are soft-deleted there. No bulk delete here.
 
         repo
     }; // conn is dropped here — returned to the pool
@@ -729,6 +713,28 @@ async fn do_auto_import(
                 .map(|c| has_cached_ai_request(c, "flock_metadata", f.id, &checkout.head_sha))
                 .unwrap_or(false)
         });
+
+        // Fast path: if both flock metadata AND security scan are already
+        // cached for this exact commit, the flock is fully up-to-date and we
+        // can skip all the expensive work (SKILL.md parsing, walkdir file
+        // reads, per-skill DB upserts, scan enqueueing).
+        let scan_already_cached = existing_flock_for_meta.as_ref().map_or(false, |f| {
+            let mut conn = db_conn().ok();
+            conn.as_mut()
+                .map(|c| has_cached_ai_request(c, "security_scan", f.id, &checkout.head_sha))
+                .unwrap_or(false)
+        });
+        if flock_meta_cached && scan_already_cached {
+            tracing::debug!(
+                "[index] skipping flock {}/{} — fully cached at commit {}",
+                repo_sign,
+                flock_slug,
+                &checkout.head_sha[..checkout.head_sha.len().min(8)],
+            );
+            flock_slugs.push(flock_slug);
+            total_skill_count += skill_count;
+            continue;
+        }
 
         let default_flock_name = derive_flock_name(&flock_slug, &repo_name);
         let (flock_name, flock_description) = if flock_meta_cached {
@@ -1188,16 +1194,14 @@ pub(crate) fn persist_auto_import_flock(
                 source: Some(flock_source.clone()),
                 metadata: Some(flock_metadata),
                 updated_at: Some(now),
-                // Preserve security_status if already scanned.
                 security_status: if already_scanned {
-                    None // None = no change
+                    None
                 } else {
                     Some("unscanned".to_string())
                 },
                 ..Default::default()
             })
             .execute(conn)?;
-        diesel::delete(skills::table.filter(skills::flock_id.eq(existing.id))).execute(conn)?;
     } else {
         diesel::insert_into(flocks::table)
             .values(NewFlockRow {
@@ -1226,55 +1230,102 @@ pub(crate) fn persist_auto_import_flock(
             .execute(conn)?;
     }
 
-    // Insert skill entries
-    let mut skill_rows = Vec::with_capacity(skills.len());
+    // Upsert skill entries: update existing skills by (flock_id, slug),
+    // insert new ones, and soft-delete skills no longer in the import.
+    let incoming_slugs: Vec<String> = skills.iter().map(|s| s.slug.clone()).collect();
+
     for skill in skills {
-        skill_rows.push(NewSkillRow {
-            id: Uuid::now_v7(),
-            slug: skill.slug.clone(),
-            name: skill.name.clone(),
-            path: skill.path.clone(),
-            keywords: vec![],
-            repo_id: repo.id,
-            flock_id,
-            description: skill.description.clone(),
-            version: skill.version.clone(),
-            status: "active".to_string(),
-            license: Some(skill.license.clone()),
-            source: flock_source.clone(),
-            metadata: serde_json::to_value(&skill.metadata).unwrap_or_default(),
-            entry_data: None,
-            runtime_data: skill
-                .runtime
-                .as_ref()
-                .map(|r| serde_json::to_value(r).unwrap_or_default()),
-            scan_commit_hash: commit_sha.to_string(),
-            security_status: "unscanned".to_string(),
-            latest_version_id: None,
-            tags: serde_json::json!({}),
-            moderation_status: "active".to_string(),
-            highlighted: false,
-            official: false,
-            deprecated: false,
-            suspicious: false,
-            stats_downloads: 0,
-            stats_stars: 0,
-            stats_versions: 0,
-            stats_comments: 0,
-            stats_installs: 0,
-            stats_unique_users: 0,
-            soft_deleted_at: None,
-            created_at: now,
-            updated_at: now,
-        });
+        let existing_skill = skills::table
+            .filter(skills::flock_id.eq(flock_id))
+            .filter(skills::slug.eq(&skill.slug))
+            .select(SkillRow::as_select())
+            .first::<SkillRow>(conn)
+            .optional()?;
+
+        if let Some(existing) = existing_skill {
+            // Update existing skill — preserve stats, security_status, etc.
+            diesel::update(skills::table.find(existing.id))
+                .set(SkillChangeset {
+                    name: Some(skill.name.clone()),
+                    path: Some(skill.path.clone()),
+                    description: Some(skill.description.clone()),
+                    version: skill.version.clone(),
+                    license: Some(skill.license.clone()),
+                    source: Some(flock_source.clone()),
+                    metadata: Some(
+                        serde_json::to_value(&skill.metadata).unwrap_or_default(),
+                    ),
+                    runtime_data: Some(
+                        skill
+                            .runtime
+                            .as_ref()
+                            .map(|r| serde_json::to_value(r).unwrap_or_default()),
+                    ),
+                    scan_commit_hash: Some(commit_sha.to_string()),
+                    // Restore if previously soft-deleted
+                    soft_deleted_at: Some(None),
+                    updated_at: Some(now),
+                    ..Default::default()
+                })
+                .execute(conn)?;
+        } else {
+            // Insert new skill
+            diesel::insert_into(skills::table)
+                .values(NewSkillRow {
+                    id: Uuid::now_v7(),
+                    slug: skill.slug.clone(),
+                    name: skill.name.clone(),
+                    path: skill.path.clone(),
+                    keywords: vec![],
+                    repo_id: repo.id,
+                    flock_id,
+                    description: skill.description.clone(),
+                    version: skill.version.clone(),
+                    status: "active".to_string(),
+                    license: Some(skill.license.clone()),
+                    source: flock_source.clone(),
+                    metadata: serde_json::to_value(&skill.metadata).unwrap_or_default(),
+                    entry_data: None,
+                    runtime_data: skill
+                        .runtime
+                        .as_ref()
+                        .map(|r| serde_json::to_value(r).unwrap_or_default()),
+                    scan_commit_hash: commit_sha.to_string(),
+                    security_status: "unscanned".to_string(),
+                    latest_version_id: None,
+                    tags: serde_json::json!({}),
+                    moderation_status: "active".to_string(),
+                    highlighted: false,
+                    official: false,
+                    deprecated: false,
+                    suspicious: false,
+                    stats_downloads: 0,
+                    stats_stars: 0,
+                    stats_versions: 0,
+                    stats_comments: 0,
+                    stats_installs: 0,
+                    stats_unique_users: 0,
+                    soft_deleted_at: None,
+                    created_at: now,
+                    updated_at: now,
+                })
+                .execute(conn)?;
+        }
     }
 
-    // Diesel/PostgreSQL limit: max 65535 bind parameters per query.
-    // NewSkillRow has 30 fields, so batch at most 2000 rows per INSERT.
-    for chunk in skill_rows.chunks(500) {
-        diesel::insert_into(skills::table)
-            .values(chunk)
-            .execute(conn)?;
+    // Soft-delete skills that are no longer in the import
+    if !incoming_slugs.is_empty() {
+        diesel::update(
+            skills::table
+                .filter(skills::flock_id.eq(flock_id))
+                .filter(diesel::dsl::not(skills::slug.eq_any(&incoming_slugs)))
+                .filter(skills::soft_deleted_at.is_null()),
+        )
+        .set((
+            skills::soft_deleted_at.eq(Some(now)),
+            skills::updated_at.eq(now),
+        ))
+        .execute(conn)?;
     }
 
     // Enqueue security scan (or skip if already scanned at this commit).

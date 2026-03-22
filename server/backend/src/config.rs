@@ -34,6 +34,8 @@ pub struct Config {
     pub ai_chat_concurrency: usize,
     /// Max concurrent AI security scan requests. Default 2.
     pub ai_security_concurrency: usize,
+    /// Max concurrent static security scan tasks. Default 50.
+    pub static_scan_concurrency: usize,
 }
 
 impl Config {
@@ -112,6 +114,10 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(2),
+            static_scan_concurrency: env::var("SAVHUB_SECURITY_STATIC_SCAN_CONCURRENCY")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(50),
         })
     }
 }
