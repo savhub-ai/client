@@ -18,6 +18,7 @@ use super::security_scan::{
     self, FileContent, ModerationVerdict, ScanInput, StaticScanResult, build_moderation_verdict,
 };
 use crate::auth::{AuthContext, require_staff};
+use crate::db::PgPool;
 use crate::error::AppError;
 use crate::models::{FlockChangeset, NewSecurityScanRow, RepoRow, SecurityScanRow, SkillRow};
 use crate::schema::{flocks, repos, security_scans, skill_versions, skills};
@@ -478,25 +479,15 @@ pub fn run_automated_scans_with_files(
 // AI scan queue processor
 // ---------------------------------------------------------------------------
 
-/// Atomically claim one skill with `security_status = 'checked'` and run
-/// LLM evaluation on it. The atomic UPDATE prevents concurrent workers from
-/// picking the same skill.
-///
-/// Flow:
-///   1. `UPDATE skills SET security_status='scanning' WHERE id = (SELECT ...
-///      WHERE security_status='checked' LIMIT 1 FOR UPDATE SKIP LOCKED)`
-///   2. Load the skill's files from the scan queue or version data
-///   3. Run LLM evaluation
-///   4. Set final status: verified / suspicious / malicious
-pub async fn process_ai_scan_queue(conn: &mut PgConnection) -> Result<bool, AppError> {
+/// Atomically claim one skill with `security_status = 'checked'`.
+pub fn claim_ai_scan_task(conn: &mut PgConnection) -> Result<Option<SkillRow>, AppError> {
     // Check if AI is configured
     let config = &crate::state::app_state().config;
     if config.ai_provider.is_none() || config.ai_api_key.is_none() {
-        return Ok(false);
+        return Ok(None);
     }
 
-    // Atomically claim one skill: checked → scanning
-    let claimed: Option<SkillRow> = diesel::sql_query(
+    diesel::sql_query(
         "UPDATE skills SET security_status = 'scanning', updated_at = NOW() \
          WHERE id = ( \
            SELECT id FROM skills \
@@ -509,31 +500,35 @@ pub async fn process_ai_scan_queue(conn: &mut PgConnection) -> Result<bool, AppE
          RETURNING *",
     )
     .get_result::<SkillRow>(conn)
-    .optional()?;
+    .optional()
+    .map_err(Into::into)
+}
 
-    let Some(skill) = claimed else {
-        return Ok(false);
-    };
-
+/// Process one already-claimed AI scan task.
+pub async fn process_claimed_ai_scan_task(pool: &PgPool, skill: SkillRow) -> Result<(), AppError> {
     tracing::info!(
         "[ai-scan] claimed skill {} ({}), running LLM eval",
         skill.slug,
         skill.id,
     );
 
-    // Load file contents from the latest security_scan_queue entry or
-    // reconstruct from skill_versions.
-    let files = load_skill_files_for_ai_eval(conn, &skill);
+    let (files, static_result_opt) = {
+        let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
+        let files = load_skill_files_for_ai_eval(&mut conn, &skill);
+        let static_result_opt = load_latest_static_scan_result(&mut conn, skill.id)?;
+        (files, static_result_opt)
+    };
 
     if files.is_empty() {
         tracing::warn!(
             "[ai-scan] no files found for {} — marking as checked (skip AI)",
             skill.slug,
         );
+        let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
         diesel::update(skills::table.find(skill.id))
             .set(skills::security_status.eq("checked"))
-            .execute(conn)?;
-        return Ok(true);
+            .execute(&mut conn)?;
+        return Ok(());
     }
 
     // Find SKILL.md content
@@ -551,10 +546,11 @@ pub async fn process_ai_scan_queue(conn: &mut PgConnection) -> Result<bool, AppE
             "[ai-scan] no SKILL.md for {} — marking as checked (skip AI)",
             skill.slug,
         );
+        let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
         diesel::update(skills::table.find(skill.id))
             .set(skills::security_status.eq("checked"))
-            .execute(conn)?;
-        return Ok(true);
+            .execute(&mut conn)?;
+        return Ok(());
     }
 
     // Detect injection patterns
@@ -594,16 +590,6 @@ pub async fn process_ai_scan_queue(conn: &mut PgConnection) -> Result<bool, AppE
         frontmatter_always: None,
     };
 
-    // Load the most recent static_moderation scan for this skill (for combined verdict)
-    let static_result_opt: Option<StaticScanResult> = security_scans::table
-        .filter(security_scans::target_id.eq(skill.id))
-        .filter(security_scans::scan_module.eq("static_moderation"))
-        .order(security_scans::created_at.desc())
-        .select(security_scans::details)
-        .first::<serde_json::Value>(conn)
-        .optional()?
-        .and_then(|details| serde_json::from_value(details).ok());
-
     // Run the LLM evaluation
     match llm_eval::evaluate_skill_with_llm(
         skill.id,
@@ -622,8 +608,7 @@ pub async fn process_ai_scan_queue(conn: &mut PgConnection) -> Result<bool, AppE
                 ModerationVerdict::Clean => "verified",
             };
 
-            // Re-acquire a sync connection for DB updates
-            let conn2 = &mut db_conn()?;
+            let conn2 = &mut pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
 
             diesel::update(skills::table.find(skill.id))
                 .set(skills::security_status.eq(final_status))
@@ -656,14 +641,16 @@ pub async fn process_ai_scan_queue(conn: &mut PgConnection) -> Result<bool, AppE
                 skill.slug,
                 e,
             );
-            // Revert to "checked" so it can be retried
+            let mut conn = pool
+                .get()
+                .map_err(|err| AppError::Internal(err.to_string()))?;
             let _ = diesel::update(skills::table.find(skill.id))
                 .set(skills::security_status.eq("checked"))
-                .execute(conn);
+                .execute(&mut conn);
         }
     }
 
-    Ok(true)
+    Ok(())
 }
 
 /// Load file contents for AI evaluation from the security_scan_queue or
@@ -671,15 +658,32 @@ pub async fn process_ai_scan_queue(conn: &mut PgConnection) -> Result<bool, AppE
 fn load_skill_files_for_ai_eval(conn: &mut PgConnection, skill: &SkillRow) -> Vec<FileContent> {
     use crate::schema::security_scan_queue;
 
-    // Try to find scan files from the security_scan_queue (keyed by flock_id)
-    let queue_files: Option<serde_json::Value> = security_scan_queue::table
-        .filter(security_scan_queue::flock_id.eq(skill.flock_id))
-        .order(security_scan_queue::updated_at.desc())
-        .select(security_scan_queue::scan_files)
-        .first::<serde_json::Value>(conn)
-        .optional()
-        .ok()
-        .flatten();
+    let exact_queue_files: Option<serde_json::Value> = if skill.scan_commit_hash.is_empty() {
+        None
+    } else {
+        security_scan_queue::table
+            .filter(security_scan_queue::flock_id.eq(skill.flock_id))
+            .filter(security_scan_queue::commit_hash.eq(&skill.scan_commit_hash))
+            .filter(security_scan_queue::status.ne("superseded"))
+            .order(security_scan_queue::updated_at.desc())
+            .select(security_scan_queue::scan_files)
+            .first::<serde_json::Value>(conn)
+            .optional()
+            .ok()
+            .flatten()
+    };
+
+    let queue_files = exact_queue_files.or_else(|| {
+        security_scan_queue::table
+            .filter(security_scan_queue::flock_id.eq(skill.flock_id))
+            .filter(security_scan_queue::status.ne("superseded"))
+            .order(security_scan_queue::updated_at.desc())
+            .select(security_scan_queue::scan_files)
+            .first::<serde_json::Value>(conn)
+            .optional()
+            .ok()
+            .flatten()
+    });
 
     if let Some(files_json) = queue_files {
         // The scan_files JSON is Vec<SkillScanInput>; find the one matching this skill
@@ -785,6 +789,20 @@ fn load_skill_files_from_repo_checkout(
         skill.slug,
     );
     files
+}
+
+fn load_latest_static_scan_result(
+    conn: &mut PgConnection,
+    skill_id: Uuid,
+) -> Result<Option<StaticScanResult>, AppError> {
+    Ok(security_scans::table
+        .filter(security_scans::target_id.eq(skill_id))
+        .filter(security_scans::scan_module.eq("static_moderation"))
+        .order(security_scans::created_at.desc())
+        .select(security_scans::details)
+        .first::<serde_json::Value>(conn)
+        .optional()?
+        .and_then(|details| serde_json::from_value(details).ok()))
 }
 
 // ---------------------------------------------------------------------------
