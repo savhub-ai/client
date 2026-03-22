@@ -71,6 +71,7 @@ pub struct ScanInput<'a> {
     pub frontmatter_always: Option<bool>,
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct FileContent {
     pub path: String,
     pub content: String,

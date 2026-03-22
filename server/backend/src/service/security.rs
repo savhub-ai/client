@@ -130,6 +130,7 @@ pub fn update_skill_security_status(
 // ---------------------------------------------------------------------------
 
 /// Input for the enhanced scan pipeline. Each skill carries its file contents.
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct SkillScanInput {
     pub skill_id: Uuid,
     pub slug: String,

@@ -17,14 +17,14 @@ use super::git_ops::{
 use super::helpers::{
     db_conn, hash_string, insert_audit_log, normalize_git_url, parse_git_url_parts,
 };
-use super::security::{ScanContext, run_automated_scans_with_files};
+use super::security::SkillScanInput;
 use crate::auth::AuthContext;
 use crate::error::AppError;
 use crate::models::{
     FlockChangeset, FlockRow, IndexJobChangeset, IndexJobRow, NewAiRequestCacheRow, NewFlockRow,
-    NewIndexJobRow, NewRepoRow, NewSkillRow, RepoRow, SkillRow,
+    NewIndexJobRow, NewRepoRow, NewSecurityScanQueueRow, NewSkillRow, RepoRow, SkillRow,
 };
-use crate::schema::{ai_request_cache, flocks, index_jobs, repos, skills};
+use crate::schema::{ai_request_cache, flocks, index_jobs, repos, security_scan_queue, skills};
 use crate::state::app_state;
 
 /// Check if we already have a **successful** AI request cached for this
@@ -1086,6 +1086,53 @@ pub(crate) fn build_auto_import_skills(
     Ok(skills)
 }
 
+/// Enqueue a security scan task. Upserts on (repo_url, path) so only the latest
+/// commit is queued per flock path.
+fn enqueue_security_scan(
+    conn: &mut PgConnection,
+    repo: &RepoRow,
+    source_path: &str,
+    flock_id: Uuid,
+    commit_sha: &str,
+    skill_scan_files: &[SkillScanInput],
+) -> Result<(), AppError> {
+    let now = Utc::now();
+    let scan_files_json = serde_json::to_value(skill_scan_files).unwrap_or_default();
+
+    diesel::insert_into(security_scan_queue::table)
+        .values(NewSecurityScanQueueRow {
+            id: Uuid::now_v7(),
+            status: "pending".to_string(),
+            repo_id: repo.id,
+            repo_url: repo.git_url.clone(),
+            path: source_path.to_string(),
+            flock_id,
+            commit_hash: commit_sha.to_string(),
+            scan_files: scan_files_json.clone(),
+            created_at: now,
+            updated_at: now,
+        })
+        .on_conflict((security_scan_queue::repo_url, security_scan_queue::path))
+        .do_update()
+        .set((
+            security_scan_queue::status.eq("pending"),
+            security_scan_queue::flock_id.eq(flock_id),
+            security_scan_queue::commit_hash.eq(commit_sha),
+            security_scan_queue::scan_files.eq(scan_files_json),
+            security_scan_queue::updated_at.eq(now),
+        ))
+        .execute(conn)?;
+
+    tracing::info!(
+        "[security] enqueued scan for flock {} (repo={}, path={}, commit={})",
+        flock_id,
+        repo.git_url,
+        source_path,
+        &commit_sha[..commit_sha.len().min(8)],
+    );
+    Ok(())
+}
+
 pub(crate) fn persist_auto_import_flock(
     conn: &mut PgConnection,
     repo: &RepoRow,
@@ -1230,33 +1277,9 @@ pub(crate) fn persist_auto_import_flock(
             .execute(conn)?;
     }
 
-    // Run automated security scans — but skip if this flock already has a
-    // definitive scan result from a previous index (verified/flagged/rejected).
+    // Enqueue security scan (or skip if already scanned at this commit).
     if !already_scanned {
-        let entry_rows = skills::table
-            .filter(skills::flock_id.eq(flock_id))
-            .select(SkillRow::as_select())
-            .load::<SkillRow>(conn)?;
-        let scan_ctx = ScanContext {
-            commit_hash: Some(commit_sha.to_string()),
-        };
-        run_automated_scans_with_files(
-            conn,
-            flock_id,
-            &entry_rows,
-            skill_scan_files,
-            Some(&scan_ctx),
-        )?;
-        // Record successful scan so future re-indexes with same commit skip it.
-        cache_ai_request(
-            conn,
-            "security_scan",
-            "flock",
-            flock_id,
-            commit_sha,
-            true,
-            None,
-        );
+        enqueue_security_scan(conn, repo, source_path, flock_id, commit_sha, skill_scan_files)?;
     } else {
         // Propagate the existing flock security_status to newly-inserted skills
         // so they inherit the previous scan result.

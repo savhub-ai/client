@@ -282,6 +282,22 @@ CREATE TABLE ai_request_cache (
     created_at TIMESTAMPTZ NOT NULL
 );
 
+CREATE TABLE security_scan_queue (
+    id UUID PRIMARY KEY,
+    status TEXT NOT NULL DEFAULT 'pending',
+    repo_id UUID NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+    repo_url TEXT NOT NULL,
+    path TEXT NOT NULL,
+    flock_id UUID NOT NULL REFERENCES flocks(id) ON DELETE CASCADE,
+    commit_hash TEXT NOT NULL,
+    scan_files JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (repo_url, path)
+);
+
+CREATE INDEX idx_security_scan_queue_pending ON security_scan_queue (created_at ASC) WHERE status = 'pending';
+
 -- Indexes
 CREATE INDEX idx_users_role ON users(role);
 CREATE UNIQUE INDEX idx_users_github_user_id ON users(github_user_id) WHERE github_user_id IS NOT NULL;
