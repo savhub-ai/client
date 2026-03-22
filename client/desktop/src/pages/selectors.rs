@@ -106,7 +106,7 @@ impl SelectorForm {
             custom_expr: d.custom_expression.clone(),
             skills: d.skills.iter().cloned().collect(),
             flocks: d.flocks.iter().cloned().collect(),
-            repos: d.repos.iter().cloned().collect(),
+            repos: d.repos.iter().map(|r| r.git_url.clone()).collect(),
             priority: d.priority,
             enabled: d.enabled,
             error: String::new(),
@@ -158,7 +158,7 @@ impl SelectorForm {
             custom_expression: self.custom_expr.clone(),
             skills: self.skills.iter().cloned().collect(),
             flocks: self.flocks.iter().cloned().collect(),
-            repos: self.repos.iter().cloned().collect(),
+            repos: self.repos.iter().map(|url| savhub_local::selectors::SelectorRepo::from_url(url)).collect(),
             priority: self.priority,
             enabled: self.enabled,
             match_count: 0,
@@ -466,7 +466,7 @@ fn SelectorDetailPopup(selector: Signal<Option<SelectorDefinition>>) -> Element 
     let rules = d.rules.clone();
     let skills = d.skills.clone();
     let flocks = d.flocks.clone();
-    let repos = d.repos.clone();
+    let repos: Vec<String> = d.repos.iter().map(|r| r.git_url.clone()).collect();
     let priority = d.priority;
     drop(guard);
 

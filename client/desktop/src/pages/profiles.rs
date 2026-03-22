@@ -1073,18 +1073,17 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                                 savhub_local::presets::read_project_lockfile(&workdir_bg)
                                     .unwrap_or_default();
                             for info in &results {
-                                if !lock.skills.iter().any(|s| s.slug() == info.slug) {
+                                if !lock.skills.iter().any(|s| s.slug == info.slug) {
                                     let vi = savhub_local::skills::read_skill_version_info(
                                         &info.local_path,
                                     )
                                     .unwrap_or_default();
                                     lock.skills.push(savhub_local::presets::ProjectLockedSkill {
-                                        sign: savhub_local::registry::make_skill_sign(
-                                            &info.repo_sign,
-                                            &info.skill_path,
-                                        ),
+                                        repo: Some(info.repo_sign.clone()),
+                                        path: Some(info.skill_path.clone()),
+                                        slug: info.slug.clone(),
                                         version: vi.version,
-                                        commit_hash: vi.git_commit,
+                                        git_rev: vi.git_commit,
                                     });
                                 }
                             }
@@ -1103,7 +1102,7 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                                     continue;
                                 };
                                 let _ = std::fs::remove_dir_all(
-                                    workdir_bg.join(rel_dir).join(skill.slug()),
+                                    workdir_bg.join(rel_dir).join(&skill.slug),
                                 );
                             }
                         }

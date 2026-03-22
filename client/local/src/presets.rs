@@ -22,8 +22,8 @@ pub struct ProjectSelectorMatch {
     pub flocks: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skills: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub repos: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty", deserialize_with = "crate::selectors::deserialize_repos")]
+    pub repos: Vec<crate::selectors::SelectorRepo>,
 }
 
 /// Selectors section in savhub.toml.
@@ -57,6 +57,9 @@ pub struct ProjectAddedSkill {
     /// Skill slug in the registry (e.g. `claude-api`).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub slug: String,
+    /// Git URL of the repo this skill was fetched from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
     /// Local path relative to the project `skills/` directory.
     /// Only set when the local directory name differs from the slug
     /// (e.g. due to conflict resolution or flock-grouped layout).
@@ -134,25 +137,24 @@ impl Default for ProjectConfigFile {
     }
 }
 
-/// A locked skill entry, identified by its registry path.
+/// A locked skill entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectLockedSkill {
-    /// Skill sign: `{repo_sign}/{skill_path}` (e.g.
-    /// `github.com/salvo-rs/salvo-skills/skills/salvo-auth`).
-    pub sign: String,
+    /// Git URL of the repo this skill comes from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    /// Path within the repo (e.g. `skills/salvo-auth`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// Skill slug.
+    #[serde(default)]
+    pub slug: String,
     /// Skill version if available.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
-    /// Git commit hash of the fetched revision.
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "git_commit")]
-    pub commit_hash: Option<String>,
-}
-
-impl ProjectLockedSkill {
-    /// Derive the skill slug from the sign's last segment.
-    pub fn slug(&self) -> &str {
-        self.sign.rsplit('/').next().unwrap_or(&self.sign)
-    }
+    /// Git revision hash of the fetched commit.
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "commit_hash")]
+    pub git_rev: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -293,7 +295,13 @@ fn normalize_selector_matches(matches: &[ProjectSelectorMatch]) -> Vec<ProjectSe
         }
         let flocks = normalize_unique_slugs(matched.flocks.clone());
         let skills = normalize_unique_slugs(matched.skills.clone());
-        let repos = normalize_unique_slugs(matched.repos.clone());
+        let repos = {
+            let mut seen = std::collections::BTreeSet::new();
+            matched.repos.iter()
+                .filter(|r| !r.git_url.trim().is_empty() && seen.insert(r.git_url.clone()))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
         let duplicate = normalized
             .iter()
             .any(|existing: &ProjectSelectorMatch| existing.selector == selector);
@@ -361,6 +369,7 @@ fn normalize_added_skills(skills: &[ProjectAddedSkill]) -> Vec<ProjectAddedSkill
             sign: sign.map(String::from),
             path: effective_path,
             slug: effective_slug,
+            repo: skill.repo.clone(),
             local: skill.local.clone(),
             version: skill.version.clone(),
             fetched_at: skill.fetched_at,
@@ -373,29 +382,28 @@ fn normalize_added_skills(skills: &[ProjectAddedSkill]) -> Vec<ProjectAddedSkill
 fn normalize_project_lock_skills(skills: &[ProjectLockedSkill]) -> Vec<ProjectLockedSkill> {
     let mut normalized = Vec::new();
     for skill in skills {
-        let sign = skill.sign.trim().to_string();
-        if sign.is_empty()
+        let slug = skill.slug.trim().to_string();
+        if slug.is_empty()
             || normalized
                 .iter()
-                .any(|existing: &ProjectLockedSkill| existing.sign == sign)
+                .any(|existing: &ProjectLockedSkill| existing.slug == slug)
         {
             continue;
         }
+        let trim_opt = |v: &Option<String>| {
+            v.as_ref()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        };
         normalized.push(ProjectLockedSkill {
-            sign,
-            version: skill
-                .version
-                .as_ref()
-                .map(|v| v.trim().to_string())
-                .filter(|v| !v.is_empty()),
-            commit_hash: skill
-                .commit_hash
-                .as_ref()
-                .map(|v| v.trim().to_string())
-                .filter(|v| !v.is_empty()),
+            repo: trim_opt(&skill.repo),
+            path: trim_opt(&skill.path),
+            slug,
+            version: trim_opt(&skill.version),
+            git_rev: trim_opt(&skill.git_rev),
         });
     }
-    normalized.sort_by(|left, right| left.sign.cmp(&right.sign));
+    normalized.sort_by(|left, right| left.slug.cmp(&right.slug));
     normalized
 }
 
@@ -406,6 +414,7 @@ fn lockfile_to_project_added_skills(lockfile: &Lockfile) -> Vec<ProjectAddedSkil
             sign: None,
             path: e.path,
             slug: e.slug,
+            repo: Some(e.repo_url),
             local: None,
             version: Some(e.entry.version),
             fetched_at: e.entry.fetched_at,
@@ -416,8 +425,9 @@ fn lockfile_to_project_added_skills(lockfile: &Lockfile) -> Vec<ProjectAddedSkil
 fn project_added_skills_to_lockfile(skills: &[ProjectAddedSkill]) -> Lockfile {
     let mut lockfile = Lockfile::default();
     for skill in normalize_added_skills(skills) {
-        // Use sign as repo_url if available, otherwise use a placeholder
-        let repo_url = skill.sign.clone().unwrap_or_else(|| "unknown".to_string());
+        let repo_url = skill.repo.clone()
+            .or_else(|| skill.sign.clone())
+            .unwrap_or_else(|| "unknown".to_string());
         lockfile.repos.entry(repo_url).or_default().insert(
             skill.path,
             LockEntry {
@@ -652,6 +662,7 @@ pub fn enable_repo_skill_in_project(
             sign: None,
             path: slug.clone(),
             slug: slug.clone(),
+            repo: None,
             local: None,
             version: version_info.version.clone(),
             fetched_at,
@@ -754,6 +765,7 @@ pub fn enable_fetched_skill_in_project(
             sign: None,
             path: slug.clone(),
             slug: slug.clone(),
+            repo: Some(repo_url.to_string()),
             local: None,
             version: version_info.version.clone(),
             fetched_at,
@@ -885,15 +897,21 @@ fn collect_skill_folders(workdir: &Path) -> Vec<SkillFolder> {
     all_folders
 }
 
-fn build_project_lockfile(resolved: &[ResolvedProjectSkill]) -> ProjectLockFile {
+fn build_project_lockfile(
+    resolved: &[ResolvedProjectSkill],
+    added_skills: &[ProjectAddedSkill],
+) -> ProjectLockFile {
     let skills = resolved
         .iter()
         .map(|skill| {
             let version_info = read_skill_version_info(&skill.folder).unwrap_or_default();
+            let added = added_skills.iter().find(|a| a.slug == skill.slug);
             ProjectLockedSkill {
-                sign: skill.slug.clone(),
+                repo: added.and_then(|a| a.repo.clone()),
+                path: added.map(|a| a.path.clone()),
+                slug: skill.slug.clone(),
                 version: version_info.version,
-                commit_hash: version_info.git_commit,
+                git_rev: version_info.git_commit,
             }
         })
         .collect::<Vec<_>>();
@@ -922,8 +940,8 @@ fn resolve_project_skills_internal(workdir: &Path) -> Result<Vec<ResolvedProject
             }
         }
         // Expand repos: look up all flocks in each repo, then expand those flocks
-        for repo_sign in &matched.repos {
-            if let Ok(repo_flocks) = crate::registry::list_repo_flock_signs(repo_sign) {
+        for repo in &matched.repos {
+            if let Ok(repo_flocks) = crate::registry::list_repo_flock_signs(&repo.git_url) {
                 for flock_slug in &repo_flocks {
                     if let Ok(skill_slugs) = crate::registry::list_flock_skill_slugs(flock_slug) {
                         for skill_slug in skill_slugs {
@@ -977,13 +995,15 @@ fn resolve_project_skills_internal(workdir: &Path) -> Result<Vec<ResolvedProject
 }
 
 pub fn sync_project_lock(workdir: &Path) -> Result<()> {
+    let config = read_project_config(workdir)?;
     let resolved = resolve_project_skills_internal(workdir)?;
-    write_project_lockfile(workdir, &build_project_lockfile(&resolved))
+    write_project_lockfile(workdir, &build_project_lockfile(&resolved, &config.skills.manual_added))
 }
 
 pub fn resolve_project_skills_with_sources(workdir: &Path) -> Result<Vec<ResolvedProjectSkill>> {
+    let config = read_project_config(workdir)?;
     let resolved = resolve_project_skills_internal(workdir)?;
-    let _ = write_project_lockfile(workdir, &build_project_lockfile(&resolved));
+    let _ = write_project_lockfile(workdir, &build_project_lockfile(&resolved, &config.skills.manual_added));
     Ok(resolved)
 }
 

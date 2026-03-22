@@ -2615,7 +2615,8 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
                     println!("Flocks:     {}", d.flocks.join(", "));
                 }
                 if !d.repos.is_empty() {
-                    println!("Repos:      {}", d.repos.join(", "));
+                    let repo_strs: Vec<_> = d.repos.iter().map(|r| r.git_url.as_str()).collect();
+                    println!("Repos:      {}", repo_strs.join(", "));
                 }
                 println!();
             }
@@ -2641,7 +2642,8 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
                 println!("Flocks:  {}", result.flocks.join(", "));
             }
             if !result.repos.is_empty() {
-                println!("Repos:   {}", result.repos.join(", "));
+                let repo_strs: Vec<_> = result.repos.iter().map(|r| r.git_url.as_str()).collect();
+                println!("Repos:   {}", repo_strs.join(", "));
             }
         }
     }
@@ -2870,7 +2872,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         if !lockfile.skills.is_empty() {
             println!("\nSkills to remove:");
             for s in &lockfile.skills {
-                println!("  \x1b[31m[-]\x1b[0m {}", s.sign);
+                println!("  \x1b[31m[-]\x1b[0m {}", s.slug);
             }
 
             if !args.yes && opts.input_allowed {
@@ -2890,7 +2892,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             // Remove skill folders from AI client project-level dirs
             let all_clients = savhub_local::clients::detect_clients();
             for skill in &lockfile.skills {
-                let slug = skill.slug();
+                let slug = skill.slug.as_str();
                 for client in &all_clients {
                     if !client.installed {
                         continue;
@@ -3128,7 +3130,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     let current_locked_slugs: BTreeSet<String> = current_lock
         .skills
         .iter()
-        .map(|s| s.slug().to_string())
+        .map(|s| s.slug.as_str().to_string())
         .collect();
 
     let to_add: Vec<String> = desired_skills
@@ -3268,6 +3270,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
                         },
                         path: s.rsplit('/').next().unwrap_or(s).to_string(),
                         slug: s.rsplit('/').next().unwrap_or(s).to_string(),
+                        repo: None,
                         local: None,
                         version: None,
                         fetched_at: 0,
@@ -3350,13 +3353,11 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     // Build lock entries: start from current, remove deleted, add new
     let mut lock = current_lock.clone();
     lock.skills
-        .retain(|s| !to_remove.iter().any(|r| r == s.slug()));
+        .retain(|s| !to_remove.iter().any(|r| r == s.slug.as_str()));
 
     // Group by repo for display
     {
         for info in &batch_results {
-            let skill_sign =
-                savhub_local::registry::make_skill_sign(&info.repo_sign, &info.skill_path);
             let mut copied_to_any_client = false;
             for client in &filtered_clients {
                 if !client.installed {
@@ -3386,13 +3387,15 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             }
 
             // Record in savhub.lock
-            if !lock.skills.iter().any(|s| s.slug() == info.slug) {
+            if !lock.skills.iter().any(|s| s.slug.as_str() == info.slug) {
                 let vi = savhub_local::skills::read_skill_version_info(&info.local_path)
                     .unwrap_or_default();
                 lock.skills.push(savhub_local::presets::ProjectLockedSkill {
-                    sign: skill_sign,
+                    repo: Some(info.repo_sign.clone()),
+                    path: Some(info.skill_path.clone()),
+                    slug: info.slug.clone(),
                     version: vi.version,
-                    commit_hash: vi.git_commit,
+                    git_rev: vi.git_commit,
                 });
             }
             fetched_count += 1;
