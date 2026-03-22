@@ -64,7 +64,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     find /usr/local/cargo/registry/src -name .cargo-ok -exec rm -f {} + 2>/dev/null; \
     cargo build --release -p server \
-    && cp /app/target/release/server /app/server
+    && cp /app/target/release/server /app/savhub-server
 
 # ── Stage 3: Runtime ──────────────────────────────────────────────────
 FROM debian:bookworm-slim AS runtime
@@ -76,7 +76,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN groupadd --gid 1000 savhub \
     && useradd --uid 1000 --gid savhub --shell /bin/false savhub
 
-COPY --from=backend-builder /app/server /app/server
+COPY --from=backend-builder /app/savhub-server /app/savhub-server
 
 # Copy frontend build assets into the static directory
 COPY --from=frontend-builder /app/dist/public /app/static
@@ -92,4 +92,4 @@ EXPOSE 5006
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:5006/api/v1/health || exit 1
 
-ENTRYPOINT ["/app/server"]
+ENTRYPOINT ["/app/savhub-server"]
