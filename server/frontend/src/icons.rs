@@ -6,7 +6,10 @@ use dioxus::prelude::*;
 
 /// Lucide "check" — used for copy-success feedback.
 #[component]
-pub fn IconCheck(#[props(default = 14)] size: u32, #[props(default = "currentColor")] color: &'static str) -> Element {
+pub fn IconCheck(
+    #[props(default = 14)] size: u32,
+    #[props(default = "currentColor")] color: &'static str,
+) -> Element {
     let s = size.to_string();
     rsx! {
         svg { width: "{s}", height: "{s}", view_box: "0 0 24 24", fill: "none", stroke: "{color}", stroke_width: "2.5", stroke_linecap: "round", stroke_linejoin: "round",
@@ -53,7 +56,10 @@ pub fn IconLock(#[props(default = 20)] size: u32) -> Element {
 
 /// Lucide "star" — ratings / star counts.
 #[component]
-pub fn IconStar(#[props(default = 14)] size: u32, #[props(default = false)] filled: bool) -> Element {
+pub fn IconStar(
+    #[props(default = 14)] size: u32,
+    #[props(default = false)] filled: bool,
+) -> Element {
     let s = size.to_string();
     let fill_val = if filled { "currentColor" } else { "none" };
     rsx! {
@@ -65,7 +71,10 @@ pub fn IconStar(#[props(default = 14)] size: u32, #[props(default = false)] fill
 
 /// Lucide "shield-check" — security verified badge.
 #[component]
-pub fn IconShieldCheck(#[props(default = 16)] size: u32, #[props(default = "currentColor")] color: &'static str) -> Element {
+pub fn IconShieldCheck(
+    #[props(default = 16)] size: u32,
+    #[props(default = "currentColor")] color: &'static str,
+) -> Element {
     let s = size.to_string();
     rsx! {
         svg { width: "{s}", height: "{s}", view_box: "0 0 24 24", fill: "none", stroke: "{color}", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",
@@ -77,7 +86,10 @@ pub fn IconShieldCheck(#[props(default = 16)] size: u32, #[props(default = "curr
 
 /// Lucide "shield" — security status badge (non-verified).
 #[component]
-pub fn IconShield(#[props(default = 16)] size: u32, #[props(default = "currentColor")] color: &'static str) -> Element {
+pub fn IconShield(
+    #[props(default = 16)] size: u32,
+    #[props(default = "currentColor")] color: &'static str,
+) -> Element {
     let s = size.to_string();
     rsx! {
         svg { width: "{s}", height: "{s}", view_box: "0 0 24 24", fill: "none", stroke: "{color}", stroke_width: "2", stroke_linecap: "round", stroke_linejoin: "round",

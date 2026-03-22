@@ -417,22 +417,15 @@ fn project_added_skills_to_lockfile(skills: &[ProjectAddedSkill]) -> Lockfile {
     let mut lockfile = Lockfile::default();
     for skill in normalize_added_skills(skills) {
         // Use sign as repo_url if available, otherwise use a placeholder
-        let repo_url = skill
-            .sign
-            .clone()
-            .unwrap_or_else(|| "unknown".to_string());
-        lockfile
-            .repos
-            .entry(repo_url)
-            .or_default()
-            .insert(
-                skill.path,
-                LockEntry {
-                    version: skill.version.unwrap_or_else(|| "latest".to_string()),
-                    fetched_at: skill.fetched_at,
-                    ..LockEntry::default()
-                },
-            );
+        let repo_url = skill.sign.clone().unwrap_or_else(|| "unknown".to_string());
+        lockfile.repos.entry(repo_url).or_default().insert(
+            skill.path,
+            LockEntry {
+                version: skill.version.unwrap_or_else(|| "latest".to_string()),
+                fetched_at: skill.fetched_at,
+                ..LockEntry::default()
+            },
+        );
     }
     lockfile
 }

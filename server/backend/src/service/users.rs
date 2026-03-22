@@ -1,19 +1,18 @@
 use std::collections::{HashMap, HashSet};
 
 use diesel::prelude::*;
-use uuid::Uuid;
-
-use crate::auth::RequestUser;
-use crate::error::AppError;
-use crate::models::{FlockRow, RepoRow, SkillRow, SkillStarRow, SkillVersionRow, UserRow};
-use crate::schema::{flocks, repos, skill_stars, skill_versions, skills, users};
 use shared::{UserListItem, UserListResponse, UserProfileResponse, UserRole};
+use uuid::Uuid;
 
 use super::browse_history;
 use super::helpers::{
     db_conn, load_skill_versions_map, load_users_map, skill_item_from_rows, user_summary_from_row,
 };
 use super::repos::{flock_summary_from_row, load_flock_skill_counts};
+use crate::auth::RequestUser;
+use crate::error::AppError;
+use crate::models::{FlockRow, RepoRow, SkillRow, SkillStarRow, SkillVersionRow, UserRow};
+use crate::schema::{flocks, repos, skill_stars, skill_versions, skills, users};
 
 const PROFILE_SKILL_LIMIT: usize = 24;
 const PROFILE_FLOCK_LIMIT: usize = 12;
@@ -306,7 +305,10 @@ fn load_skill_items(
             let latest = row
                 .latest_version_id
                 .and_then(|id| latest_versions.get(&id));
-            let git_url = repo_map.get(&row.repo_id).map(|r| r.git_url.as_str()).unwrap_or_default();
+            let git_url = repo_map
+                .get(&row.repo_id)
+                .map(|r| r.git_url.as_str())
+                .unwrap_or_default();
             Ok(skill_item_from_rows(row, git_url, owner, latest))
         })
         .collect()

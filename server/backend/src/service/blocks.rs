@@ -1,15 +1,14 @@
 use chrono::Utc;
 use diesel::prelude::*;
 use serde_json::json;
+use shared::{BlockedFlockDto, DeleteResponse, FlockBlockListResponse};
 use uuid::Uuid;
 
+use super::helpers::{db_conn, fetch_flock_by_slugs, insert_audit_log};
 use crate::auth::AuthContext;
 use crate::error::AppError;
 use crate::models::{FlockRow, NewSkillBlockRow, RepoRow, SkillBlockRow};
 use crate::schema::{flocks, repos, skill_blocks};
-use shared::{BlockedFlockDto, DeleteResponse, FlockBlockListResponse};
-
-use super::helpers::{db_conn, fetch_flock_by_slugs, insert_audit_log};
 
 pub fn block_flock(
     auth: &AuthContext,

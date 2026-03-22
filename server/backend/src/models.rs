@@ -4,9 +4,9 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::schema::{
-    ai_request_cache, ai_usage_logs, audit_logs, flocks, index_jobs, index_rules, reports, repos,
-    security_scans, site_admins, skill_blocks, skill_comments, skill_installs, skill_ratings,
-    skill_stars, skill_versions, skills, browse_histories, user_tokens, users,
+    ai_request_cache, ai_usage_logs, audit_logs, browse_histories, flocks, index_jobs, index_rules,
+    reports, repos, security_scans, site_admins, skill_blocks, skill_comments, skill_installs,
+    skill_ratings, skill_stars, skill_versions, skills, user_tokens, users,
 };
 
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable)]

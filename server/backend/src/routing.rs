@@ -1,12 +1,17 @@
 use futures_util::StreamExt;
+use salvo::Depot;
 use salvo::http::header::{self, HeaderValue};
 use salvo::prelude::*;
 use salvo::serve_static::StaticDir;
 use salvo::websocket::WebSocketUpgrade;
 use serde_json::json;
+use shared::{
+    AddSiteAdminRequest, BanUserRequest, CreateCommentRequest, CreateIndexRuleRequest,
+    CreateRepoRequest, CreateReportRequest, ModerationUpdateRequest, RateFlockRequest,
+    RecordInstallRequest, RecordViewRequest, ResourceKind, ReviewReportRequest, SetUserRoleRequest,
+    SubmitIndexRequest, UpdateIndexRuleRequest, UpdateSecurityStatusRequest,
+};
 use uuid::Uuid;
-
-use salvo::Depot;
 
 use crate::auth::{AuthContext, optional_auth, require_auth};
 use crate::error::AppError;
@@ -15,12 +20,6 @@ use crate::service::{
     interactions, reports, repos, security, site_admins, users,
 };
 use crate::state::app_state;
-use shared::{
-    AddSiteAdminRequest, BanUserRequest, CreateCommentRequest, CreateIndexRuleRequest,
-    CreateRepoRequest, CreateReportRequest, ModerationUpdateRequest, RateFlockRequest,
-    RecordInstallRequest, RecordViewRequest, ResourceKind, ReviewReportRequest, SetUserRoleRequest,
-    SubmitIndexRequest, UpdateIndexRuleRequest, UpdateSecurityStatusRequest,
-};
 
 pub fn router() -> Router {
     Router::new().push(

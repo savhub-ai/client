@@ -50,8 +50,7 @@ pub fn spawn_worker(pool: PgPool) -> JoinHandle<()> {
 
         let mut index_tick = tokio::time::interval(index_interval);
         let mut repo_check_tick = tokio::time::interval(repo_check_interval);
-        let mut cleanup_tick =
-            tokio::time::interval(std::time::Duration::from_secs(24 * 60 * 60));
+        let mut cleanup_tick = tokio::time::interval(std::time::Duration::from_secs(24 * 60 * 60));
 
         let mut index_tasks: JoinSet<(Uuid, String)> = JoinSet::new();
         let mut running_url_hashes: HashSet<String> = HashSet::new();

@@ -2,8 +2,16 @@ use chrono::Utc;
 use diesel::dsl::count_star;
 use diesel::prelude::*;
 use serde_json::json;
+use shared::{
+    AdminActionResponse, CommentDto, CreateCommentRequest, FlockRatingStats, RateFlockRequest,
+    RateFlockResponse, ToggleStarResponse,
+};
 use uuid::Uuid;
 
+use super::helpers::{
+    db_conn, ensure_skill_visible, fetch_flock_by_slugs, insert_audit_log, load_users_map,
+    user_summary_from_row, viewer_is_admin,
+};
 use crate::auth::{AuthContext, RequestUser, require_admin};
 use crate::error::AppError;
 use crate::models::{
@@ -11,15 +19,6 @@ use crate::models::{
     SkillStarRow,
 };
 use crate::schema::{flocks, skill_comments, skill_ratings, skill_stars, skill_versions, skills};
-use shared::{
-    AdminActionResponse, CommentDto, CreateCommentRequest, FlockRatingStats, RateFlockRequest,
-    RateFlockResponse, ToggleStarResponse,
-};
-
-use super::helpers::{
-    db_conn, ensure_skill_visible, fetch_flock_by_slugs, insert_audit_log, load_users_map,
-    user_summary_from_row, viewer_is_admin,
-};
 
 pub fn add_skill_comment(
     auth: &AuthContext,
@@ -549,7 +548,11 @@ pub fn record_skill_install(
         .select(crate::models::SkillRow::as_select())
         .first::<crate::models::SkillRow>(&mut conn)
         .optional()?
-        .ok_or_else(|| AppError::NotFound(format!("skill `{skill_path}` not found in repo `{repo_url}`")))?;
+        .ok_or_else(|| {
+            AppError::NotFound(format!(
+                "skill `{skill_path}` not found in repo `{repo_url}`"
+            ))
+        })?;
 
     conn.transaction::<_, AppError, _>(|conn| {
         diesel::insert_into(skill_installs::table)
@@ -595,8 +598,9 @@ fn refresh_skill_install_stats(conn: &mut PgConnection, skill_id: Uuid) -> Resul
 }
 
 fn refresh_flock_install_stats(conn: &mut PgConnection, flock_id: Uuid) -> Result<(), AppError> {
-    use crate::schema::skills as skills_table;
     use diesel::dsl::max;
+
+    use crate::schema::skills as skills_table;
 
     let max_installs: Option<i64> = skills_table::table
         .filter(skills_table::flock_id.eq(flock_id))

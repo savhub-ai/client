@@ -6,9 +6,16 @@ use savhub_local::config::{add_project, read_projects_list, remove_project};
 use savhub_local::presets::{
     EnableProjectRepoSkillResult, ProjectSelectorMatch, ProjectSkillConflict,
     ProjectSkillConflictChoice, ResolvedProjectSkill, ResolvedSkillSources, disable_project_skill,
-    enable_repo_skill_in_project, list_repo_skills, read_project_selector_matches,
+    enable_repo_skill_in_project, read_project_selector_matches,
     resolve_project_skills_with_sources,
 };
+
+fn strip_url_scheme(url: &str) -> &str {
+    let url = url.trim().trim_end_matches('/').trim_end_matches(".git");
+    url.strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url)
+}
 
 use crate::components::pagination::{self, PaginationControls};
 use crate::i18n;
@@ -459,35 +466,42 @@ fn load_project_detail_data(workdir: &Path) -> ProjectDetailData {
     ProjectDetailData {
         selector_matches: read_project_selector_matches(workdir).unwrap_or_default(),
         effective_skills: resolve_project_skills_with_sources(workdir).unwrap_or_default(),
-        repo_skills: collect_repo_skill_options(),
+        repo_skills: collect_repo_skill_options(workdir),
     }
 }
 
 #[derive(Clone, PartialEq, Eq)]
 struct RepoSkillOption {
-    repo_name: String,
+    repo_url: String,
+    path: String,
     slug: String,
     display_name: String,
-    location: String,
+    flock_slug: Option<String>,
 }
 
-fn collect_repo_skill_options() -> Vec<RepoSkillOption> {
-    let mut options = list_repo_skills()
-        .unwrap_or_default()
+fn collect_repo_skill_options(workdir: &Path) -> Vec<RepoSkillOption> {
+    let lock = savhub_local::skills::read_lockfile(workdir).unwrap_or_default();
+    let mut options: Vec<RepoSkillOption> = savhub_local::skills::flatten_lockfile(&lock)
         .into_iter()
-        .map(|skill| RepoSkillOption {
-            repo_name: skill.repo_name,
-            slug: skill.skill.slug,
-            display_name: skill.skill.display_name,
-            location: skill.skill.folder.display().to_string(),
+        .map(|e| {
+            let display = e
+                .entry
+                .remote_slug
+                .clone()
+                .unwrap_or_else(|| e.slug.clone());
+            RepoSkillOption {
+                repo_url: e.repo_url,
+                path: e.path,
+                slug: e.slug,
+                display_name: display,
+                flock_slug: e.entry.flock_slug,
+            }
         })
-        .collect::<Vec<_>>();
-
-    options.sort_by(|left, right| {
-        left.display_name
-            .cmp(&right.display_name)
-            .then_with(|| left.slug.cmp(&right.slug))
-            .then_with(|| left.repo_name.cmp(&right.repo_name))
+        .collect();
+    options.sort_by(|a, b| {
+        a.flock_slug
+            .cmp(&b.flock_slug)
+            .then_with(|| a.display_name.cmp(&b.display_name))
     });
     options
 }
@@ -683,10 +697,13 @@ fn AddProjectSkillDialog(
                         "{empty_label}"
                     }
                 } else {
+                    // Group skills by flock_slug
                     div { style: "display: flex; flex-direction: column; gap: 10px; max-height: 520px; overflow-y: auto;",
                         for skill in visible_skills.iter() {
                             {
                                 let is_enabled = enabled.contains(&skill.slug);
+                                let repo_display = strip_url_scheme(&skill.repo_url);
+                                let group_label = skill.flock_slug.as_deref().unwrap_or(repo_display);
                                 rsx! {
                                     div { style: "display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; background: {Theme::BG_ELEVATED}; border: 1px solid {Theme::LINE}; border-radius: 8px;",
                                         div { style: "min-width: 0; flex: 1;",
@@ -694,10 +711,10 @@ fn AddProjectSkillDialog(
                                                 "{skill.display_name}"
                                             }
                                             p { style: "font-size: 11px; color: {Theme::MUTED}; margin-top: 2px;",
-                                                "{skill.repo_name} / {skill.slug}"
+                                                "{group_label} / {skill.slug}"
                                             }
                                             p { style: "font-size: 11px; color: {Theme::MUTED}; margin-top: 4px; font-family: Consolas, 'SFMono-Regular', monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;",
-                                                "{skill.location}"
+                                                "{repo_display}/{skill.path}"
                                             }
                                         }
                                         div { style: "display: flex; align-items: center; gap: 8px; flex-shrink: 0;",
@@ -719,7 +736,7 @@ fn AddProjectSkillDialog(
                                                         };
                                                         match enable_repo_skill_in_project(
                                                             &wd,
-                                                            &skill.repo_name,
+                                                            &strip_url_scheme(&skill.repo_url),
                                                             &skill.slug,
                                                             ProjectSkillConflictChoice::Ask,
                                                             sources,

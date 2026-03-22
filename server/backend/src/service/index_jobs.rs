@@ -4,8 +4,20 @@ use std::fs;
 use chrono::Utc;
 use diesel::prelude::*;
 use serde_json::json;
+use shared::{
+    CatalogSource, FlockMetadata, ImportedSkillRecord, IndexJobDto, IndexJobListResponse,
+    IndexJobStatus, RegistryStatus, SubmitIndexRequest, SubmitIndexResponse,
+};
 use uuid::Uuid;
 
+use super::git_ops::{
+    SkillCandidate, apply_repo_redirect, collect_skill_candidates, parse_skill_markdown_metadata,
+    refresh_cached_repo, resolve_remote_sha, sanitize_skill_slug,
+};
+use super::helpers::{
+    db_conn, hash_string, insert_audit_log, normalize_git_url, parse_git_url_parts,
+};
+use super::security::{ScanContext, run_automated_scans_with_files};
 use crate::auth::AuthContext;
 use crate::error::AppError;
 use crate::models::{
@@ -14,19 +26,6 @@ use crate::models::{
 };
 use crate::schema::{ai_request_cache, flocks, index_jobs, repos, skills};
 use crate::state::app_state;
-use shared::{
-    CatalogSource, FlockMetadata, ImportedSkillRecord, IndexJobDto, IndexJobListResponse,
-    IndexJobStatus, RegistryStatus, SubmitIndexRequest, SubmitIndexResponse,
-};
-
-use super::helpers::{
-    db_conn, hash_string, insert_audit_log, normalize_git_url, parse_git_url_parts,
-};
-use super::git_ops::{
-    SkillCandidate, apply_repo_redirect, collect_skill_candidates,
-    parse_skill_markdown_metadata, refresh_cached_repo, resolve_remote_sha, sanitize_skill_slug,
-};
-use super::security::{ScanContext, run_automated_scans_with_files};
 
 /// Check if we already have a **successful** AI request cached for this
 /// (task_type, target_id, commit_sha) combination. Failed requests are
@@ -1530,11 +1529,10 @@ const NOISE_WORDS: &[&str] = &["skill", "skills", "ai", "agent", "agents"];
 /// Format a skill display name.
 ///
 /// 1. Take the original name from SKILL.md.
-/// 2. Remove noise words (skill, skills, ai, agent, agents).
-///    If the remaining name still has > 2 words, use it directly.
-/// 3. Otherwise build a context prefix from the skill sign:
-///    strip the first segment (domain) and last segment (skill dir),
-///    capitalize each word, dedup adjacent `/`-parts, then prepend to the
+/// 2. Remove noise words (skill, skills, ai, agent, agents). If the remaining name still has > 2
+///    words, use it directly.
+/// 3. Otherwise build a context prefix from the skill sign: strip the first segment (domain) and
+///    last segment (skill dir), capitalize each word, dedup adjacent `/`-parts, then prepend to the
 ///    original name.
 pub(crate) fn format_skill_name(original_name: &str, skill_sign: &str) -> String {
     // If the name has no spaces but contains hyphens, split by '-' and rejoin
@@ -1745,8 +1743,9 @@ pub(crate) fn parse_index_job_status(value: &str) -> IndexJobStatus {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
+
+    use super::*;
 
     fn candidate(relative_dir: &str) -> SkillCandidate {
         SkillCandidate {

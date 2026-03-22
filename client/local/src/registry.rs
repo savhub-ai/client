@@ -12,6 +12,9 @@ use anyhow::{Context, Result, anyhow};
 use chrono::Utc;
 use reqwest::blocking::{Client, Response};
 use reqwest::{Method, Url};
+pub use savhub_shared::{
+    DataSource, FetchedSkillEntry, RegistryFlock, RegistrySkill, RemoteSkillFetchSpec, SkillEntry,
+};
 use savhub_shared::{
     FlockDetailResponse, FlockSummary, ImportedSkillRecord, PagedResponse, RepoDetailResponse,
     SecurityStatus, SecuritySummary, SkillDetailResponse, SkillListItem,
@@ -22,11 +25,6 @@ use serde_json::Value;
 
 use crate::config::get_config_dir;
 use crate::skills::{RepoSkillOrigin, copy_skill_folder, write_repo_skill_origin};
-
-pub use savhub_shared::{
-    DataSource, FetchedSkillEntry, RegistryFlock, RegistrySkill, RemoteSkillFetchSpec,
-    SkillEntry,
-};
 
 const DEFAULT_API_BASE: &str = "https://savhub.ai/api/v1";
 const PAGE_LIMIT: usize = 100;
@@ -279,7 +277,10 @@ pub fn fetched_skill_local_path(entry: &FetchedSkillEntry) -> Option<PathBuf> {
         return None;
     }
     let root = repos_dir().ok()?;
-    Some(root.join(strip_git_url_scheme(&entry.repo)).join(Path::new(&entry.path)))
+    Some(
+        root.join(strip_git_url_scheme(&entry.repo))
+            .join(Path::new(&entry.path)),
+    )
 }
 
 pub fn make_skill_sign(repo_sign: &str, skill_path: &str) -> String {

@@ -11,8 +11,8 @@ use crate::db::PgPool;
 use crate::error::AppError;
 use crate::models::{RepoChangeset, RepoRow};
 use crate::schema::{index_jobs, repos};
-use crate::service::helpers::normalize_git_url;
 use crate::service::git_ops::resolve_remote_sha;
+use crate::service::helpers::normalize_git_url;
 
 /// Backfill `git_rev` for every repo that currently has it set to NULL.
 ///

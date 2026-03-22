@@ -8,9 +8,10 @@
 //! Each finding carries a reason code, severity, file path, line number,
 //! human-readable message, and evidence snippet.
 
+use std::sync::LazyLock;
+
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::sync::LazyLock;
 
 // ---------------------------------------------------------------------------
 // Types

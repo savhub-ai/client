@@ -1,15 +1,14 @@
 use std::collections::HashSet;
 use std::path::Path;
 
+// Re-export shared ApiClient and related types so existing desktop code keeps working.
+pub use savhub_local::api::{ApiClient, ApiCompatibility, CLIENT_API_VERSION};
 use savhub_local::registry::{cache_remote_skill_from_repo, fetch_version_label};
 use savhub_local::skills::FetchedSkillMetadata;
 use savhub_shared::{
     DataSource, FlockDetailResponse, FlockSummary, PagedResponse, RemoteSkillFetchSpec,
     RepoDetailResponse, SkillDetailResponse, SkillEntry, SkillListItem,
 };
-
-// Re-export shared ApiClient and related types so existing desktop code keeps working.
-pub use savhub_local::api::{ApiClient, ApiCompatibility, CLIENT_API_VERSION};
 
 #[derive(Debug, Clone, Default)]
 pub struct RemoteSkillLookup {

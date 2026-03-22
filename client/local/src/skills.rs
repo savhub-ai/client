@@ -8,14 +8,13 @@ use savhub_shared::{
     BUNDLE_META_FILE, BundleMetadata, BundleSourceKind, ResourceKind, StoredBundleFile,
     load_bundle_metadata,
 };
+pub use savhub_shared::{LockEntry, Lockfile, RepoSkillOrigin};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use walkdir::{DirEntry, WalkDir};
 use zip::ZipArchive;
 
 use crate::utils::{sanitize_slug, title_case};
-
-pub use savhub_shared::{LockEntry, Lockfile, RepoSkillOrigin};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SkillVersionInfo {
@@ -594,20 +593,17 @@ pub fn update_lockfile_with_metadata(
         .and_then(|raw| serde_json::from_str::<Lockfile>(&raw).ok())
         .unwrap_or_default();
 
-    lock.repos
-        .entry(repo_url.to_string())
-        .or_default()
-        .insert(
-            path.to_string(),
-            LockEntry {
-                version: version.to_string(),
-                fetched_at: chrono::Utc::now().timestamp(),
-                remote_id: metadata.remote_id.clone(),
-                remote_slug: metadata.remote_slug.clone(),
-                flock_slug: metadata.flock_slug.clone(),
-                git_rev: metadata.git_rev.clone(),
-            },
-        );
+    lock.repos.entry(repo_url.to_string()).or_default().insert(
+        path.to_string(),
+        LockEntry {
+            version: version.to_string(),
+            fetched_at: chrono::Utc::now().timestamp(),
+            remote_id: metadata.remote_id.clone(),
+            remote_slug: metadata.remote_slug.clone(),
+            flock_slug: metadata.flock_slug.clone(),
+            git_rev: metadata.git_rev.clone(),
+        },
+    );
 
     let _ = fs::write(
         &lock_path,
@@ -654,9 +650,7 @@ pub fn read_fetched_skill_versions(workdir: &Path) -> std::collections::BTreeMap
 }
 
 /// Read the full lockfile entries as a flat slug → LockEntry map.
-pub fn read_fetched_skill_entries(
-    workdir: &Path,
-) -> std::collections::BTreeMap<String, LockEntry> {
+pub fn read_fetched_skill_entries(workdir: &Path) -> std::collections::BTreeMap<String, LockEntry> {
     let lock = read_lockfile(workdir).unwrap_or_default();
     flatten_lockfile(&lock)
         .into_iter()
@@ -702,9 +696,7 @@ pub fn prune_skill(workdir: &Path, slug: &str) -> Result<()> {
 
     // Find and remove the entry matching slug
     for paths in lock.repos.values_mut() {
-        paths.retain(|_path, entry| {
-            entry.remote_slug.as_deref() != Some(slug)
-        });
+        paths.retain(|_path, entry| entry.remote_slug.as_deref() != Some(slug));
     }
     lock.repos.retain(|_, paths| !paths.is_empty());
 

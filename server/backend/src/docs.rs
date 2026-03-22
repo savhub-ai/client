@@ -3,11 +3,10 @@
 //! Uses novel-core to parse markdown. Returns structured JSON
 //! so the Dioxus frontend can render docs inside the SPA shell.
 
-use once_cell::sync::Lazy;
-use rust_embed::Embed;
-
 use novel_core::{BuiltSite, EmbedNovel, Novel};
 use novel_shared::SidebarItem;
+use once_cell::sync::Lazy;
+use rust_embed::Embed;
 use shared::{DocPageResponse, DocSidebarGroup, DocSidebarLink, DocTocItem};
 
 #[derive(Embed)]

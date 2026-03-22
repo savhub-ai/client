@@ -1060,9 +1060,11 @@ async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
     let slugs = if let Some(slug) = args.slug {
         vec![normalize_slug(&slug)?]
     } else {
-        lockfile.iter_entries().map(|(_, _, e)| {
-            e.remote_slug.clone().unwrap_or_default()
-        }).filter(|s| !s.is_empty()).collect::<Vec<_>>()
+        lockfile
+            .iter_entries()
+            .map(|(_, _, e)| e.remote_slug.clone().unwrap_or_default())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
     };
     if slugs.is_empty() {
         println!("No fetched skills.");
@@ -1107,7 +1109,10 @@ async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
 
         if local_version_info.git_commit.as_deref() == Some(remote.spec.git_rev.as_str()) {
             println!("{slug}: already at {latest}");
-            let prev_fetched_at = lockfile.find_by_slug(&slug).map(|(_, _, e)| e.fetched_at).unwrap_or(now);
+            let prev_fetched_at = lockfile
+                .find_by_slug(&slug)
+                .map(|(_, _, e)| e.fetched_at)
+                .unwrap_or(now);
             lockfile.insert(
                 &remote.spec.repo_sign,
                 &remote.spec.skill_path,
@@ -1195,7 +1200,10 @@ async fn cmd_update_global(opts: &GlobalOpts, args: &UpdateArgs) -> Result<()> {
     let slugs: Vec<String> = if let Some(slug) = &args.slug {
         vec![normalize_slug(slug)?]
     } else {
-        lockfile.iter_entries().filter_map(|(_, _, e)| e.remote_slug.clone()).collect()
+        lockfile
+            .iter_entries()
+            .filter_map(|(_, _, e)| e.remote_slug.clone())
+            .collect()
     };
 
     if slugs.is_empty() {

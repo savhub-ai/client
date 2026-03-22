@@ -88,9 +88,7 @@ pub struct CompatibilityMetadata {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CatalogSource {
-    Registry {
-        path: String,
-    },
+    Registry { path: String },
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

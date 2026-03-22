@@ -1,18 +1,17 @@
 use chrono::Utc;
 use diesel::prelude::*;
 use serde_json::json;
-use uuid::Uuid;
-
-use crate::auth::AuthContext;
-use crate::error::AppError;
-use crate::models::{NewReportRow, ReportRow};
-use crate::schema::reports;
 use shared::{
     CreateReportRequest, ReportDto, ReportListResponse, ReportReason, ReportStatus,
     ReportTargetType, ReviewReportRequest,
 };
+use uuid::Uuid;
 
 use super::helpers::{db_conn, insert_audit_log, load_users_map, user_summary_from_row};
+use crate::auth::AuthContext;
+use crate::error::AppError;
+use crate::models::{NewReportRow, ReportRow};
+use crate::schema::reports;
 
 pub fn create_report(
     auth: &AuthContext,

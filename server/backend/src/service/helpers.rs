@@ -5,6 +5,11 @@ use chrono::Utc;
 use diesel::prelude::*;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
+use shared::{
+    AuditLogEntry, CatalogStats, ModerationStatus, ResourceFileSummary, SkillBadges, SkillListItem,
+    StoredBundleFile, UserRole, UserSummary, VersionDetail, VersionScanSummary, VersionSummary,
+    bundle_metadata_from_json,
+};
 use uuid::Uuid;
 use zip::write::SimpleFileOptions;
 
@@ -14,11 +19,6 @@ use crate::markdown::render_markdown;
 use crate::models::{AuditLogRow, FlockRow, NewAuditLogRow, SkillRow, SkillVersionRow, UserRow};
 use crate::schema::{audit_logs, flocks, repos, skill_versions, skills, users};
 use crate::state::app_state;
-use shared::{
-    AuditLogEntry, CatalogStats, ModerationStatus, ResourceFileSummary, SkillBadges, SkillListItem,
-    StoredBundleFile, UserRole, UserSummary, VersionDetail, VersionScanSummary, VersionSummary,
-    bundle_metadata_from_json,
-};
 
 /// Normalize a git URL to a canonical HTTPS form.
 ///

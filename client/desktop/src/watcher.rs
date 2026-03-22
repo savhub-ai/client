@@ -5,9 +5,8 @@ use dioxus::prelude::*;
 /// Shared between the watcher and callers of [`mark_self_written`] so that
 /// config writes originating from the desktop itself are not treated as
 /// external changes.
-static LAST_SEEN: GlobalSignal<u64> = Signal::global(|| {
-    savhub_local::pilot::config_change_timestamp().unwrap_or(0)
-});
+static LAST_SEEN: GlobalSignal<u64> =
+    Signal::global(|| savhub_local::pilot::config_change_timestamp().unwrap_or(0));
 
 /// A Dioxus hook that polls `~/.savhub/.config-changed` every 2 seconds.
 ///

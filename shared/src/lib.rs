@@ -1,16 +1,15 @@
-mod catalog;
 mod bundle_meta;
+mod catalog;
 mod client;
 
+pub use bundle_meta::*;
+pub use catalog::*;
 use chrono::{DateTime, Utc};
+pub use client::*;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
-
-pub use catalog::*;
-pub use bundle_meta::*;
-pub use client::*;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

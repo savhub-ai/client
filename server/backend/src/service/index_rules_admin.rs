@@ -1,17 +1,16 @@
 use chrono::Utc;
 use diesel::prelude::*;
-use uuid::Uuid;
-
-use crate::auth::{AuthContext, require_admin};
-use crate::error::AppError;
-use crate::models::{IndexRuleChangeset, IndexRuleRow, NewIndexRuleRow};
-use crate::schema::index_rules;
-
-use super::helpers::{db_conn, normalize_git_url};
 use shared::{
     AdminActionResponse, CreateIndexRuleRequest, IndexRuleDto, IndexRuleListResponse,
     UpdateIndexRuleRequest,
 };
+use uuid::Uuid;
+
+use super::helpers::{db_conn, normalize_git_url};
+use crate::auth::{AuthContext, require_admin};
+use crate::error::AppError;
+use crate::models::{IndexRuleChangeset, IndexRuleRow, NewIndexRuleRow};
+use crate::schema::index_rules;
 
 pub fn list_index_rules(
     auth: &AuthContext,

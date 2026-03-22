@@ -2,15 +2,14 @@ use std::collections::HashMap;
 
 use chrono::Utc;
 use diesel::prelude::*;
+use shared::{BrowseHistoryItem, BrowseHistoryResponse, RecordViewRequest};
 use uuid::Uuid;
 
+use super::helpers::{db_conn, load_users_map};
 use crate::auth::AuthContext;
 use crate::error::AppError;
-use crate::models::{FlockRow, NewBrowseHistoryRow, SkillRow, BrowseHistoryRow};
-use crate::schema::{flocks, skills, browse_histories};
-use shared::{BrowseHistoryItem, BrowseHistoryResponse, RecordViewRequest};
-
-use super::helpers::{db_conn, load_users_map};
+use crate::models::{BrowseHistoryRow, FlockRow, NewBrowseHistoryRow, SkillRow};
+use crate::schema::{browse_histories, flocks, skills};
 
 /// Record a page view. Upserts: if the same user+resource already exists,
 /// update the viewed_at timestamp instead of inserting a duplicate.

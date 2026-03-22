@@ -9,12 +9,11 @@ use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::helpers::db_conn;
 use crate::error::AppError;
 use crate::models::NewAiUsageLogRow;
 use crate::schema::ai_usage_logs;
 use crate::state::app_state;
-
-use super::helpers::db_conn;
 
 #[derive(Debug, Serialize)]
 struct ChatRequest {

@@ -1,15 +1,14 @@
 use chrono::Utc;
 use diesel::prelude::*;
 use serde_json::json;
+use shared::{AddSiteAdminRequest, AdminActionResponse, SiteAdminDto, SiteAdminListResponse};
 use uuid::Uuid;
 
+use super::helpers::{db_conn, insert_audit_log, user_summary_from_row};
 use crate::auth::{AuthContext, require_staff};
 use crate::error::AppError;
 use crate::models::{NewSiteAdminRow, SiteAdminRow, UserRow};
 use crate::schema::{site_admins, users};
-
-use super::helpers::{db_conn, insert_audit_log, user_summary_from_row};
-use shared::{AddSiteAdminRequest, AdminActionResponse, SiteAdminDto, SiteAdminListResponse};
 
 pub fn list_site_admins(auth: &AuthContext) -> Result<SiteAdminListResponse, AppError> {
     require_staff(auth)?;

@@ -48,13 +48,32 @@ enum Section {
 
 #[derive(Clone)]
 enum RowKind {
-    SectionHeader { label: &'static str, color: Color },
+    SectionHeader {
+        label: &'static str,
+        color: Color,
+    },
     Separator,
-    RepoGroup { label: String, collapsed: bool },
-    Selector { index: usize, checked: bool, label: String },
-    Flock { slug: String, checked: bool, display: String, skill_count: usize },
-    RemovedSelector { label: String },
-    RemovedFlock { display: String },
+    RepoGroup {
+        label: String,
+        collapsed: bool,
+    },
+    Selector {
+        index: usize,
+        checked: bool,
+        label: String,
+    },
+    Flock {
+        slug: String,
+        checked: bool,
+        display: String,
+        skill_count: usize,
+    },
+    RemovedSelector {
+        label: String,
+    },
+    RemovedFlock {
+        display: String,
+    },
 }
 
 #[derive(Clone)]
@@ -79,8 +98,7 @@ impl Row {
         match &self.kind {
             RowKind::Selector { label, .. } => label.to_ascii_lowercase().contains(&q),
             RowKind::Flock { slug, display, .. } => {
-                slug.to_ascii_lowercase().contains(&q)
-                    || display.to_ascii_lowercase().contains(&q)
+                slug.to_ascii_lowercase().contains(&q) || display.to_ascii_lowercase().contains(&q)
             }
             RowKind::RepoGroup { label, .. } => label.to_ascii_lowercase().contains(&q),
             RowKind::RemovedSelector { label } => label.to_ascii_lowercase().contains(&q),
@@ -166,7 +184,11 @@ fn move_up(rows: &[Row], cursor: usize) -> usize {
     while pos > 0 && !rows[pos].is_interactive() {
         pos -= 1;
     }
-    if rows[pos].is_interactive() { pos } else { cursor }
+    if rows[pos].is_interactive() {
+        pos
+    } else {
+        cursor
+    }
 }
 
 fn move_down(rows: &[Row], cursor: usize) -> usize {
@@ -178,7 +200,11 @@ fn move_down(rows: &[Row], cursor: usize) -> usize {
     while pos < last && !rows[pos].is_interactive() {
         pos += 1;
     }
-    if rows[pos].is_interactive() { pos } else { cursor }
+    if rows[pos].is_interactive() {
+        pos
+    } else {
+        cursor
+    }
 }
 
 fn page_up(rows: &[Row], cursor: usize, page_height: usize) -> usize {
@@ -207,9 +233,11 @@ fn page_down(rows: &[Row], cursor: usize, page_height: usize) -> usize {
 
 fn jump_section(rows: &[Row], cursor: usize) -> usize {
     let current_section = rows.get(cursor).map(|r| r.section);
-    if let Some(target) = rows.iter().enumerate().find(|(_, r)| {
-        r.is_interactive() && Some(r.section) != current_section
-    }) {
+    if let Some(target) = rows
+        .iter()
+        .enumerate()
+        .find(|(_, r)| r.is_interactive() && Some(r.section) != current_section)
+    {
         return target.0;
     }
     cursor
@@ -232,7 +260,10 @@ fn build_rows(
     // -- Install section --
     if !selectors.is_empty() {
         rows.push(Row {
-            kind: RowKind::SectionHeader { label: "  Install", color: Color::Green },
+            kind: RowKind::SectionHeader {
+                label: "  Install",
+                color: Color::Green,
+            },
             section: Section::Install,
         });
         for (i, sel) in selectors.iter().enumerate() {
@@ -272,8 +303,7 @@ fn build_rows(
                 if !is_collapsed {
                     for f in flocks {
                         let on = is_flock_checked(f, flock_overrides);
-                        let count =
-                            flock_skill_counts.get(f.as_str()).copied().unwrap_or(0);
+                        let count = flock_skill_counts.get(f.as_str()).copied().unwrap_or(0);
                         let flock_row = Row {
                             kind: RowKind::Flock {
                                 slug: f.clone(),
@@ -301,12 +331,17 @@ fn build_rows(
             });
         }
         rows.push(Row {
-            kind: RowKind::SectionHeader { label: "  Remove", color: Color::Red },
+            kind: RowKind::SectionHeader {
+                label: "  Remove",
+                color: Color::Red,
+            },
             section: Section::Remove,
         });
         for u in unmatched {
             let row = Row {
-                kind: RowKind::RemovedSelector { label: u.name.clone() },
+                kind: RowKind::RemovedSelector {
+                    label: u.name.clone(),
+                },
                 section: Section::Remove,
             };
             if row.matches_filter(filter) {
@@ -340,7 +375,12 @@ fn context_info(rows: &[Row], cursor: usize) -> String {
             let state = if *checked { "on" } else { "off" };
             format!(" Selector: {label} [{state}]")
         }
-        RowKind::Flock { slug, skill_count, checked, .. } => {
+        RowKind::Flock {
+            slug,
+            skill_count,
+            checked,
+            ..
+        } => {
             let state = if *checked { "on" } else { "off" };
             format!(" Flock: {slug} -- {skill_count} skills [{state}]")
         }
@@ -363,20 +403,14 @@ fn render_row(row: &Row, term_width: u16) -> ListItem<'static> {
                     format!(" -- {label} "),
                     Style::default().fg(*color).add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(
-                    "-".repeat(rule_len),
-                    Style::default().fg(Color::DarkGray),
-                ),
+                Span::styled("-".repeat(rule_len), Style::default().fg(Color::DarkGray)),
             ]))
         }
         RowKind::Separator => ListItem::new(Line::from(Span::raw(""))),
         RowKind::RepoGroup { label, collapsed } => {
             let icon = if *collapsed { ">" } else { "v" };
             ListItem::new(Line::from(vec![
-                Span::styled(
-                    format!("   {icon} "),
-                    Style::default().fg(Color::DarkGray),
-                ),
+                Span::styled(format!("   {icon} "), Style::default().fg(Color::DarkGray)),
                 Span::styled(
                     label.clone(),
                     Style::default()
@@ -399,7 +433,12 @@ fn render_row(row: &Row, term_width: u16) -> ListItem<'static> {
                 Span::styled(label.clone(), Style::default().fg(lc)),
             ]))
         }
-        RowKind::Flock { checked, display, skill_count, .. } => {
+        RowKind::Flock {
+            checked,
+            display,
+            skill_count,
+            ..
+        } => {
             let (marker, mc, lc) = if *checked {
                 ("+", Color::Cyan, Color::White)
             } else {
@@ -427,10 +466,7 @@ fn render_row(row: &Row, term_width: u16) -> ListItem<'static> {
             ),
         ])),
         RowKind::RemovedFlock { display } => ListItem::new(Line::from(vec![
-            Span::styled(
-                "      [x] ",
-                Style::default().fg(Color::Rgb(120, 50, 50)),
-            ),
+            Span::styled("      [x] ", Style::default().fg(Color::Rgb(120, 50, 50))),
             Span::styled(
                 display.clone(),
                 Style::default()
@@ -580,9 +616,7 @@ pub fn apply_select(
             )];
             if add_sel > 0 || add_flock > 0 {
                 title_spans.push(Span::styled(
-                    format!(
-                        " +{add_sel} selectors  +{add_flock} flocks ({add_skills} skills)"
-                    ),
+                    format!(" +{add_sel} selectors  +{add_flock} flocks ({add_skills} skills)"),
                     Style::default().fg(Color::Green),
                 ));
             }

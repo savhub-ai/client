@@ -1,17 +1,12 @@
 use chrono::Utc;
 use diesel::prelude::*;
 use serde_json::json;
-use uuid::Uuid;
-
-use crate::auth::{AuthContext, require_staff};
-use crate::error::AppError;
-use crate::models::{FlockChangeset, NewSecurityScanRow, SecurityScanRow, SkillRow};
-use crate::schema::{flocks, security_scans, skill_versions, skills};
 use shared::{
     ScanVerdict, SecurityScanDto, SecurityScanListResponse, SecurityStatus,
     StaticScanFinding as SharedStaticScanFinding, StaticScanResult as SharedStaticScanResult,
     UpdateSecurityStatusRequest, VersionScanSummary,
 };
+use uuid::Uuid;
 
 use super::helpers::{
     db_conn, fetch_flock_by_slugs, insert_audit_log, load_users_map, user_summary_from_row,
@@ -22,6 +17,10 @@ use super::llm_eval::{
 use super::security_scan::{
     self, FileContent, ModerationVerdict, ScanInput, StaticScanResult, build_moderation_verdict,
 };
+use crate::auth::{AuthContext, require_staff};
+use crate::error::AppError;
+use crate::models::{FlockChangeset, NewSecurityScanRow, SecurityScanRow, SkillRow};
+use crate::schema::{flocks, security_scans, skill_versions, skills};
 
 // ---------------------------------------------------------------------------
 // Staff endpoints (unchanged)

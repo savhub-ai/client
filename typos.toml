@@ -13,6 +13,7 @@ AttributeIDSupressMenu = "AttributeIDSupressMenu"
 teh = "teh"
 Hashi = "Hashi"
 consts = "consts"
+Ratatui = "Ratatui"
 
 [files]
 extend-exclude = ["**/*.js", "**/*.css", "**/*.html", "examples/*/static/**/*.*"]

@@ -1,7 +1,18 @@
 use diesel::prelude::*;
 use serde_json::json;
+use shared::{
+    AdminActionResponse, AdminIndexJobDto, AdminIndexJobListResponse, AiUsageSummaryItem,
+    BanUserRequest, BanUserResponse, CancelIndexJobResponse, CatalogCounts, DeleteResponse,
+    IndexJobStatus, ManagementSummaryResponse, ModerationUpdateRequest, RoleUpdateResponse,
+    SetUserRoleRequest, UserRole,
+};
 use uuid::Uuid;
 
+use super::catalog::get_skill_detail_by_id;
+use super::helpers::{
+    audit_log_entry_from_row, db_conn, insert_audit_log, load_users_map, moderation_status_to_str,
+    user_summary_from_row,
+};
 use crate::auth::{AuthContext, parse_role, require_admin, require_staff};
 use crate::error::AppError;
 use crate::models::{
@@ -10,18 +21,6 @@ use crate::models::{
 use crate::schema::{
     ai_usage_logs, audit_logs, flocks, index_jobs, reports, repos, skill_comments, skill_versions,
     skills, user_tokens, users,
-};
-use shared::{
-    AdminActionResponse, AdminIndexJobDto, AdminIndexJobListResponse, AiUsageSummaryItem,
-    BanUserRequest, BanUserResponse, CancelIndexJobResponse, CatalogCounts, DeleteResponse,
-    IndexJobStatus, ManagementSummaryResponse, ModerationUpdateRequest, RoleUpdateResponse,
-    SetUserRoleRequest, UserRole,
-};
-
-use super::catalog::get_skill_detail_by_id;
-use super::helpers::{
-    audit_log_entry_from_row, db_conn, insert_audit_log, load_users_map, moderation_status_to_str,
-    user_summary_from_row,
 };
 
 pub fn set_skill_deleted(

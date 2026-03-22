@@ -22,7 +22,8 @@ pub struct Config {
     pub ai_api_key: Option<String>,
     /// Model name override for chat completions.
     pub ai_chat_model: Option<String>,
-    /// Model name override for LLM security evaluation (defaults to glm-4-plus / doubao-1-5-pro-32k).
+    /// Model name override for LLM security evaluation (defaults to glm-4-plus /
+    /// doubao-1-5-pro-32k).
     pub ai_security_model: Option<String>,
     pub auto_index_min_interval_secs: u64,
     /// Maximum number of index jobs that may execute in parallel. Default 10.

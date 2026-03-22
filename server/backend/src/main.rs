@@ -2,7 +2,6 @@ use anyhow::Result;
 use salvo::cors::{Any, Cors};
 use salvo::http::Method;
 use salvo::prelude::*;
-
 use server::config::Config;
 use server::db::{new_pool, run_migrations};
 use server::seed::ensure_seed_data;

@@ -4,21 +4,21 @@
 //! specialized security evaluator system prompt. The LLM assesses the skill
 //! across five dimensions and returns a structured verdict.
 
+use std::sync::LazyLock;
+
 use chrono::Utc;
 use diesel::prelude::*;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::sync::LazyLock;
 use uuid::Uuid;
 
+use super::helpers::db_conn;
+use super::security_scan::StaticScanResult;
 use crate::error::AppError;
 use crate::models::{NewAiUsageLogRow, NewSecurityScanRow};
 use crate::schema::{ai_usage_logs, security_scans};
 use crate::state::app_state;
-
-use super::helpers::db_conn;
-use super::security_scan::StaticScanResult;
 
 // ---------------------------------------------------------------------------
 // Types

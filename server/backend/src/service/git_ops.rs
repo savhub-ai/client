@@ -6,18 +6,16 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
+use super::helpers::{extract_summary, parse_frontmatter};
 use crate::error::AppError;
 use crate::state::app_state;
-
-use super::helpers::{extract_summary, parse_frontmatter};
 
 /// On Windows, configure the repo so that files with characters illegal in
 /// Windows paths (e.g. `:`) are accepted in the index but excluded from the
 /// worktree. Two settings work together:
 ///
 /// - `core.protectNTFS = false` lets git keep the entry in the index.
-/// - sparse-checkout marks those entries as skip-worktree so git never writes
-///   them to disk.
+/// - sparse-checkout marks those entries as skip-worktree so git never writes them to disk.
 ///
 /// No-op on non-Windows. Idempotent.
 async fn setup_windows_sparse_checkout(repo_dir: &Path) {
@@ -77,9 +75,10 @@ pub(crate) fn apply_repo_redirect(
     old_url: &str,
     new_url: &str,
 ) -> Result<(), AppError> {
+    use diesel::prelude::*;
+
     use crate::models::RepoChangeset;
     use crate::schema::repos;
-    use diesel::prelude::*;
 
     let new_url = super::helpers::normalize_git_url(new_url);
     let (new_domain, new_path_slug) = super::helpers::parse_git_url_parts(&new_url);
@@ -125,8 +124,9 @@ pub(crate) fn collect_skill_candidates(
     let mut has_skill_md = false;
 
     for entry in entries {
-        let entry = entry
-            .map_err(|error| AppError::Internal(format!("failed to walk checked out repo: {error}")))?;
+        let entry = entry.map_err(|error| {
+            AppError::Internal(format!("failed to walk checked out repo: {error}"))
+        })?;
         let name = entry.file_name().to_string_lossy().to_string();
         let metadata = entry.metadata().map_err(|error| {
             AppError::Internal(format!("failed to inspect checked out repo: {error}"))
@@ -667,8 +667,9 @@ async fn get_head_sha(repo_dir: &Path) -> Result<String, AppError> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
+
+    use super::*;
 
     #[test]
     fn collect_skill_candidates_finds_nested_skill_directories() {
@@ -692,9 +693,8 @@ mod tests {
     fn parse_skill_markdown_metadata_reads_frontmatter_without_meta_toml() {
         let markdown = "---\nname: Prompt Crafter\ndescription: Build prompts from templates.\n---\n# Prompt Crafter\n";
 
-        let metadata =
-            parse_skill_markdown_metadata("skills/prompt-crafter", "tools", markdown)
-                .expect("parse markdown");
+        let metadata = parse_skill_markdown_metadata("skills/prompt-crafter", "tools", markdown)
+            .expect("parse markdown");
 
         assert_eq!(metadata.name, "Prompt Crafter");
         assert_eq!(metadata.description, "Build prompts from templates.");

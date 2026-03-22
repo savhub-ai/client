@@ -1,12 +1,12 @@
 use diesel::prelude::*;
 use salvo::Request;
+use shared::{UserRole, UserSummary};
 use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::models::{UserRow, UserTokenRow};
 use crate::schema::{user_tokens, users};
 use crate::state::app_state;
-use shared::{UserRole, UserSummary};
 
 #[derive(Debug, Clone)]
 pub struct RequestUser {

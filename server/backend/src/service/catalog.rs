@@ -2,11 +2,6 @@ use std::collections::HashMap;
 
 use diesel::dsl::count_star;
 use diesel::prelude::*;
-
-use crate::auth::{AuthContext, RequestUser};
-use crate::error::AppError;
-use crate::models::{RepoRow, SkillCommentRow, SkillRow, SkillVersionRow};
-use crate::schema::{repos, skill_comments, skill_stars, skill_versions, skills};
 use shared::{
     CommentDto, FileContentResponse, FlockSummary, PagedResponse, ResolveResponse, ResolvedVersion,
     ResourceKind, SearchResponse, SearchResult, SkillDetailResponse, SkillListItem, WhoAmIResponse,
@@ -19,6 +14,10 @@ use super::helpers::{
     user_summary_from_row, version_detail_from_skill, version_summary_from_skill, viewer_is_admin,
     viewer_is_staff, zip_files,
 };
+use crate::auth::{AuthContext, RequestUser};
+use crate::error::AppError;
+use crate::models::{RepoRow, SkillCommentRow, SkillRow, SkillVersionRow};
+use crate::schema::{repos, skill_comments, skill_stars, skill_versions, skills};
 
 pub fn whoami(auth: Option<&AuthContext>) -> WhoAmIResponse {
     WhoAmIResponse {
@@ -61,13 +60,19 @@ pub fn list_skills(
                 return match row {
                     Some(row) => {
                         if !viewer_is_staff(viewer) && row.moderation_status != "active" {
-                            return Ok(PagedResponse { items: Vec::new(), next_cursor: None });
+                            return Ok(PagedResponse {
+                                items: Vec::new(),
+                                next_cursor: None,
+                            });
                         }
                         let owners = load_skill_owners(&mut conn, &[&row])?;
-                        let latest = row.latest_version_id
+                        let latest = row
+                            .latest_version_id
                             .map(|id| load_skill_versions_map(&mut conn, vec![id]))
-                            .transpose()?.unwrap_or_default();
-                        let owner = owners.get(&row.flock_id)
+                            .transpose()?
+                            .unwrap_or_default();
+                        let owner = owners
+                            .get(&row.flock_id)
                             .ok_or_else(|| AppError::Internal("missing skill owner".to_string()))?;
                         let lv = row.latest_version_id.and_then(|id| latest.get(&id));
                         Ok(PagedResponse {
@@ -75,10 +80,16 @@ pub fn list_skills(
                             next_cursor: None,
                         })
                     }
-                    None => Ok(PagedResponse { items: Vec::new(), next_cursor: None }),
+                    None => Ok(PagedResponse {
+                        items: Vec::new(),
+                        next_cursor: None,
+                    }),
                 };
             }
-            return Ok(PagedResponse { items: Vec::new(), next_cursor: None });
+            return Ok(PagedResponse {
+                items: Vec::new(),
+                next_cursor: None,
+            });
         }
     }
 
@@ -164,7 +175,10 @@ pub fn list_skills(
                     .get(&row.flock_id)
                     .ok_or_else(|| AppError::Internal("missing skill owner".to_string()))?;
                 let latest = row.latest_version_id.and_then(|id| latest_map.get(&id));
-                let git_url = repo_map.get(&row.repo_id).map(|r| r.git_url.as_str()).unwrap_or_default();
+                let git_url = repo_map
+                    .get(&row.repo_id)
+                    .map(|r| r.git_url.as_str())
+                    .unwrap_or_default();
                 Ok(skill_item_from_rows(row, git_url, owner, latest))
             })
             .collect::<Result<Vec<_>, AppError>>()?;
@@ -208,7 +222,10 @@ pub fn list_skills(
                     .get(&row.flock_id)
                     .ok_or_else(|| AppError::Internal("missing skill owner".to_string()))?;
                 let latest = row.latest_version_id.and_then(|id| latest.get(&id));
-                let git_url = repo_map.get(&row.repo_id).map(|r| r.git_url.as_str()).unwrap_or_default();
+                let git_url = repo_map
+                    .get(&row.repo_id)
+                    .map(|r| r.git_url.as_str())
+                    .unwrap_or_default();
                 Ok(skill_item_from_rows(row, git_url, owner, latest))
             })
             .collect::<Result<Vec<_>, AppError>>()?;
@@ -248,12 +265,21 @@ pub fn list_flocks(
                 return match flock {
                     Some(flock) => {
                         let items = build_flock_summaries(&mut conn, vec![&flock])?;
-                        Ok(PagedResponse { items, next_cursor: None })
+                        Ok(PagedResponse {
+                            items,
+                            next_cursor: None,
+                        })
                     }
-                    None => Ok(PagedResponse { items: Vec::new(), next_cursor: None }),
+                    None => Ok(PagedResponse {
+                        items: Vec::new(),
+                        next_cursor: None,
+                    }),
                 };
             }
-            return Ok(PagedResponse { items: Vec::new(), next_cursor: None });
+            return Ok(PagedResponse {
+                items: Vec::new(),
+                next_cursor: None,
+            });
         }
     }
 
@@ -729,9 +755,7 @@ fn push_skill_results(
 }
 
 /// Load all repos into a map keyed by id.
-fn load_repo_map(
-    conn: &mut PgConnection,
-) -> Result<HashMap<uuid::Uuid, RepoRow>, AppError> {
+fn load_repo_map(conn: &mut PgConnection) -> Result<HashMap<uuid::Uuid, RepoRow>, AppError> {
     let rows = repos::table
         .select(RepoRow::as_select())
         .load::<RepoRow>(conn)?;

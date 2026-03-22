@@ -3,15 +3,6 @@ use std::collections::{HashMap, HashSet};
 use chrono::Utc;
 use diesel::prelude::*;
 use serde_json::json;
-use uuid::Uuid;
-
-use crate::auth::{AuthContext, RequestUser};
-use crate::error::AppError;
-use crate::models::{
-    FlockChangeset, FlockRow, NewFlockRow, NewRepoRow, NewSkillRow, RepoRow, SkillChangeset,
-    SkillRow, UserRow,
-};
-use crate::schema::{flocks, repos, skills};
 use shared::{
     CatalogSource, CreateRepoRequest, FlockDetailResponse, FlockDocument, FlockMetadata,
     FlockRatingStats, FlockSummary, ImportFlockRequest, ImportedSkillMetadata, ImportedSkillRecord,
@@ -19,6 +10,7 @@ use shared::{
     RepoDocument, RepoMetadata, RepoSummary, RuntimeMetadata, validate_flock_document,
     validate_imported_skill_record,
 };
+use uuid::Uuid;
 
 use super::helpers::{
     db_conn, derive_repo_sign, insert_audit_log, load_users_map, normalize_git_url,
@@ -26,6 +18,13 @@ use super::helpers::{
 };
 use super::interactions::{fetch_flock_comments, get_user_flock_rating, is_flock_starred};
 use super::security::parse_security_status;
+use crate::auth::{AuthContext, RequestUser};
+use crate::error::AppError;
+use crate::models::{
+    FlockChangeset, FlockRow, NewFlockRow, NewRepoRow, NewSkillRow, RepoRow, SkillChangeset,
+    SkillRow, UserRow,
+};
+use crate::schema::{flocks, repos, skills};
 
 pub fn list_repos(
     limit: i64,
@@ -303,13 +302,7 @@ pub fn import_flock_seeded(
     request: ImportFlockRequest,
 ) -> Result<FlockDetailResponse, AppError> {
     let repo = load_import_target(auth, domain, path_slug)?;
-    persist_flock_import(
-        auth,
-        &repo,
-        &request.slug,
-        request.document,
-        request.skills,
-    )
+    persist_flock_import(auth, &repo, &request.slug, request.document, request.skills)
 }
 
 fn load_import_target(

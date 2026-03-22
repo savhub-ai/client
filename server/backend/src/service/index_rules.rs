@@ -226,9 +226,10 @@ fn is_concrete_rule_path(pattern: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chrono::Utc;
     use uuid::Uuid;
+
+    use super::*;
 
     fn rule(path_regex: &str, strategy: &str) -> IndexRuleRow {
         IndexRuleRow {
