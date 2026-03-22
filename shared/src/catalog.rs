@@ -151,7 +151,7 @@ pub struct RepoDocument {
     pub description: String,
     pub git_url: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub git_rev: Option<String>,
+    pub git_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git_branch: Option<String>,
     #[serde(default = "default_visibility")]
@@ -232,7 +232,7 @@ pub struct RepoSummary {
     pub description: String,
     pub git_url: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub git_rev: Option<String>,
+    pub git_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git_branch: Option<String>,
     pub visibility: RegistryVisibility,

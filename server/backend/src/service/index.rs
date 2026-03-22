@@ -52,7 +52,7 @@ pub fn index_skill(auth: &AuthContext, request: IndexRequest) -> Result<PublishR
             skill_id: Some(skill_id),
             repo_id,
             flock_id,
-            git_rev: String::new(),
+            git_hash: String::new(),
             git_branch: String::new(),
             version: Some(index.version.clone()),
             changelog: index.changelog.clone(),

@@ -138,12 +138,12 @@ version = 1
 [[skills]]
 path = "rust-clippy"
 version = "1.2.0"
-git_commit = "abc123def456"
+git_hash = "abc123def456"
 
 [[skills]]
 path = "rust-testing"
 version = "0.8.1"
-git_commit = "789def012345"
+git_hash = "789def012345"
 ```
 
 > **Tip:** You can check `savhub.lock` into version control so teammates get the same skill versions.

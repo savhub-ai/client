@@ -129,7 +129,7 @@ pub struct LockEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flock_slug: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub git_rev: Option<String>,
+    pub git_hash: Option<String>,
 }
 
 /// Lock file format: `{ "version": 1, "<repo_url>": { "<skill_path>": LockEntry } }`
@@ -234,6 +234,6 @@ pub struct RemoteSkillFetchSpec {
     pub repo_sign: String,
     pub skill_path: String,
     pub git_url: String,
-    pub git_rev: String,
+    pub git_hash: String,
     pub skill_version: Option<String>,
 }

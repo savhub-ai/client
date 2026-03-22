@@ -19,7 +19,7 @@ use crate::utils::{sanitize_slug, title_case};
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SkillVersionInfo {
     pub version: Option<String>,
-    pub git_commit: Option<String>,
+    pub git_hash: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -108,13 +108,13 @@ pub fn read_skill_version_info(skill_folder: &Path) -> Result<SkillVersionInfo> 
                     info.version = Some(version);
                 }
                 if let Some(commit) = clean_optional_string(latest.commit) {
-                    info.git_commit = normalize_git_commit(&commit).or(Some(commit));
+                    info.git_hash = normalize_git_hash(&commit).or(Some(commit));
                 }
             }
         }
     }
 
-    if info.version.is_none() || info.git_commit.is_none() {
+    if info.version.is_none() || info.git_hash.is_none() {
         if let Ok(raw) = fs::read_to_string(skill_folder.join(BUNDLE_META_FILE)) {
             if let Ok(meta) = serde_json::from_str::<BundleMetadata>(&raw) {
                 if info.version.is_none() {
@@ -123,30 +123,30 @@ pub fn read_skill_version_info(skill_folder: &Path) -> Result<SkillVersionInfo> 
                         info.version = Some(version.to_string());
                     }
                 }
-                if info.git_commit.is_none()
+                if info.git_hash.is_none()
                     && let Some(git) = meta.source.git
                     && git.reference.kind == BundleSourceKind::Git
                 {
                     let reference = git.reference.value.trim();
                     if !reference.is_empty() {
-                        info.git_commit =
-                            normalize_git_commit(reference).or(Some(reference.to_string()));
+                        info.git_hash =
+                            normalize_git_hash(reference).or(Some(reference.to_string()));
                     }
                 }
             }
         }
     }
 
-    if info.version.is_none() || info.git_commit.is_none() {
+    if info.version.is_none() || info.git_hash.is_none() {
         if let Some(origin) = read_repo_skill_origin(skill_folder)? {
             if info.version.is_none() {
                 info.version = clean_optional_string(origin.skill_version);
             }
-            if info.git_commit.is_none() {
-                info.git_commit = origin
+            if info.git_hash.is_none() {
+                info.git_hash = origin
                     .repo_commit
                     .as_deref()
-                    .and_then(normalize_git_commit)
+                    .and_then(normalize_git_hash)
                     .or(origin.repo_commit);
             }
         }
@@ -374,7 +374,7 @@ pub fn find_repo_skill_folders(repos_root: &Path) -> Result<Vec<RepoSkillFolder>
     Ok(results)
 }
 
-pub fn repo_git_commit(repo_root: &Path) -> Option<String> {
+pub fn repo_git_hash(repo_root: &Path) -> Option<String> {
     let output = Command::new("git")
         .args(["-C"])
         .arg(repo_root)
@@ -385,7 +385,7 @@ pub fn repo_git_commit(repo_root: &Path) -> Option<String> {
         return None;
     }
     let stdout = String::from_utf8(output.stdout).ok()?;
-    normalize_git_commit(stdout.trim()).or_else(|| clean_optional_string(Some(stdout)))
+    normalize_git_hash(stdout.trim()).or_else(|| clean_optional_string(Some(stdout)))
 }
 
 /// Read the SKILL.md content from a skill folder, trying both casing variants.
@@ -537,7 +537,7 @@ fn clean_optional_string(value: Option<String>) -> Option<String> {
     })
 }
 
-fn normalize_git_commit(value: &str) -> Option<String> {
+fn normalize_git_hash(value: &str) -> Option<String> {
     let trimmed = value.trim().trim_end_matches('/');
     if trimmed.is_empty() {
         return None;
@@ -570,7 +570,7 @@ pub struct FetchedSkillMetadata {
     pub repo_url: Option<String>,
     pub path: Option<String>,
     pub flock_slug: Option<String>,
-    pub git_rev: Option<String>,
+    pub git_hash: Option<String>,
 }
 
 pub fn update_lockfile_with_metadata(
@@ -601,7 +601,7 @@ pub fn update_lockfile_with_metadata(
             remote_id: metadata.remote_id.clone(),
             remote_slug: metadata.remote_slug.clone(),
             flock_slug: metadata.flock_slug.clone(),
-            git_rev: metadata.git_rev.clone(),
+            git_hash: metadata.git_hash.clone(),
         },
     );
 

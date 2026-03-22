@@ -72,12 +72,12 @@ async fn main() -> Result<()> {
     }
 
     let _state = init_state(config.clone(), pool.clone())?;
-    // Backfill repos.git_rev for any rows that are still NULL.
+    // Backfill repos.git_hash for any rows that are still NULL.
     {
         let pool = pool.clone();
         tokio::spawn(async move {
-            if let Err(e) = server::service::upgrade::backfill_repo_git_rev(&pool).await {
-                tracing::error!("backfill_repo_git_rev failed: {e}");
+            if let Err(e) = server::service::upgrade::backfill_repo_git_hash(&pool).await {
+                tracing::error!("backfill_repo_git_hash failed: {e}");
             }
         });
     }

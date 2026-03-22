@@ -269,8 +269,8 @@ pub async fn fetch_remote_skill_with_lookup(
     let detail = fetch_remote_skill_detail(client, &skill.id.to_string()).await?;
     let repo_sign = repo_sign_from_skill_detail(&detail)?;
     let repo = fetch_remote_repo_detail(client, &repo_sign).await?;
-    let git_rev = normalize_remote_text(repo.document.git_rev.clone())
-        .ok_or_else(|| format!("repo `{repo_sign}` has no git_rev"))?;
+    let git_hash = normalize_remote_text(repo.document.git_hash.clone())
+        .ok_or_else(|| format!("repo `{repo_sign}` has no git_hash"))?;
     let skill_version = normalize_remote_text(
         detail
             .latest_version
@@ -278,12 +278,12 @@ pub async fn fetch_remote_skill_with_lookup(
             .map(|value| value.version.clone())
             .or_else(|| detail.versions.first().map(|value| value.version.clone())),
     );
-    let version = fetch_version_label(skill_version.as_deref(), &git_rev);
+    let version = fetch_version_label(skill_version.as_deref(), &git_hash);
     let spec = RemoteSkillFetchSpec {
         repo_sign: repo_sign.clone(),
         skill_path: detail.skill.path.clone(),
         git_url: repo.document.git_url,
-        git_rev: git_rev.clone(),
+        git_hash: git_hash.clone(),
         skill_version: skill_version.clone(),
     };
     let install_slug = if local_slug.is_empty() {
@@ -312,7 +312,7 @@ pub async fn fetch_remote_skill_with_lookup(
             repo_url: Some(skill.repo_url.clone()),
             path: Some(skill.path.clone()),
             flock_slug: flock_slug.clone(),
-            git_rev: Some(git_rev.clone()),
+            git_hash: Some(git_hash.clone()),
         },
     );
 

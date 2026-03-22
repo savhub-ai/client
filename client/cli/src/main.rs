@@ -862,7 +862,7 @@ fn cmd_enable(opts: &GlobalOpts, args: EnableArgs) -> Result<()> {
         .as_deref()
         .map(|v| format!("v{v}"))
         .or(result
-            .git_commit
+            .git_hash
             .as_deref()
             .map(|v| v.chars().take(12).collect::<String>()))
         .unwrap_or_else(|| "latest".to_string());
@@ -925,7 +925,7 @@ async fn cmd_fetch(opts: &GlobalOpts, args: FetchArgs) -> Result<()> {
             version: 1,
             repo: opts.registry.clone(),
             repo_sign: resolved.spec.repo_sign.clone(),
-            repo_commit: Some(resolved.spec.git_rev.clone()),
+            repo_commit: Some(resolved.spec.git_hash.clone()),
             slug: slug.clone(),
             skill_version: resolved.spec.skill_version.clone(),
             fetched_at: now,
@@ -1017,7 +1017,7 @@ async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
             }
         };
 
-        if local_version_info.git_commit.as_deref() == Some(remote.spec.git_rev.as_str()) {
+        if local_version_info.git_hash.as_deref() == Some(remote.spec.git_hash.as_str()) {
             println!("{slug}: already at {latest}");
             let prev_fetched_at = lockfile
                 .find_by_slug(&slug)
@@ -1072,7 +1072,7 @@ async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
                 version: 1,
                 repo: opts.registry.clone(),
                 repo_sign: remote.spec.repo_sign.clone(),
-                repo_commit: Some(remote.spec.git_rev.clone()),
+                repo_commit: Some(remote.spec.git_hash.clone()),
                 slug: slug.clone(),
                 skill_version: remote.spec.skill_version.clone(),
                 fetched_at: now,
@@ -1131,7 +1131,7 @@ async fn cmd_update_global(opts: &GlobalOpts, args: &UpdateArgs) -> Result<()> {
                 Default::default()
             };
 
-            if local_info.git_commit.as_deref() == Some(remote.spec.git_rev.as_str()) {
+            if local_info.git_hash.as_deref() == Some(remote.spec.git_hash.as_str()) {
                 println!("{slug}: already at {latest}");
                 continue;
             }
@@ -1146,7 +1146,7 @@ async fn cmd_update_global(opts: &GlobalOpts, args: &UpdateArgs) -> Result<()> {
                     version: 1,
                     repo: opts.registry.clone(),
                     repo_sign: remote.spec.repo_sign.clone(),
-                    repo_commit: Some(remote.spec.git_rev.clone()),
+                    repo_commit: Some(remote.spec.git_hash.clone()),
                     slug: slug.clone(),
                     skill_version: remote.spec.skill_version.clone(),
                     fetched_at: now,
@@ -2087,8 +2087,8 @@ async fn resolve_remote_skill_fetch(
     let repo = client
         .get_json::<RepoDetailResponse>(&format!("/repos/{repo_path}"))
         .await?;
-    let git_rev = normalize_remote_text(repo.document.git_rev.clone())
-        .ok_or_else(|| anyhow!("repo `{repo_url}` has no git_rev"))?;
+    let git_hash = normalize_remote_text(repo.document.git_hash.clone())
+        .ok_or_else(|| anyhow!("repo `{repo_url}` has no git_hash"))?;
     let skill_version = normalize_remote_text(
         detail
             .latest_version
@@ -2096,13 +2096,13 @@ async fn resolve_remote_skill_fetch(
             .map(|value| value.version.clone())
             .or_else(|| detail.versions.first().map(|value| value.version.clone())),
     );
-    let display_version = fetch_version_label(skill_version.as_deref(), &git_rev);
+    let display_version = fetch_version_label(skill_version.as_deref(), &git_hash);
     Ok(ResolvedRemoteSkillFetch {
         spec: RemoteSkillFetchSpec {
             repo_sign: repo_url,
             skill_path: detail.skill.path.clone(),
             git_url: repo.document.git_url,
-            git_rev,
+            git_hash,
             skill_version,
         },
         display_version,
@@ -3308,7 +3308,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
                     path: Some(info.skill_path.clone()),
                     slug: info.slug.clone(),
                     version: vi.version,
-                    git_rev: vi.git_commit,
+                    git_hash: vi.git_hash,
                 });
             }
             fetched_count += 1;

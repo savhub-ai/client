@@ -299,18 +299,18 @@ fn normalize_non_empty(value: Option<String>) -> Option<String> {
     })
 }
 
-pub fn fetch_version_label(skill_version: Option<&str>, git_rev: &str) -> String {
+pub fn fetch_version_label(skill_version: Option<&str>, git_hash: &str) -> String {
     if let Some(version) = skill_version
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
         return version.to_string();
     }
-    let git_rev = git_rev.trim();
-    if git_rev.is_empty() {
+    let git_hash = git_hash.trim();
+    if git_hash.is_empty() {
         "fetched".to_string()
     } else {
-        git_rev.chars().take(12).collect()
+        git_hash.chars().take(12).collect()
     }
 }
 
@@ -375,7 +375,7 @@ fn strip_git_url_scheme(url: &str) -> String {
         .to_string()
 }
 
-fn ensure_repo_checkout(repo_sign: &str, git_url: &str, git_rev: &str) -> Result<PathBuf> {
+fn ensure_repo_checkout(repo_sign: &str, git_url: &str, git_hash: &str) -> Result<PathBuf> {
     let repo_root = repo_checkout_dir(repo_sign)?;
     let git_dir = repo_root.join(".git");
 
@@ -408,7 +408,7 @@ fn ensure_repo_checkout(repo_sign: &str, git_url: &str, git_rev: &str) -> Result
                 repo_root.display().to_string(),
             ],
         )?;
-    } else if current_git_head(&repo_root).as_deref() == Some(git_rev) {
+    } else if current_git_head(&repo_root).as_deref() == Some(git_hash) {
         return Ok(repo_root);
     } else {
         run_git(
@@ -431,14 +431,14 @@ fn ensure_repo_checkout(repo_sign: &str, git_url: &str, git_rev: &str) -> Result
             "checkout".to_string(),
             "--force".to_string(),
             "--detach".to_string(),
-            git_rev.to_string(),
+            git_hash.to_string(),
         ],
     )?;
 
     let current_head = current_git_head(&repo_root).unwrap_or_default();
-    if current_head != git_rev {
+    if current_head != git_hash {
         return Err(anyhow!(
-            "repo `{repo_sign}` checked out `{current_head}` instead of `{git_rev}`"
+            "repo `{repo_sign}` checked out `{current_head}` instead of `{git_hash}`"
         ));
     }
 
@@ -446,7 +446,7 @@ fn ensure_repo_checkout(repo_sign: &str, git_url: &str, git_rev: &str) -> Result
 }
 
 pub fn cache_remote_skill_from_repo(spec: &RemoteSkillFetchSpec) -> Result<PathBuf> {
-    let repo_root = ensure_repo_checkout(&spec.repo_sign, &spec.git_url, &spec.git_rev)?;
+    let repo_root = ensure_repo_checkout(&spec.repo_sign, &spec.git_url, &spec.git_hash)?;
     let skill_path = normalize_skill_repo_path(&spec.skill_path);
     if skill_path.is_empty() {
         return Err(anyhow!("skill path is empty for repo `{}`", spec.repo_sign));
@@ -455,7 +455,7 @@ pub fn cache_remote_skill_from_repo(spec: &RemoteSkillFetchSpec) -> Result<PathB
     let metadata = fs::metadata(&skill_root).with_context(|| {
         format!(
             "skill path `{}` was not found in repo `{}` at `{}`",
-            spec.skill_path, spec.repo_sign, spec.git_rev
+            spec.skill_path, spec.repo_sign, spec.git_hash
         )
     })?;
     if !metadata.is_dir() {
@@ -704,9 +704,9 @@ pub fn fetch_skills_batch(slugs: &[String]) -> Result<Vec<FetchedSkillInfo>> {
                 continue;
             }
         };
-        let Some(git_rev) = normalize_non_empty(repo.document.git_rev.clone()) else {
+        let Some(git_hash) = normalize_non_empty(repo.document.git_hash.clone()) else {
             eprintln!(
-                "  \x1b[33m!\x1b[0m {slug}: repo `{}` has no git_rev",
+                "  \x1b[33m!\x1b[0m {slug}: repo `{}` has no git_hash",
                 descriptor.repo_sign
             );
             continue;
@@ -715,7 +715,7 @@ pub fn fetch_skills_batch(slugs: &[String]) -> Result<Vec<FetchedSkillInfo>> {
             repo_sign: descriptor.repo_sign.clone(),
             skill_path: descriptor.skill_path.clone(),
             git_url: repo.document.git_url.clone(),
-            git_rev: git_rev.clone(),
+            git_hash: git_hash.clone(),
             skill_version: descriptor.skill_version.clone(),
         };
         let local_path = match cache_remote_skill_from_repo(&spec) {
@@ -732,14 +732,14 @@ pub fn fetch_skills_batch(slugs: &[String]) -> Result<Vec<FetchedSkillInfo>> {
                 version: 1,
                 repo: registry_api_base(),
                 repo_sign: descriptor.repo_sign.clone(),
-                repo_commit: Some(git_rev.clone()),
+                repo_commit: Some(git_hash.clone()),
                 slug: slug.clone(),
                 skill_version: descriptor.skill_version.clone(),
                 fetched_at: Utc::now().timestamp_millis(),
             },
         );
 
-        let version = descriptor.skill_version.as_deref().unwrap_or(&git_rev);
+        let version = descriptor.skill_version.as_deref().unwrap_or(&git_hash);
         update_lockfile_with_metadata(
             &config_dir,
             &slug,
@@ -750,7 +750,7 @@ pub fn fetch_skills_batch(slugs: &[String]) -> Result<Vec<FetchedSkillInfo>> {
                 repo_url: Some(descriptor.repo_sign.clone()),
                 path: Some(normalize_skill_repo_path(&descriptor.skill_path)),
                 flock_slug: None,
-                git_rev: Some(git_rev.clone()),
+                git_hash: Some(git_hash.clone()),
             },
         );
 
