@@ -148,7 +148,7 @@ pub struct Texts {
 
     // Security
     pub security_unscanned: &'static str,
-    pub security_validated: &'static str,
+    pub security_checked: &'static str,
     pub security_verified: &'static str,
     pub security_suspicious: &'static str,
     pub security_malicious: &'static str,

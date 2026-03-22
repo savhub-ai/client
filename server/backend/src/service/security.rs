@@ -794,7 +794,7 @@ fn license_audit_scan(license: &str) -> String {
 pub fn security_status_to_str(status: SecurityStatus) -> &'static str {
     match status {
         SecurityStatus::Unscanned => "unscanned",
-        SecurityStatus::Validated => "validated",
+        SecurityStatus::Checked => "checked",
         SecurityStatus::Verified => "verified",
         SecurityStatus::Suspicious => "suspicious",
         SecurityStatus::Malicious => "malicious",
@@ -803,7 +803,7 @@ pub fn security_status_to_str(status: SecurityStatus) -> &'static str {
 
 pub fn parse_security_status(value: &str) -> SecurityStatus {
     match value {
-        "validated" => SecurityStatus::Validated,
+        "checked" => SecurityStatus::Checked,
         "verified" => SecurityStatus::Verified,
         "suspicious" => SecurityStatus::Suspicious,
         "malicious" => SecurityStatus::Malicious,
