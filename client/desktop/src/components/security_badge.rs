@@ -32,17 +32,18 @@ pub fn SecurityBadge(status: SecurityStatus) -> Element {
     let t = i18n::texts(*state.lang.read());
     let (icon_bg, value_bg) = badge_colors(&status);
     let label = badge_label(&status, t);
+    let badge_height = 18;
 
     rsx! {
-        span { style: "display: inline-flex; align-items: center; font-size: 11px; line-height: 1; border-radius: 3px; overflow: hidden; vertical-align: middle; white-space: nowrap; position: relative; top: -0.1em;",
-            span { style: "display: inline-flex; align-items: center; justify-content: center; padding: 3px 5px; background: {icon_bg}; color: #fff;",
+        span { style: "display: inline-flex; align-items: stretch; font-size: 11px; line-height: 1; border-radius: 3px; overflow: hidden; vertical-align: middle; white-space: nowrap; position: relative; top: -0.1em;",
+            span { style: "display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-height: {badge_height}px; padding: 0 5px; background: {icon_bg}; color: #fff;",
                 if matches!(status, SecurityStatus::Verified) {
                     crate::icons::LucideIcon { icon: crate::icons::Icon::ShieldCheck, size: 12 }
                 } else {
                     crate::icons::LucideIcon { icon: crate::icons::Icon::Shield, size: 12 }
                 }
             }
-            span { style: "padding: 3px 6px; color: #fff; font-weight: 600; background: {value_bg};",
+            span { style: "display: inline-flex; align-items: center; box-sizing: border-box; min-height: {badge_height}px; padding: 0 6px; color: #fff; font-weight: 600; background: {value_bg};",
                 "{label}"
             }
         }

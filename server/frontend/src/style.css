@@ -1754,8 +1754,9 @@ code {
 /* ── Security badges (shields.io style) ──────── */
 
 .security-badge {
+  --security-badge-height: 18px;
   display: inline-flex;
-  align-items: center;
+  align-items: stretch;
   font-size: 11px;
   line-height: 1;
   border-radius: 3px;
@@ -1772,13 +1773,19 @@ code {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 3px 5px;
+  box-sizing: border-box;
+  min-height: var(--security-badge-height);
+  padding: 0 5px;
   background: #555;
   color: #fff;
 }
 
 .security-badge .sb-value {
-  padding: 3px 6px;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: var(--security-badge-height);
+  padding: 0 6px;
   color: #fff;
   font-weight: 600;
 }
