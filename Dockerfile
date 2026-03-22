@@ -28,8 +28,10 @@ RUN mkdir -p client/local/src && echo "" > client/local/src/lib.rs
 # Build the frontend WASM bundle with persistent Cargo caches
 # Disable debug symbols so wasm-opt does not crash on DWARF data from cached artifacts.
 # Also purge stale wasm build outputs so the flag takes effect even with a warm cache.
+# Clean corrupted .cargo-ok sentinel files that can occur in cached registry sources.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
+    find /usr/local/cargo/registry/src -name .cargo-ok -exec rm -f {} + 2>/dev/null; \
     rm -rf /app/target/wasm32-unknown-unknown/release/deps/savhub_frontend* \
     && cd server/frontend && dx build --release --debug-symbols false \
     && mkdir -p /app/dist \
@@ -57,8 +59,10 @@ COPY client/local/Cargo.toml client/local/Cargo.toml
 RUN mkdir -p client/local/src && echo "" > client/local/src/lib.rs
 
 # Build the backend binary with persistent Cargo caches
+# Clean corrupted .cargo-ok sentinel files that can occur in cached registry sources.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
+    find /usr/local/cargo/registry/src -name .cargo-ok -exec rm -f {} + 2>/dev/null; \
     cargo build --release -p server \
     && cp /app/target/release/server /app/server
 
