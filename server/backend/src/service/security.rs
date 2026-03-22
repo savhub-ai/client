@@ -238,7 +238,7 @@ pub fn run_automated_scans_with_files(
                 scanned_by_user_id: None,
                 created_at: Utc::now(),
                 version_id: skill_version_id,
-                commit_sha: commit_sha.clone(),
+                commit_sha: commit_sha.clone().unwrap_or_default(),
             })
             .execute(conn)?;
 
@@ -261,7 +261,7 @@ pub fn run_automated_scans_with_files(
                 scanned_by_user_id: None,
                 created_at: Utc::now(),
                 version_id: skill_version_id,
-                commit_sha: commit_sha.clone(),
+                commit_sha: commit_sha.clone().unwrap_or_default(),
             })
             .execute(conn)?;
 
@@ -301,7 +301,7 @@ pub fn run_automated_scans_with_files(
                     scanned_by_user_id: None,
                     created_at: Utc::now(),
                     version_id: scan_input.version_id,
-                    commit_sha: commit_sha.clone(),
+                    commit_sha: commit_sha.clone().unwrap_or_default(),
                 })
                 .execute(conn)?;
 
@@ -377,7 +377,7 @@ pub fn run_automated_scans_with_files(
             scanned_by_user_id: None,
             created_at: Utc::now(),
             version_id: None,
-            commit_sha: commit_sha.clone(),
+            commit_sha: commit_sha.clone().unwrap_or_default(),
         })
         .execute(conn)?;
 

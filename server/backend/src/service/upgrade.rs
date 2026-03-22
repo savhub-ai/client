@@ -1,7 +1,7 @@
-//! One-time startup upgrade: backfill `repos.git_hash` for rows that are NULL.
+//! One-time startup upgrade: backfill `repos.git_sha` for rows that are NULL.
 //!
 //! Strategy (per repo):
-//! 1. Look up the newest completed `index_jobs.commit_sha` matching git_url.
+//! 1. Look up the newest completed `index_jobs.git_sha` matching git_url.
 //! 2. If still nothing, resolve the latest SHA from the remote via `git ls-remote`.
 
 use chrono::Utc;
@@ -14,15 +14,15 @@ use crate::schema::{index_jobs, repos};
 use crate::service::git_ops::resolve_remote_sha;
 use crate::service::helpers::normalize_git_url;
 
-/// Backfill `git_hash` for every repo that currently has it set to NULL.
+/// Backfill `git_sha` for every repo that currently has it set to NULL.
 ///
 /// This is safe to call on every startup — it only touches rows that need it
 /// and logs what it does.
-pub async fn backfill_repo_git_hash(pool: &PgPool) -> Result<(), AppError> {
+pub async fn backfill_repo_git_sha(pool: &PgPool) -> Result<(), AppError> {
     let missing: Vec<RepoRow> = {
         let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
         repos::table
-            .filter(repos::git_hash.is_null())
+            .filter(repos::git_sha.is_null())
             .select(RepoRow::as_select())
             .load::<RepoRow>(&mut conn)?
     };
@@ -32,44 +32,44 @@ pub async fn backfill_repo_git_hash(pool: &PgPool) -> Result<(), AppError> {
     }
 
     tracing::info!(
-        "[upgrade] {} repos with NULL git_hash — backfilling",
+        "[upgrade] {} repos with NULL git_sha — backfilling",
         missing.len()
     );
 
     for repo in &missing {
-        let resolved = try_resolve_git_hash(pool, repo).await;
+        let resolved = try_resolve_git_sha(pool, repo).await;
         match resolved {
             Some(sha) => {
                 let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
                 diesel::update(repos::table.find(repo.id))
                     .set(RepoChangeset {
-                        git_hash: Some(sha.clone()),
+                        git_sha: Some(sha.clone()),
                         updated_at: Some(Utc::now()),
                         ..Default::default()
                     })
                     .execute(&mut conn)?;
                 tracing::info!(
-                    "[upgrade] repo {} git_hash = {}",
+                    "[upgrade] repo {} git_sha = {}",
                     repo.git_url,
                     &sha[..sha.len().min(12)]
                 );
             }
             None => {
                 tracing::warn!(
-                    "[upgrade] repo {} — could not resolve git_hash, skipping",
+                    "[upgrade] repo {} — could not resolve git_sha, skipping",
                     repo.git_url
                 );
             }
         }
     }
 
-    tracing::info!("[upgrade] backfill_repo_git_hash finished");
+    tracing::info!("[upgrade] backfill_repo_git_sha finished");
     Ok(())
 }
 
 /// Try every data source in priority order; return the first SHA found.
-async fn try_resolve_git_hash(pool: &PgPool, repo: &RepoRow) -> Option<String> {
-    // 1) Newest completed index_job commit_sha matching git_url
+async fn try_resolve_git_sha(pool: &PgPool, repo: &RepoRow) -> Option<String> {
+    // 1) Newest completed index_job git_sha matching git_url
     if let Some(sha) = from_index_jobs(pool, repo) {
         return Some(sha);
     }
@@ -84,12 +84,10 @@ fn from_index_jobs(pool: &PgPool, repo: &RepoRow) -> Option<String> {
     index_jobs::table
         .filter(index_jobs::git_url.eq(&git_url))
         .filter(index_jobs::status.eq("completed"))
-        .filter(index_jobs::commit_sha.is_not_null())
         .order(index_jobs::completed_at.desc())
-        .select(index_jobs::commit_sha)
-        .first::<Option<String>>(&mut conn)
+        .select(index_jobs::git_sha)
+        .first::<String>(&mut conn)
         .ok()
-        .flatten()
 }
 
 async fn from_remote(repo: &RepoRow) -> Option<String> {

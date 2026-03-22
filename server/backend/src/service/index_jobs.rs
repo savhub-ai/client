@@ -107,7 +107,7 @@ fn find_existing_index(
         .filter(index_jobs::git_url.eq(git_url))
         .filter(index_jobs::git_ref.eq(git_ref))
         .filter(index_jobs::git_subdir.eq(git_subdir))
-        .filter(index_jobs::commit_sha.eq(commit_sha))
+        .filter(index_jobs::git_sha.eq(commit_sha))
         .filter(index_jobs::status.eq("completed"))
         .order(index_jobs::created_at.desc())
         .into_boxed();
@@ -215,7 +215,7 @@ pub async fn submit_index(
     // Smart dedup: check for active (pending/running) job with same url_hash
     if !force {
         if let Some(active) = find_active_index_by_url_hash(&mut conn, &url_hash)? {
-            if active.commit_sha.as_deref() == Some(&commit_sha) {
+            if active.git_sha == commit_sha {
                 // Same commit — return existing job
                 println!(
                     "[index] reusing active job {} for {} @ {}",
@@ -233,7 +233,7 @@ pub async fn submit_index(
                     "[index] superseding active job {} for {} (old={} new={})",
                     active.id,
                     git_url,
-                    active.commit_sha.as_deref().unwrap_or("?"),
+                    &active.git_sha,
                     commit_sha
                 );
                 supersede_index_job(&mut conn, active.id)?;
@@ -262,7 +262,7 @@ pub async fn submit_index(
             updated_at: now,
             progress_pct: 0,
             progress_message: "Queued".to_string(),
-            commit_sha: Some(commit_sha),
+            git_sha: commit_sha,
             force_index: force,
             url_hash: Some(url_hash),
         })
@@ -367,7 +367,8 @@ pub async fn execute_auto_import(job_id: Uuid) -> Result<(), AppError> {
     // commit this job was created for.  This is especially important for jobs
     // recovered after a server restart: the repo may have received new pushes
     // while the server was down.
-    if let Some(ref job_sha) = job.commit_sha {
+    if !job.git_sha.is_empty() {
+        let job_sha = &job.git_sha;
         match resolve_remote_sha(&job.git_url, &job.git_ref).await {
             Ok(current_sha) if current_sha != *job_sha => {
                 tracing::info!(
@@ -399,7 +400,7 @@ pub async fn execute_auto_import(job_id: Uuid) -> Result<(), AppError> {
                         updated_at: now,
                         progress_pct: 0,
                         progress_message: "Queued (superseded stale job)".to_string(),
-                        commit_sha: Some(current_sha),
+                        git_sha: current_sha,
                         force_index: job.force_index,
                         url_hash: job.url_hash.clone(),
                     })
@@ -658,8 +659,8 @@ async fn do_auto_import(
                 created_at: now,
                 updated_at: now,
                 last_indexed_at: None,
-                git_hash: checkout.head_sha.clone(),
-                git_branch: None,
+                git_sha: checkout.head_sha.clone(),
+                git_ref: None,
             };
             diesel::insert_into(repos::table)
                 .values(&row)
@@ -922,8 +923,8 @@ async fn do_auto_import(
     let mut repo_update = crate::models::RepoChangeset {
         updated_at: Some(Utc::now()),
         last_indexed_at: Some(Some(Utc::now())),
-        git_hash: Some(checkout.head_sha.clone()),
-        git_branch: Some(Some(job.git_ref.clone())),
+        git_sha: Some(checkout.head_sha.clone()),
+        git_ref: Some(Some(job.git_ref.clone())),
         ..Default::default()
     };
     if repo_meta_cached {

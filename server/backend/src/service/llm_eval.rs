@@ -733,7 +733,7 @@ pub async fn evaluate_skill_with_llm(
             scanned_by_user_id: None,
             created_at: Utc::now(),
             version_id: None,
-            commit_sha: None,
+            commit_sha: String::new(),
         })
         .execute(&mut conn)?;
 
@@ -766,7 +766,7 @@ fn store_llm_error(message: &str, skill_id: Uuid, flock_id: Uuid, model: &str) {
                 scanned_by_user_id: None,
                 created_at: Utc::now(),
                 version_id: None,
-                commit_sha: None,
+                commit_sha: String::new(),
             })
             .execute(&mut conn);
     }

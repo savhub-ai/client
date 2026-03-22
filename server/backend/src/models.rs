@@ -80,8 +80,8 @@ pub struct RepoRow {
     pub name: String,
     pub description: String,
     pub git_url: String,
-    pub git_hash: String,
-    pub git_branch: Option<String>,
+    pub git_ref: Option<String>,
+    pub git_sha: String,
     pub license: Option<String>,
     pub visibility: String,
     pub verified: bool,
@@ -99,8 +99,8 @@ pub struct NewRepoRow {
     pub name: String,
     pub description: String,
     pub git_url: String,
-    pub git_hash: String,
-    pub git_branch: Option<String>,
+    pub git_ref: Option<String>,
+    pub git_sha: String,
     pub license: Option<String>,
     pub visibility: String,
     pub verified: bool,
@@ -122,8 +122,8 @@ pub struct RepoChangeset {
     pub metadata: Option<Value>,
     pub updated_at: Option<DateTime<Utc>>,
     pub last_indexed_at: Option<Option<DateTime<Utc>>>,
-    pub git_hash: Option<String>,
-    pub git_branch: Option<Option<String>>,
+    pub git_sha: Option<String>,
+    pub git_ref: Option<Option<String>>,
     pub keywords: Option<Vec<Option<String>>>,
 }
 
@@ -319,8 +319,8 @@ pub struct SkillVersionRow {
     pub repo_id: Uuid,
     pub flock_id: Option<Uuid>,
     pub skill_id: Option<Uuid>,
-    pub git_hash: String,
-    pub git_branch: String,
+    pub git_ref: String,
+    pub git_sha: String,
     pub version: Option<String>,
     pub changelog: String,
     pub tags: Vec<Option<String>>,
@@ -328,10 +328,10 @@ pub struct SkillVersionRow {
     pub parsed_metadata: Value,
     pub search_document: String,
     pub fingerprint: String,
+    pub scan_summary: Option<Value>,
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
     pub soft_deleted_at: Option<DateTime<Utc>>,
-    pub scan_summary: Option<Value>,
 }
 
 #[derive(Debug, Clone, Insertable)]
@@ -341,8 +341,8 @@ pub struct NewSkillVersionRow {
     pub repo_id: Uuid,
     pub flock_id: Option<Uuid>,
     pub skill_id: Option<Uuid>,
-    pub git_hash: String,
-    pub git_branch: String,
+    pub git_ref: String,
+    pub git_sha: String,
     pub version: Option<String>,
     pub changelog: String,
     pub tags: Vec<Option<String>>,
@@ -350,10 +350,10 @@ pub struct NewSkillVersionRow {
     pub parsed_metadata: Value,
     pub search_document: String,
     pub fingerprint: String,
+    pub scan_summary: Option<Value>,
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
     pub soft_deleted_at: Option<DateTime<Utc>>,
-    pub scan_summary: Option<Value>,
 }
 
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable)]
@@ -559,20 +559,20 @@ pub struct IndexJobRow {
     pub job_type: String,
     pub git_url: String,
     pub git_ref: String,
+    pub git_sha: String,
     pub git_subdir: String,
+    pub url_hash: Option<String>,
     pub repo_slug: Option<String>,
     pub requested_by_user_id: Uuid,
     pub result_data: Value,
     pub error_message: Option<String>,
+    pub progress_pct: i32,
+    pub progress_message: String,
+    pub force_index: bool,
     pub started_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub progress_pct: i32,
-    pub progress_message: String,
-    pub commit_sha: Option<String>,
-    pub force_index: bool,
-    pub url_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, Insertable)]
@@ -583,20 +583,20 @@ pub struct NewIndexJobRow {
     pub job_type: String,
     pub git_url: String,
     pub git_ref: String,
+    pub git_sha: String,
     pub git_subdir: String,
+    pub url_hash: Option<String>,
     pub repo_slug: Option<String>,
     pub requested_by_user_id: Uuid,
     pub result_data: Value,
     pub error_message: Option<String>,
+    pub progress_pct: i32,
+    pub progress_message: String,
+    pub force_index: bool,
     pub started_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub progress_pct: i32,
-    pub progress_message: String,
-    pub commit_sha: Option<String>,
-    pub force_index: bool,
-    pub url_hash: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, AsChangeset)]
@@ -610,7 +610,7 @@ pub struct IndexJobChangeset {
     pub updated_at: Option<DateTime<Utc>>,
     pub progress_pct: Option<i32>,
     pub progress_message: Option<String>,
-    pub commit_sha: Option<Option<String>>,
+    pub git_sha: Option<String>,
 }
 
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable)]
@@ -619,6 +619,7 @@ pub struct SecurityScanRow {
     pub id: Uuid,
     pub target_type: String,
     pub target_id: Uuid,
+    pub commit_sha: String,
     pub scan_module: String,
     pub result: String,
     pub severity: Option<String>,
@@ -626,7 +627,6 @@ pub struct SecurityScanRow {
     pub scanned_by_user_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub version_id: Option<Uuid>,
-    pub commit_sha: Option<String>,
 }
 
 #[derive(Debug, Clone, Insertable)]
@@ -635,6 +635,7 @@ pub struct NewSecurityScanRow {
     pub id: Uuid,
     pub target_type: String,
     pub target_id: Uuid,
+    pub commit_sha: String,
     pub scan_module: String,
     pub result: String,
     pub severity: Option<String>,
@@ -642,7 +643,6 @@ pub struct NewSecurityScanRow {
     pub scanned_by_user_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub version_id: Option<Uuid>,
-    pub commit_sha: Option<String>,
 }
 
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable)]

@@ -259,7 +259,7 @@ async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
 
     let already_indexed: i64 = index_jobs::table
         .filter(index_jobs::git_url.eq(&git_url))
-        .filter(index_jobs::commit_sha.eq(&current_sha))
+        .filter(index_jobs::git_sha.eq(&current_sha))
         .filter(index_jobs::status.eq("completed"))
         .count()
         .get_result(&mut conn)
@@ -270,7 +270,7 @@ async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
             .set(crate::models::RepoChangeset {
                 last_indexed_at: Some(Some(Utc::now())),
                 updated_at: Some(Utc::now()),
-                git_hash: Some(current_sha),
+                git_sha: Some(current_sha),
                 ..Default::default()
             })
             .execute(&mut conn)
@@ -324,7 +324,7 @@ async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
             updated_at: now,
             progress_pct: 0,
             progress_message: "Queued (auto-index)".to_string(),
-            commit_sha: Some(current_sha),
+            git_sha: current_sha,
             force_index: false,
             url_hash: Some(url_hash),
         })

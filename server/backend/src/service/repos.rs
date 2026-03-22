@@ -195,8 +195,8 @@ pub fn create_repo(
         created_at: now,
         updated_at: now,
         last_indexed_at: None,
-        git_hash: "main".to_string(),
-        git_branch: None,
+        git_sha: "main".to_string(),
+        git_ref: None,
     };
 
     diesel::insert_into(repos::table)
@@ -748,8 +748,8 @@ fn repo_summary_from_row(row: &RepoRow, flock_count: i64, skill_count: i64) -> R
         name: row.name.clone(),
         description: row.description.clone(),
         git_url: row.git_url.clone(),
-        git_hash: Some(row.git_hash.clone()),
-        git_branch: row.git_branch.clone(),
+        git_hash: Some(row.git_sha.clone()),
+        git_branch: row.git_ref.clone(),
         visibility: parse_visibility(&row.visibility),
         verified: row.verified,
         flock_count,
@@ -801,8 +801,8 @@ fn repo_document_from_row(row: &RepoRow) -> Result<RepoDocument, AppError> {
         name: row.name.clone(),
         description: row.description.clone(),
         git_url: row.git_url.clone(),
-        git_hash: Some(row.git_hash.clone()),
-        git_branch: row.git_branch.clone(),
+        git_hash: Some(row.git_sha.clone()),
+        git_branch: row.git_ref.clone(),
         visibility: parse_visibility(&row.visibility),
         verified: row.verified,
         metadata: serde_json::from_value::<RepoMetadata>(row.metadata.clone())
