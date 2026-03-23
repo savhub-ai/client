@@ -294,7 +294,8 @@ pub fn list_flocks(
 
     if let Some(ref q_str) = search_query {
         let q_lower = q_str.trim().to_lowercase();
-        let mut base_query = dsl::flocks.into_boxed()
+        let mut base_query = dsl::flocks
+            .into_boxed()
             .filter(dsl::soft_deleted_at.is_null());
         if let Some(rid) = repo_id {
             base_query = base_query.filter(dsl::repo_id.eq(rid));
@@ -331,7 +332,8 @@ pub fn list_flocks(
         let items = build_flock_summaries(&mut conn, page.iter().map(|(_, row)| *row).collect())?;
         Ok(PagedResponse { items, next_cursor })
     } else {
-        let mut query = dsl::flocks.into_boxed()
+        let mut query = dsl::flocks
+            .into_boxed()
             .filter(dsl::soft_deleted_at.is_null());
         if let Some(rid) = repo_id {
             query = query.filter(dsl::repo_id.eq(rid));

@@ -954,15 +954,12 @@ async fn do_auto_import(
                 stale_flock_ids.len(),
                 repo.id,
             );
-            diesel::update(
-                flocks::table
-                    .filter(flocks::id.eq_any(&stale_flock_ids)),
-            )
-            .set((
-                flocks::soft_deleted_at.eq(Some(now)),
-                flocks::updated_at.eq(now),
-            ))
-            .execute(&mut conn)?;
+            diesel::update(flocks::table.filter(flocks::id.eq_any(&stale_flock_ids)))
+                .set((
+                    flocks::soft_deleted_at.eq(Some(now)),
+                    flocks::updated_at.eq(now),
+                ))
+                .execute(&mut conn)?;
             diesel::update(
                 skills::table
                     .filter(skills::flock_id.eq_any(&stale_flock_ids))
