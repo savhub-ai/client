@@ -173,14 +173,10 @@ pub fn repo_skill_local_path(repo_url: &str, skill_path: &str) -> Option<PathBuf
     )
 }
 
-pub fn make_skill_sign(repo_sign: &str, skill_path: &str) -> String {
-    format!("{repo_sign}/{skill_path}")
-}
-
-pub fn skill_matches_skipped(sign: &str, skipped: &[String]) -> bool {
-    let slug = sign.rsplit('/').next().unwrap_or(sign);
+pub fn skill_matches_skipped(skill_ref: &str, skipped: &[String]) -> bool {
+    let slug = skill_ref.rsplit('/').next().unwrap_or(skill_ref);
     skipped.iter().any(|entry| {
-        entry == sign
+        entry == skill_ref
             || entry == slug
             || entry.rsplit('/').next().map(|value| value == slug) == Some(true)
     })

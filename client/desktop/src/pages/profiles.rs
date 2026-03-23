@@ -800,9 +800,9 @@ fn AddProjectSkillDialog(
 
 #[derive(Clone, Default)]
 struct ScanData {
-    matched_signs: Vec<String>,
-    flock_signs: Vec<String>,
-    skill_signs: Vec<String>,
+    matched_names: Vec<String>,
+    flock_refs: Vec<String>,
+    skill_refs: Vec<String>,
 }
 
 #[component]
@@ -849,9 +849,9 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                             }
                         }
                         ScanData {
-                            matched_signs: matched,
-                            flock_signs: flocks,
-                            skill_signs: skills,
+                            matched_names: matched,
+                            flock_refs: flocks,
+                            skill_refs: skills,
                         }
                     } else {
                         ScanData::default()
@@ -865,10 +865,10 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
     });
 
     let data = scan_data.read();
-    let matched_signs = data.matched_signs.clone();
-    let flock_signs = data.flock_signs.clone();
-    let skill_signs = data.skill_signs.clone();
-    let has_match = !matched_signs.is_empty();
+    let matched_names = data.matched_names.clone();
+    let flock_refs = data.flock_refs.clone();
+    let skill_refs = data.skill_refs.clone();
+    let has_match = !matched_names.is_empty();
     drop(data);
 
     // Resolve AI agents with checkboxes
@@ -889,9 +889,9 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
     let mut apply_status = use_signal(|| 0u8); // 0=idle, 1=applying, 2=done
 
     let project_path_clone = project_path.clone();
-    let skill_signs_cl = skill_signs.clone();
-    let matched_signs_cl = matched_signs.clone();
-    let flock_signs_cl = flock_signs.clone();
+    let skill_refs_cl = skill_refs.clone();
+    let matched_names_cl = matched_names.clone();
+    let flock_refs_cl = flock_refs.clone();
     let do_apply = move |_| {
         apply_status.set(1);
         let workdir = PathBuf::from(&project_path_clone);
@@ -903,9 +903,9 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
             .map(|(id, _)| id.clone())
             .collect();
 
-        let skills_to_install = skill_signs_cl.clone();
-        let matched_data = matched_signs_cl.clone();
-        let _flock_data = flock_signs_cl.clone();
+        let skills_to_install = skill_refs_cl.clone();
+        let matched_data = matched_names_cl.clone();
+        let _flock_data = flock_refs_cl.clone();
         spawn(async move {
             let workdir_bg = workdir.clone();
             let checked_bg = checked.clone();
@@ -1042,9 +1042,9 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                 } else {
                     div { style: "margin-bottom: 14px;",
                         h3 { style: "font-size: 13px; color: {Theme::MUTED}; margin-bottom: 6px;",
-                            "{t.project_rescan_matched} ({matched_signs.len()})"
+                            "{t.project_rescan_matched} ({matched_names.len()})"
                         }
-                        for name in matched_signs.iter() {
+                        for name in matched_names.iter() {
                             div { style: "padding: 4px 0; font-size: 13px; color: {Theme::ACCENT_STRONG};",
                                 span { style: "display: inline-flex; align-items: center; gap: 3px;",
                                     crate::icons::LucideIcon { icon: crate::icons::Icon::Check, size: 12 }
@@ -1054,13 +1054,13 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                         }
                     }
 
-                    if !flock_signs.is_empty() {
+                    if !flock_refs.is_empty() {
                         div { style: "margin-bottom: 14px;",
                             h3 { style: "font-size: 13px; color: {Theme::MUTED}; margin-bottom: 6px;",
                                 "{t.project_rescan_flocks}"
                             }
                             div { style: "display: flex; flex-wrap: wrap; gap: 6px;",
-                                for f in flock_signs.iter() {
+                                for f in flock_refs.iter() {
                                     span { style: "padding: 3px 10px; background: {Theme::ACCENT_LIGHT}; border-radius: 12px; font-size: 12px; color: {Theme::ACCENT_STRONG};",
                                         "{f}"
                                     }
@@ -1069,13 +1069,13 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                         }
                     }
 
-                    if !skill_signs.is_empty() {
+                    if !skill_refs.is_empty() {
                         div { style: "margin-bottom: 14px;",
                             h3 { style: "font-size: 13px; color: {Theme::MUTED}; margin-bottom: 6px;",
-                                "{t.project_rescan_skills} ({skill_signs.len()})"
+                                "{t.project_rescan_skills} ({skill_refs.len()})"
                             }
                             div { style: "max-height: 120px; overflow-y: auto;",
-                                for s in skill_signs.iter() {
+                                for s in skill_refs.iter() {
                                     div { style: "padding: 2px 0; font-size: 13px; color: {Theme::TEXT};",
                                         "{s}"
                                     }

@@ -3239,16 +3239,11 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
                     .skills
                     .manual_added
                     .iter()
-                    .any(|e| e.path == *s || e.sign.as_deref() == Some(s))
+                    .any(|e| e.path == *s)
             {
                 cfg.skills
                     .manual_added
                     .push(savhub_local::presets::ProjectAddedSkill {
-                        sign: if s.contains('/') {
-                            Some(s.clone())
-                        } else {
-                            None
-                        },
                         path: s.rsplit('/').next().unwrap_or(s).to_string(),
                         slug: s.rsplit('/').next().unwrap_or(s).to_string(),
                         repo: None,

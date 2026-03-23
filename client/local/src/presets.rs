@@ -40,17 +40,11 @@ pub struct ProjectSelectorsConfig {
     pub manual_skipped: Vec<String>,
 }
 
-/// A manually added skill, identified by its sign or path+slug.
+/// A manually added skill, identified by repo URL + path.
 ///
-/// Validation: a valid entry must have either a non-empty `sign`,
-/// or both `path` and `slug` non-empty.
+/// Validation: a valid entry must have both `path` and `slug` non-empty.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectAddedSkill {
-    /// Skill sign: `{domain/owner/repo}/{source_path}`.
-    /// e.g. `github.com/anthropics/skills/skills/claude-api`.
-    /// If provided, `path` and `slug` can be omitted (derived at resolve time).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sign: Option<String>,
     /// Registry path that uniquely identifies the skill.
     #[serde(default)]
     pub path: String,
@@ -91,7 +85,7 @@ pub struct ProjectSkillsConfig {
     /// User-manually-added skills.
     #[serde(default, alias = "added")]
     pub manual_added: Vec<ProjectAddedSkill>,
-    /// Skill signs/slugs that should never be auto-fetched.
+    /// Skill slugs that should never be auto-fetched.
     #[serde(default, alias = "skipped")]
     pub manual_skipped: Vec<String>,
 }
@@ -321,38 +315,17 @@ fn normalize_selector_matches(matches: &[ProjectSelectorMatch]) -> Vec<ProjectSe
 fn normalize_added_skills(skills: &[ProjectAddedSkill]) -> Vec<ProjectAddedSkill> {
     let mut normalized = Vec::new();
     for skill in skills {
-        let sign = skill
-            .sign
-            .as_deref()
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty());
         let path = sanitize_slug(&skill.path);
         let slug = skill.slug.trim().to_string();
 
-        // Validation: must have either a sign, or both path and slug.
-        let has_sign = sign.is_some();
-        let has_path_slug = !path.is_empty() && !slug.is_empty();
-        if !has_sign && !has_path_slug {
+        // Validation: must have both path and slug.
+        if path.is_empty() || slug.is_empty() {
             continue;
         }
 
-        // Use sign's last segment as slug fallback, path fallback.
-        let effective_slug = if !slug.is_empty() {
-            slug
-        } else if let Some(s) = sign {
-            s.rsplit('/').next().unwrap_or(s).to_string()
-        } else {
-            continue;
-        };
-        let effective_path = if !path.is_empty() {
-            path
-        } else {
-            effective_slug.clone()
-        };
-
         if let Some(existing) = normalized
             .iter_mut()
-            .find(|existing: &&mut ProjectAddedSkill| existing.path == effective_path)
+            .find(|existing: &&mut ProjectAddedSkill| existing.path == path)
         {
             let existing_empty = existing
                 .version
@@ -367,9 +340,8 @@ fn normalize_added_skills(skills: &[ProjectAddedSkill]) -> Vec<ProjectAddedSkill
             continue;
         }
         normalized.push(ProjectAddedSkill {
-            sign: sign.map(String::from),
-            path: effective_path,
-            slug: effective_slug,
+            path,
+            slug,
             repo: skill.repo.clone(),
             local: skill.local.clone(),
             version: skill.version.clone(),
@@ -412,7 +384,6 @@ fn lockfile_to_project_added_skills(lockfile: &Lockfile) -> Vec<ProjectAddedSkil
     crate::skills::flatten_lockfile(lockfile)
         .into_iter()
         .map(|e| ProjectAddedSkill {
-            sign: None,
             path: e.path,
             slug: e.slug,
             repo: Some(e.repo_url),
@@ -429,7 +400,6 @@ fn project_added_skills_to_lockfile(skills: &[ProjectAddedSkill]) -> Lockfile {
         let repo_url = skill
             .repo
             .clone()
-            .or_else(|| skill.sign.clone())
             .unwrap_or_else(|| "unknown".to_string());
         lockfile.repos.entry(repo_url).or_default().insert(
             skill.path,
@@ -648,7 +618,6 @@ pub fn enable_repo_skill_in_project(
     upsert_project_added_skill(
         workdir,
         ProjectAddedSkill {
-            sign: None,
             path: slug.clone(),
             slug: slug.clone(),
             repo: None,
@@ -732,7 +701,6 @@ pub fn enable_fetched_skill_in_project(
     upsert_project_added_skill(
         workdir,
         ProjectAddedSkill {
-            sign: None,
             path: slug.clone(),
             slug: slug.clone(),
             repo: Some(repo_url.to_string()),

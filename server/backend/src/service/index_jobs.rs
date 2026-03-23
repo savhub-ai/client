@@ -882,6 +882,7 @@ async fn do_auto_import(
             &candidates,
             &group.candidate_indices,
             &flock_slug,
+            &flock_name,
             &job.git_url,
             &job.git_ref,
             effective_subdir,
@@ -1060,14 +1061,20 @@ pub(crate) fn build_auto_import_skills(
     candidates: &[SkillCandidate],
     indices: &[usize],
     flock_slug: &str,
+    flock_name: &str,
     _git_url: &str,
     _git_ref: &str,
     _source_path_root: &str,
-    repo_sign: &str,
+    _repo_sign: &str,
 ) -> Result<Vec<ImportedSkillRecord>, AppError> {
-    let mut skills = Vec::new();
-    let mut seen_slugs = HashSet::new();
-
+    // First pass: collect normalized skill names and metadata.
+    struct Parsed {
+        skill_path: String,
+        name: String,
+        description: String,
+        version: Option<String>,
+    }
+    let mut parsed_skills: Vec<Parsed> = Vec::new();
     for &i in indices {
         let candidate = &candidates[i];
         let skill_path = join_repo_relative_path(_source_path_root, &candidate.relative_dir);
@@ -1082,10 +1089,47 @@ pub(crate) fn build_auto_import_skills(
             Ok(metadata) => metadata,
             Err(_) => continue,
         };
+        let name = normalize_skill_name(&metadata.name);
+        parsed_skills.push(Parsed {
+            skill_path,
+            name,
+            description: metadata.description,
+            version: metadata.version,
+        });
+    }
 
-        // Build the skill sign to derive context for the display name
-        let skill_sign = format!("{repo_sign}/{skill_path}");
-        let formatted_name = format_skill_name(&metadata.name, &skill_sign);
+    // Decide whether to add a flock-based prefix: if all skill names share
+    // the same first word, they already have enough context — skip the prefix.
+    let needs_prefix = if parsed_skills.len() <= 1 {
+        false
+    } else {
+        let first_words: HashSet<String> = parsed_skills
+            .iter()
+            .filter_map(|s| {
+                s.name
+                    .split_whitespace()
+                    .next()
+                    .map(|w| w.to_ascii_lowercase())
+            })
+            .collect();
+        first_words.len() != 1
+    };
+
+    let prefix = if needs_prefix {
+        flock_name_prefix(flock_name)
+    } else {
+        String::new()
+    };
+
+    // Second pass: build the final skill records.
+    let mut skills = Vec::new();
+    let mut seen_slugs = HashSet::new();
+    for parsed in parsed_skills {
+        let formatted_name = if prefix.is_empty() {
+            parsed.name
+        } else {
+            format!("{} {}", prefix, parsed.name)
+        };
         let slug = format_skill_slug(&formatted_name);
 
         if slug.is_empty() || !seen_slugs.insert(slug.clone()) {
@@ -1095,10 +1139,10 @@ pub(crate) fn build_auto_import_skills(
         skills.push(ImportedSkillRecord {
             id: None,
             slug,
-            path: skill_path,
+            path: parsed.skill_path,
             name: formatted_name,
-            description: Some(metadata.description),
-            version: metadata.version.clone(),
+            description: Some(parsed.description),
+            version: parsed.version,
             status: RegistryStatus::Active,
             license: "MIT".to_string(),
             runtime: None,
@@ -1539,46 +1583,36 @@ fn derive_flock_name(flock_slug: &str, repo_name: &str) -> String {
     }
 }
 
-const NOISE_WORDS: &[&str] = &["skill", "skills", "ai", "agent", "agents"];
-
-/// Format a skill display name.
-///
-/// 1. Take the original name from SKILL.md.
-/// 2. Remove noise words (skill, skills, ai, agent, agents). If the remaining name still has > 2
-///    words, use it directly.
-/// 3. Otherwise build a context prefix from the skill sign: strip the first segment (domain) and
-///    last segment (skill dir), capitalize each word, dedup adjacent `/`-parts, then prepend to the
-///    original name.
-pub(crate) fn format_skill_name(original_name: &str, skill_sign: &str) -> String {
-    // If the name has no spaces but contains hyphens, split by '-' and rejoin
-    let name = if !original_name.contains(' ') && original_name.contains('-') {
+/// Normalize a raw skill name from SKILL.md: expand hyphens to spaces and capitalize.
+pub(crate) fn normalize_skill_name(original_name: &str) -> String {
+    if !original_name.contains(' ') && original_name.contains('-') {
         capitalize_words(&original_name.replace('-', " "))
     } else {
         original_name.to_string()
-    };
-
-    let filtered: Vec<&str> = name
-        .split_whitespace()
-        .filter(|w| !NOISE_WORDS.contains(&w.to_ascii_lowercase().as_str()))
-        .collect();
-
-    if filtered.len() > 2 {
-        return name;
     }
+}
 
-    // Build context from sign: remove first (domain) and last (skill dir) fragments
-    let sign_parts: Vec<&str> = skill_sign.split('/').collect();
-    if sign_parts.len() > 2 {
-        let middle = &sign_parts[1..sign_parts.len() - 1];
-        let middle_path = middle.join("/");
-        let context = path_to_display_name(&middle_path);
-        let context = capitalize_words(&context);
-        if !context.is_empty() {
-            return format!("{} {}", context, name);
+/// Derive a prefix from the flock name to prepend to skill names.
+///
+/// If the flock name ends with "skill" or "skills" (case-insensitive),
+/// strip that suffix. The remaining words become the prefix.
+/// e.g. "Rust Dev Skills" → "Rust Dev", "mofa skills" → "Mofa".
+pub(crate) fn flock_name_prefix(flock_name: &str) -> String {
+    let words: Vec<&str> = flock_name.split_whitespace().collect();
+    let trimmed: Vec<&str> = if let Some(last) = words.last() {
+        let lower = last.to_ascii_lowercase();
+        if lower == "skill" || lower == "skills" {
+            words[..words.len() - 1].to_vec()
+        } else {
+            words
         }
+    } else {
+        return String::new();
+    };
+    if trimmed.is_empty() {
+        return String::new();
     }
-
-    name
+    capitalize_words(&trimmed.join(" "))
 }
 
 /// Derive skill slug from the formatted skill name: lowercase, spaces → dashes.
