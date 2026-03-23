@@ -872,7 +872,7 @@ fn cmd_enable(opts: &GlobalOpts, args: EnableArgs) -> Result<()> {
         .as_deref()
         .map(|v| format!("v{v}"))
         .or(result
-            .git_hash
+            .git_sha
             .as_deref()
             .map(|v| v.chars().take(12).collect::<String>()))
         .unwrap_or_else(|| "latest".to_string());
@@ -935,7 +935,7 @@ async fn cmd_fetch(opts: &GlobalOpts, args: FetchArgs) -> Result<()> {
             version: 1,
             repo: opts.registry.clone(),
             repo_sign: resolved.spec.repo_sign.clone(),
-            repo_commit: Some(resolved.spec.git_hash.clone()),
+            repo_commit: Some(resolved.spec.git_sha.clone()),
             slug: slug.clone(),
             skill_version: resolved.spec.skill_version.clone(),
             fetched_at: now,
@@ -1027,7 +1027,7 @@ async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
             }
         };
 
-        if local_version_info.git_hash.as_deref() == Some(remote.spec.git_hash.as_str()) {
+        if local_version_info.git_sha.as_deref() == Some(remote.spec.git_sha.as_str()) {
             println!("{slug}: already at {latest}");
             let prev_fetched_at = lockfile
                 .find_by_slug(&slug)
@@ -1082,7 +1082,7 @@ async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
                 version: 1,
                 repo: opts.registry.clone(),
                 repo_sign: remote.spec.repo_sign.clone(),
-                repo_commit: Some(remote.spec.git_hash.clone()),
+                repo_commit: Some(remote.spec.git_sha.clone()),
                 slug: slug.clone(),
                 skill_version: remote.spec.skill_version.clone(),
                 fetched_at: now,
@@ -1141,7 +1141,7 @@ async fn cmd_update_global(opts: &GlobalOpts, args: &UpdateArgs) -> Result<()> {
                 Default::default()
             };
 
-            if local_info.git_hash.as_deref() == Some(remote.spec.git_hash.as_str()) {
+            if local_info.git_sha.as_deref() == Some(remote.spec.git_sha.as_str()) {
                 println!("{slug}: already at {latest}");
                 continue;
             }
@@ -1156,7 +1156,7 @@ async fn cmd_update_global(opts: &GlobalOpts, args: &UpdateArgs) -> Result<()> {
                     version: 1,
                     repo: opts.registry.clone(),
                     repo_sign: remote.spec.repo_sign.clone(),
-                    repo_commit: Some(remote.spec.git_hash.clone()),
+                    repo_commit: Some(remote.spec.git_sha.clone()),
                     slug: slug.clone(),
                     skill_version: remote.spec.skill_version.clone(),
                     fetched_at: now,
@@ -2097,8 +2097,8 @@ async fn resolve_remote_skill_fetch(
     let repo = client
         .get_json::<RepoDetailResponse>(&format!("/repos/{repo_path}"))
         .await?;
-    let git_hash = normalize_remote_text(repo.document.git_hash.clone())
-        .ok_or_else(|| anyhow!("repo `{repo_url}` has no git_hash"))?;
+    let git_sha = normalize_remote_text(repo.document.git_sha.clone())
+        .ok_or_else(|| anyhow!("repo `{repo_url}` has no git_sha"))?;
     let skill_version = normalize_remote_text(
         detail
             .latest_version
@@ -2106,13 +2106,13 @@ async fn resolve_remote_skill_fetch(
             .map(|value| value.version.clone())
             .or_else(|| detail.versions.first().map(|value| value.version.clone())),
     );
-    let display_version = fetch_version_label(skill_version.as_deref(), &git_hash);
+    let display_version = fetch_version_label(skill_version.as_deref(), &git_sha);
     Ok(ResolvedRemoteSkillFetch {
         spec: RemoteSkillFetchSpec {
             repo_sign: repo_url,
             skill_path: detail.skill.path.clone(),
             git_url: repo.document.git_url,
-            git_hash,
+            git_sha,
             skill_version,
         },
         display_version,
@@ -2542,14 +2542,13 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
                     );
                 }
                 if !d.flocks.is_empty() {
-                    println!(
-                        "Flocks:     {}",
-                        d.flocks
-                            .iter()
-                            .map(|s| s.to_string())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    );
+                    let flock_strs: Vec<String> = d.flocks.iter().map(|s| s.to_string()).collect();
+                    for (repo, members) in tui::group_flocks_by_repo(&flock_strs) {
+                        println!("Flock {repo}");
+                        for f in &members {
+                            println!("  {}", tui::flock_display(f));
+                        }
+                    }
                 }
                 if !d.repos.is_empty() {
                     let repo_strs: Vec<_> = d.repos.iter().map(|r| r.git_url.as_str()).collect();
@@ -2584,15 +2583,13 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
                 );
             }
             if !result.flocks.is_empty() {
-                println!(
-                    "Flocks:  {}",
-                    result
-                        .flocks
-                        .iter()
-                        .map(|s| s.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
+                let flock_strs: Vec<String> = result.flocks.iter().map(|s| s.to_string()).collect();
+                for (repo, members) in tui::group_flocks_by_repo(&flock_strs) {
+                    println!("Flock {repo}");
+                    for f in &members {
+                        println!("  {}", tui::flock_display(f));
+                    }
+                }
             }
             if !result.repos.is_empty() {
                 let repo_strs: Vec<_> = result.repos.iter().map(|r| r.git_url.as_str()).collect();
@@ -2924,9 +2921,11 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             }
         }
         if !selected_flocks.is_empty() {
-            println!("\nFlocks:");
-            for f in &selected_flocks {
-                println!("  \x1b[32m[+]\x1b[0m {f}");
+            for (repo, members) in tui::group_flocks_by_repo(&selected_flocks) {
+                println!("\nFlock {repo}");
+                for f in &members {
+                    println!("  \x1b[32m[+]\x1b[0m {}", tui::flock_display(f));
+                }
             }
         }
         if !unmatched.is_empty() {
@@ -3002,12 +3001,17 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             }
         }
         if !selected_flocks.is_empty() || !skipped_flocks.is_empty() {
-            println!("Flocks:");
-            for f in &selected_flocks {
-                println!("  \x1b[32m[+]\x1b[0m {f}");
-            }
-            for f in &skipped_flocks {
-                println!("  \x1b[31m[-]\x1b[0m {f}");
+            let all_flocks: Vec<String> = selected_flocks.iter().chain(skipped_flocks.iter()).cloned().collect();
+            let selected_set: std::collections::HashSet<&String> = selected_flocks.iter().collect();
+            for (repo, members) in tui::group_flocks_by_repo(&all_flocks) {
+                println!("Flock {repo}");
+                for f in &members {
+                    if selected_set.contains(f) {
+                        println!("  \x1b[32m[+]\x1b[0m {}", tui::flock_display(f));
+                    } else {
+                        println!("  \x1b[31m[-]\x1b[0m {}", tui::flock_display(f));
+                    }
+                }
             }
         }
     }
@@ -3118,7 +3122,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             .iter()
             .map(|m| m.selector.name.clone())
             .collect();
-        let old_flocks: BTreeSet<String> = config.flocks.matched.iter().cloned().collect();
+        let old_flocks: BTreeSet<String> = config.flocks.matched.iter().map(|r| r.to_string()).collect();
         let new_flocks: BTreeSet<String> = selected_flocks.iter().cloned().collect();
         if old_matched_names == new_matched_names && old_flocks == new_flocks {
             println!("\nProject is already up to date. Nothing to do.");
@@ -3181,12 +3185,11 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             })
             .collect();
         // Collect all matched flocks into flocks.matched
-        let mut all_matched_flocks: Vec<String> = Vec::new();
+        let mut all_matched_flocks: Vec<savhub_local::selectors::SelectorSkillRef> = Vec::new();
         for m in &cfg.selectors.matched {
             for f in &m.flocks {
-                let s = f.to_string();
-                if !all_matched_flocks.contains(&s) {
-                    all_matched_flocks.push(s);
+                if !all_matched_flocks.contains(f) {
+                    all_matched_flocks.push(f.clone());
                 }
             }
         }
@@ -3360,7 +3363,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
                     path: Some(info.skill_path.clone()),
                     slug: info.slug.clone(),
                     version: vi.version,
-                    git_hash: vi.git_hash,
+                    git_sha: vi.git_sha,
                 });
             }
             fetched_count += 1;

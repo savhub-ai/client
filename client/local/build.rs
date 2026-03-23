@@ -5,14 +5,14 @@ fn main() {
     let output = Command::new("git")
         .args(["rev-parse", "--short=9", "HEAD"])
         .output();
-    let git_hash = match output {
+    let git_sha = match output {
         Ok(out) if out.status.success() => String::from_utf8(out.stdout)
             .unwrap_or_default()
             .trim()
             .to_string(),
         _ => "unknown".to_string(),
     };
-    println!("cargo:rustc-env=SAVHUB_GIT_HASH={git_hash}");
+    println!("cargo:rustc-env=SAVHUB_GIT_HASH={git_sha}");
 
     // Re-run if git HEAD changes
     println!("cargo:rerun-if-changed=../../.git/HEAD");

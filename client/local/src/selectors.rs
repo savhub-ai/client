@@ -122,7 +122,7 @@ pub enum RuleExpression {
 pub struct SelectorRepo {
     pub git_url: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub git_hash: Option<String>,
+    pub git_sha: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git_branch: Option<String>,
 }
@@ -131,7 +131,7 @@ impl SelectorRepo {
     pub fn from_url(url: &str) -> Self {
         Self {
             git_url: url.to_string(),
-            git_hash: None,
+            git_sha: None,
             git_branch: None,
         }
     }

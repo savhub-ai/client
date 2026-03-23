@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::clients::{global_skills_dir, home_dir};
 use crate::skills::{
     LockEntry, Lockfile, RepoSkillFolder, RepoSkillOrigin, SkillFolder, copy_skill_folder,
-    find_repo_skill_folders, find_skill_folders, read_skill_version_info, repo_git_hash,
+    find_repo_skill_folders, find_skill_folders, read_skill_version_info, repo_git_sha,
     skill_folder_from_path, write_repo_skill_origin,
 };
 use crate::utils::sanitize_slug;
@@ -101,7 +101,7 @@ pub struct ProjectSkillsConfig {
 pub struct ProjectFlocksConfig {
     /// Flocks contributed by matched selectors (auto-managed).
     #[serde(default)]
-    pub matched: Vec<String>,
+    pub matched: Vec<crate::selectors::SelectorSkillRef>,
     /// User-manually-added flocks.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub manual_added: Vec<String>,
@@ -158,7 +158,7 @@ pub struct ProjectLockedSkill {
         skip_serializing_if = "Option::is_none",
         alias = "commit_hash"
     )]
-    pub git_hash: Option<String>,
+    pub git_sha: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -184,7 +184,7 @@ pub struct EnableProjectRepoSkillResult {
     /// conflicts.
     pub local_name: String,
     pub version: Option<String>,
-    pub git_hash: Option<String>,
+    pub git_sha: Option<String>,
 }
 
 /// Find a unique folder name under `skills_dir` for the given slug.
@@ -401,7 +401,7 @@ fn normalize_project_lock_skills(skills: &[ProjectLockedSkill]) -> Vec<ProjectLo
             path: trim_opt(&skill.path),
             slug,
             version: trim_opt(&skill.version),
-            git_hash: trim_opt(&skill.git_hash),
+            git_sha: trim_opt(&skill.git_sha),
         });
     }
     normalized.sort_by(|left, right| left.slug.cmp(&right.slug));
@@ -619,8 +619,8 @@ pub fn enable_repo_skill_in_project(
     copy_skill_folder(&repo_skill.skill.folder, &target)?;
 
     let mut version_info = read_skill_version_info(&repo_skill.skill.folder).unwrap_or_default();
-    if version_info.git_hash.is_none() {
-        version_info.git_hash = repo_git_hash(&repo_skill.repo_root);
+    if version_info.git_sha.is_none() {
+        version_info.git_sha = repo_git_sha(&repo_skill.repo_root);
     }
 
     let fetched_at = std::time::SystemTime::now()
@@ -633,7 +633,7 @@ pub fn enable_repo_skill_in_project(
             version: 1,
             repo: repo_skill.repo_name.clone(),
             repo_sign: repo_skill.repo_root.display().to_string(),
-            repo_commit: version_info.git_hash.clone(),
+            repo_commit: version_info.git_sha.clone(),
             slug: slug.clone(),
             skill_version: version_info.version.clone(),
             fetched_at,
@@ -662,7 +662,7 @@ pub fn enable_repo_skill_in_project(
         slug,
         local_name,
         version: version_info.version,
-        git_hash: version_info.git_hash,
+        git_sha: version_info.git_sha,
     })
 }
 
@@ -717,7 +717,7 @@ pub fn enable_fetched_skill_in_project(
             version: 1,
             repo: repo_url.to_string(),
             repo_sign: repo_url.to_string(),
-            repo_commit: version_info.git_hash.clone(),
+            repo_commit: version_info.git_sha.clone(),
             slug: slug.clone(),
             skill_version: version_info.version.clone(),
             fetched_at,
@@ -746,7 +746,7 @@ pub fn enable_fetched_skill_in_project(
         slug,
         local_name,
         version: version_info.version,
-        git_hash: version_info.git_hash,
+        git_sha: version_info.git_sha,
     })
 }
 
@@ -881,7 +881,7 @@ fn build_project_lockfile(
                 path: added.map(|a| a.path.clone()),
                 slug: skill.slug.clone(),
                 version: version_info.version,
-                git_hash: version_info.git_hash,
+                git_sha: version_info.git_sha,
             }
         })
         .collect::<Vec<_>>();
@@ -933,14 +933,14 @@ fn resolve_project_skills_internal(workdir: &Path) -> Result<Vec<ResolvedProject
     }
 
     // Expand flocks: matched + manual_added, filter out manual_skipped
-    let mut all_flocks = config.flocks.matched.clone();
+    let mut all_flock_slugs: Vec<String> = config.flocks.matched.iter().map(|r| r.to_string()).collect();
     for slug in &config.flocks.manual_added {
-        if !all_flocks.contains(slug) {
-            all_flocks.push(slug.clone());
+        if !all_flock_slugs.contains(slug) {
+            all_flock_slugs.push(slug.clone());
         }
     }
-    all_flocks.retain(|s| !config.flocks.manual_skipped.contains(s));
-    for flock_slug in &all_flocks {
+    all_flock_slugs.retain(|s| !config.flocks.manual_skipped.contains(s));
+    for flock_slug in &all_flock_slugs {
         let flock_ref = crate::selectors::SelectorSkillRef::parse(flock_slug);
         if let Ok(skill_slugs) = crate::registry::list_flock_skills(&flock_ref.repo, &flock_ref.path) {
             for skill_slug in skill_slugs {

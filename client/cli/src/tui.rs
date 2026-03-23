@@ -110,7 +110,7 @@ impl Row {
 
 // ── Helpers ──
 
-fn repo_group(flock_sign: &str) -> &str {
+pub fn repo_group(flock_sign: &str) -> &str {
     let mut end = 0;
     let mut slashes = 0;
     for (i, c) in flock_sign.char_indices() {
@@ -128,13 +128,13 @@ fn repo_group(flock_sign: &str) -> &str {
     }
 }
 
-fn flock_display(slug: &str) -> &str {
+pub fn flock_display(slug: &str) -> &str {
     slug.strip_prefix(repo_group(slug))
         .and_then(|s| s.strip_prefix('/'))
         .unwrap_or(slug)
 }
 
-fn group_flocks_by_repo(flocks: &[String]) -> Vec<(String, Vec<String>)> {
+pub fn group_flocks_by_repo(flocks: &[String]) -> Vec<(String, Vec<String>)> {
     let mut groups: Vec<(String, Vec<String>)> = Vec::new();
     for flock in flocks {
         let repo = repo_group(flock).to_string();

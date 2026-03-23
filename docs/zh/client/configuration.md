@@ -138,12 +138,12 @@ version = 1
 [[skills]]
 path = "rust-clippy"
 version = "1.2.0"
-git_hash = "abc123def456"
+git_sha = "abc123def456"
 
 [[skills]]
 path = "rust-testing"
 version = "0.8.1"
-git_hash = "789def012345"
+git_sha = "789def012345"
 ```
 
 > **提示：** 你可以将 `savhub.lock` 提交到版本控制中，这样团队成员可以获得相同的技能版本。

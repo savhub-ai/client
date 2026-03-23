@@ -978,7 +978,7 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                                         path: Some(info.skill_path.clone()),
                                         slug: info.slug.clone(),
                                         version: vi.version,
-                                        git_hash: vi.git_hash,
+                                        git_sha: vi.git_sha,
                                     });
                                 }
                             }
