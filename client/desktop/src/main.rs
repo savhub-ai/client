@@ -116,8 +116,24 @@ enum SidebarIconKind {
     Settings,
 }
 
+/// Desktop CLI arguments.
+#[derive(clap::Parser)]
+#[command(name = "savhub-desktop")]
+struct DesktopCli {
+    /// Config/data directory (overrides SAVHUB_CONFIG_DIR and ~/.savhub)
+    #[arg(long)]
+    profile: Option<std::path::PathBuf>,
+}
+
 fn main() {
+    use clap::Parser;
     use dioxus::desktop::{Config, WindowBuilder};
+
+    let cli = DesktopCli::parse();
+    if let Some(profile) = &cli.profile {
+        // SAFETY: called before any threads are spawned.
+        unsafe { std::env::set_var("SAVHUB_CONFIG_DIR", profile) };
+    }
 
     // Clean up backup binary from a previous update
     updater::cleanup_old_binary();

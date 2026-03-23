@@ -88,6 +88,9 @@ fn exe_location() -> String {
     after_help = exe_location(),
 )]
 struct Cli {
+    /// Config/data directory (overrides SAVHUB_CONFIG_DIR and ~/.savhub)
+    #[arg(long, global = true)]
+    profile: Option<PathBuf>,
     #[arg(long, global = true)]
     workdir: Option<PathBuf>,
     #[arg(long, global = true)]
@@ -491,6 +494,10 @@ struct GlobalOpts {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    if let Some(profile) = &cli.profile {
+        // SAFETY: called before any threads are spawned.
+        unsafe { std::env::set_var("SAVHUB_CONFIG_DIR", profile) };
+    }
     let opts = resolve_global_opts(&cli)?;
 
     match cli.command {

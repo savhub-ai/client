@@ -6186,6 +6186,7 @@ version = "0.1.15"
 dependencies = [
  "arboard",
  "chrono",
+ "clap",
  "dioxus",
  "directories",
  "flate2",
