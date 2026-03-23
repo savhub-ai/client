@@ -17,7 +17,7 @@ pub use savhub_shared::{
 };
 use savhub_shared::{
     FlockDetailResponse, FlockSummary, ImportedSkillRecord, PagedResponse, RepoDetailResponse,
-    SecurityStatus, SecuritySummary, SkillDetailResponse, SkillListItem,
+    SecurityStatus, SecuritySummary, SkillListItem,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -267,22 +267,6 @@ struct RemoteSkillDescriptor {
     skill_version: Option<String>,
 }
 
-fn skill_descriptor_from_detail(detail: SkillDetailResponse) -> RemoteSkillDescriptor {
-    let skill_path = detail.skill.path.clone();
-    let repo_sign = detail.skill.repo_url.clone();
-    let skill_version = normalize_non_empty(
-        detail
-            .latest_version
-            .as_ref()
-            .map(|value| value.version.clone())
-            .or_else(|| detail.versions.first().map(|value| value.version.clone())),
-    );
-    RemoteSkillDescriptor {
-        repo_sign,
-        skill_path,
-        skill_version,
-    }
-}
 
 fn normalize_non_empty(value: Option<String>) -> Option<String> {
     value.and_then(|value| {
@@ -515,24 +499,6 @@ fn estimate_total(page: usize, page_size: usize, len: usize, has_more: bool) -> 
     }
 }
 
-fn remote_skill_detail(slug: &str) -> Result<Option<RemoteSkillDescriptor>> {
-    let client = RegistryApiClient::new()?;
-    let mut url = client.v1_url("/skills")?;
-    url.query_pairs_mut()
-        .append_pair("limit", "50")
-        .append_pair("q", slug);
-    let response = client.get_json_url::<PagedResponse<SkillListItem>>(url)?;
-    let Some(skill) = response
-        .items
-        .into_iter()
-        .find(|item| item.slug.eq_ignore_ascii_case(slug))
-    else {
-        return Ok(None);
-    };
-    Ok(client
-        .get_json_opt::<SkillDetailResponse>(&format!("/skills/{}", skill.id))?
-        .map(skill_descriptor_from_detail))
-}
 
 fn remote_repo_detail(repo_url: &str) -> Result<Option<RepoDetailResponse>> {
     let route_path = git_url_to_route_path(repo_url);
@@ -552,48 +518,6 @@ fn remote_flock_detail_by_id(id: &str) -> Result<Option<FlockDetailResponse>> {
     RegistryApiClient::new()?.get_json_opt(&format!("/flocks/{id}"))
 }
 
-fn find_flock_summary(identifier: &str) -> Result<Option<FlockSummary>> {
-    let identifier = identifier.trim();
-    if identifier.is_empty() {
-        return Ok(None);
-    }
-    if let Some(detail) = remote_flock_detail_by_id(identifier)? {
-        return Ok(Some(detail.flock));
-    }
-    if let Some((repo_sign, flock_slug)) = identifier.rsplit_once('/')
-        && repo_sign.contains('.')
-        && let Some(repo) = remote_repo_detail(repo_sign)?
-        && let Some(flock) = repo.flocks.into_iter().find(|item| item.slug == flock_slug)
-    {
-        return Ok(Some(flock));
-    }
-    let client = RegistryApiClient::new()?;
-    let mut page = 0usize;
-    loop {
-        let (items, has_more) = fetch_flock_page(&client, Some(identifier), page, PAGE_LIMIT)?;
-        if let Some(flock) = items.into_iter().find(|item| {
-            item.slug == identifier
-                || item.id.to_string() == identifier
-                || format!("{}/{}", item.repo_url, item.slug) == identifier
-        }) {
-            return Ok(Some(flock));
-        }
-        if !has_more {
-            return Ok(None);
-        }
-        page += 1;
-    }
-}
-
-fn remote_flock_detail(identifier: &str) -> Result<Option<FlockDetailResponse>> {
-    if let Some(detail) = remote_flock_detail_by_id(identifier)? {
-        return Ok(Some(detail));
-    }
-    let Some(summary) = find_flock_summary(identifier)? else {
-        return Ok(None);
-    };
-    remote_flock_detail_by_id(&summary.id.to_string())
-}
 
 pub fn list_skills(
     query: Option<&str>,
