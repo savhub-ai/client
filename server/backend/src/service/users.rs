@@ -44,6 +44,7 @@ pub fn list_users(query: Option<&str>, limit: i64) -> Result<UserListResponse, A
 
     // Count skills per user by looking at flocks imported by each user
     let flock_rows = flocks::table
+        .filter(flocks::soft_deleted_at.is_null())
         .select(FlockRow::as_select())
         .load::<FlockRow>(&mut conn)?;
     let mut flocks_by_importer: HashMap<Uuid, Vec<Uuid>> = HashMap::new();

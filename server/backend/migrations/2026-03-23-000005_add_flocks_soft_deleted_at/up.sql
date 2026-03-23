@@ -1,0 +1,1 @@
+ALTER TABLE flocks ADD COLUMN soft_deleted_at TIMESTAMPTZ NULL;

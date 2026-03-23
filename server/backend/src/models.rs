@@ -156,6 +156,7 @@ pub struct FlockRow {
     pub stats_stars: i64,
     pub stats_max_installs: i64,
     pub stats_max_unique_users: i64,
+    pub soft_deleted_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Insertable)]
@@ -182,6 +183,7 @@ pub struct NewFlockRow {
     pub security_status: String,
     pub stats_max_installs: i64,
     pub stats_max_unique_users: i64,
+    pub soft_deleted_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Default, Clone, AsChangeset)]
@@ -204,6 +206,7 @@ pub struct FlockChangeset {
     pub security_status: Option<String>,
     pub stats_max_installs: Option<i64>,
     pub stats_max_unique_users: Option<i64>,
+    pub soft_deleted_at: Option<Option<DateTime<Utc>>>,
 }
 
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable, Associations, QueryableByName)]

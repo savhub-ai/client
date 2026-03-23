@@ -45,6 +45,7 @@ pub fn list_repos(
         .load::<RepoRow>(&mut conn)?;
     let flock_rows = flocks::table
         .filter(flocks::repo_id.eq_any(all_rows.iter().map(|row| row.id).collect::<Vec<_>>()))
+        .filter(flocks::soft_deleted_at.is_null())
         .select(FlockRow::as_select())
         .load::<FlockRow>(&mut conn)?;
     let mut flock_counts = HashMap::new();
@@ -230,6 +231,7 @@ pub fn get_repo_detail(domain: &str, path_slug: &str) -> Result<RepoDetailRespon
         .ok_or_else(|| AppError::NotFound(format!("repo `{repo_path}` does not exist")))?;
     let flock_rows = flocks::table
         .filter(flocks::repo_id.eq(repo.id))
+        .filter(flocks::soft_deleted_at.is_null())
         .order(flocks::updated_at.desc())
         .select(FlockRow::as_select())
         .load::<FlockRow>(&mut conn)?;
@@ -413,6 +415,7 @@ fn persist_flock_import(
         security_status: "unscanned".to_string(),
         stats_max_installs: 0,
         stats_max_unique_users: 0,
+        soft_deleted_at: None,
     };
     let flock_changeset = FlockChangeset {
         name: Some(document.name.clone()),
@@ -436,6 +439,7 @@ fn persist_flock_import(
         security_status: Some("unscanned".to_string()),
         stats_max_installs: None,
         stats_max_unique_users: None,
+        soft_deleted_at: None,
     };
 
     let updated_existing_flock = existing_flock.is_some();

@@ -168,6 +168,7 @@ pub fn fetch_flock_by_slugs(
     flocks::table
         .filter(flocks::repo_id.eq(repo_id))
         .filter(flocks::slug.eq(flock_slug))
+        .filter(flocks::soft_deleted_at.is_null())
         .select(FlockRow::as_select())
         .first::<FlockRow>(conn)
         .optional()?

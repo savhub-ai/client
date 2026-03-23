@@ -75,6 +75,7 @@ diesel::table! {
         stats_stars -> Int8,
         stats_max_installs -> Int8,
         stats_max_unique_users -> Int8,
+        soft_deleted_at -> Nullable<Timestamptz>,
     }
 }
 

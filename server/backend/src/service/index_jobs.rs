@@ -937,6 +937,45 @@ async fn do_auto_import(
         total_skill_count += skill_count;
     }
 
+    // Soft-delete flocks (and their skills) that are no longer present in the repo.
+    if !flock_slugs.is_empty() {
+        let now = Utc::now();
+        let mut conn = db_conn()?;
+        let stale_flock_ids: Vec<Uuid> = flocks::table
+            .filter(flocks::repo_id.eq(repo.id))
+            .filter(diesel::dsl::not(flocks::slug.eq_any(&flock_slugs)))
+            .filter(flocks::soft_deleted_at.is_null())
+            .select(flocks::id)
+            .load::<Uuid>(&mut conn)?;
+        if !stale_flock_ids.is_empty() {
+            tracing::info!(
+                "[index{}] soft-deleting {} stale flock(s) for repo {}",
+                job.id,
+                stale_flock_ids.len(),
+                repo.id,
+            );
+            diesel::update(
+                flocks::table
+                    .filter(flocks::id.eq_any(&stale_flock_ids)),
+            )
+            .set((
+                flocks::soft_deleted_at.eq(Some(now)),
+                flocks::updated_at.eq(now),
+            ))
+            .execute(&mut conn)?;
+            diesel::update(
+                skills::table
+                    .filter(skills::flock_id.eq_any(&stale_flock_ids))
+                    .filter(skills::soft_deleted_at.is_null()),
+            )
+            .set((
+                skills::soft_deleted_at.eq(Some(now)),
+                skills::updated_at.eq(now),
+            ))
+            .execute(&mut conn)?;
+        }
+    }
+
     // Enhance repo metadata after all flocks are persisted.
     //
     // Check ai_request_cache for repo metadata.
@@ -1198,6 +1237,7 @@ pub(crate) fn persist_auto_import_flock(
                     metadata: Some(flock_metadata.clone()),
                     updated_at: Some(now),
                     security_status: Some("unscanned".to_string()),
+                    soft_deleted_at: Some(None),
                     ..Default::default()
                 })
                 .execute(conn)?;
@@ -1225,6 +1265,7 @@ pub(crate) fn persist_auto_import_flock(
                     security_status: "unscanned".to_string(),
                     stats_max_installs: 0,
                     stats_max_unique_users: 0,
+                    soft_deleted_at: None,
                 })
                 .execute(conn)?;
         }
