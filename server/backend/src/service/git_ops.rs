@@ -479,12 +479,22 @@ fn extract_markdown_heading(markdown: &str) -> Option<String> {
     markdown.lines().find_map(|line| {
         let trimmed = line.trim();
         let title = trimmed.trim_start_matches('#').trim();
-        if trimmed.starts_with('#') && !title.is_empty() {
+        if trimmed.starts_with('#') && !title.is_empty() && !is_decorative_line(title) {
             Some(title.to_string())
         } else {
             None
         }
     })
+}
+
+/// Lines like `===============` or `***************` are decorative separators,
+/// not real headings.
+fn is_decorative_line(text: &str) -> bool {
+    let trimmed = text.trim();
+    !trimmed.is_empty()
+        && trimmed
+            .chars()
+            .all(|c| matches!(c, '=' | '-' | '*' | '_' | '~' | '#'))
 }
 
 /// Result of a git clone or pull operation.
