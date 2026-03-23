@@ -592,7 +592,7 @@ async fn do_auto_import(
     // If we reused an existing checkout (pull, not fresh clone), compute which
     // candidate indices actually have file changes so we can skip unchanged
     // flocks entirely.
-    let changed_indices: HashSet<usize> = if checkout.reused && checkout.previous_sha.is_some() {
+    let changed_indices: HashSet<usize> = if checkout.reused && checkout.previous_sha.is_some() && !job.force_index {
         let prev = checkout.previous_sha.as_deref().unwrap();
         let all_changed =
             super::git_ops::changed_files_between(&checkout.path, prev, &checkout.head_sha)
@@ -633,7 +633,7 @@ async fn do_auto_import(
         (0..candidates.len()).collect()
     };
 
-    let is_incremental = checkout.reused && checkout.previous_sha.is_some();
+    let is_incremental = checkout.reused && checkout.previous_sha.is_some() && !job.force_index;
 
     // Auto-categorize using the resolved strategy.
     update_progress(job.id, 50, "Categorizing skills…")?;
