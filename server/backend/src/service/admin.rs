@@ -133,8 +133,14 @@ pub fn management_summary(auth: &AuthContext) -> Result<ManagementSummaryRespons
     let counts = CatalogCounts {
         users: users::table.count().get_result::<i64>(&mut conn)?,
         repos: repos::table.count().get_result::<i64>(&mut conn)?,
-        flocks: flocks::table.count().get_result::<i64>(&mut conn)?,
-        skills: skills::table.count().get_result::<i64>(&mut conn)?,
+        flocks: flocks::table
+            .filter(flocks::soft_deleted_at.is_null())
+            .count()
+            .get_result::<i64>(&mut conn)?,
+        skills: skills::table
+            .filter(skills::soft_deleted_at.is_null())
+            .count()
+            .get_result::<i64>(&mut conn)?,
         versions: skill_versions::table.count().get_result::<i64>(&mut conn)?,
         comments: skill_comments::table.count().get_result::<i64>(&mut conn)?,
         reports: reports::table

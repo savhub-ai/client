@@ -55,7 +55,7 @@ diesel::table! {
         id -> Uuid,
         slug -> Text,
         name -> Text,
-        path -> Nullable<Text>,
+        path -> Text,
         repo_id -> Uuid,
         keywords -> Array<Nullable<Text>>,
         description -> Text,

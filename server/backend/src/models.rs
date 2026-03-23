@@ -137,6 +137,7 @@ pub struct FlockRow {
     pub id: Uuid,
     pub slug: String,
     pub name: String,
+    pub path: String,
     pub repo_id: Uuid,
     pub keywords: Vec<Option<String>>,
     pub description: String,
@@ -165,6 +166,7 @@ pub struct NewFlockRow {
     pub id: Uuid,
     pub slug: String,
     pub name: String,
+    pub path: String,
     pub repo_id: Uuid,
     pub keywords: Vec<Option<String>>,
     pub description: String,
@@ -190,6 +192,7 @@ pub struct NewFlockRow {
 #[diesel(table_name = flocks)]
 pub struct FlockChangeset {
     pub name: Option<String>,
+    pub path: Option<String>,
     pub keywords: Option<Vec<Option<String>>>,
     pub description: Option<String>,
     pub version: Option<String>,

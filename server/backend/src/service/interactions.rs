@@ -9,7 +9,7 @@ use shared::{
 use uuid::Uuid;
 
 use super::helpers::{
-    db_conn, ensure_skill_visible, fetch_flock_by_slugs, insert_audit_log, load_users_map,
+    db_conn, ensure_skill_visible, fetch_flock_by_path, insert_audit_log, load_users_map,
     user_summary_from_row, viewer_is_admin,
 };
 use crate::auth::{AuthContext, RequestUser, require_admin};
@@ -163,7 +163,7 @@ pub fn toggle_flock_star(
 ) -> Result<ToggleStarResponse, AppError> {
     let mut conn = db_conn()?;
     let repo_sign = format!("{repo_domain}/{repo_path_slug}");
-    let flock = fetch_flock_by_slugs(&mut conn, &repo_sign, flock_slug)?;
+    let flock = fetch_flock_by_path(&mut conn, &repo_sign, flock_slug)?;
 
     conn.transaction::<_, AppError, _>(|conn| {
         let existing = skill_stars::table
@@ -281,7 +281,7 @@ pub fn add_flock_comment(
 ) -> Result<Vec<CommentDto>, AppError> {
     let mut conn = db_conn()?;
     let repo_sign = format!("{repo_domain}/{repo_path_slug}");
-    let flock = fetch_flock_by_slugs(&mut conn, &repo_sign, flock_slug)?;
+    let flock = fetch_flock_by_path(&mut conn, &repo_sign, flock_slug)?;
     let body = request.body.trim();
     if body.is_empty() {
         return Err(AppError::BadRequest("comment body is required".to_string()));
@@ -323,7 +323,7 @@ pub fn delete_flock_comment(
     require_admin(auth)?;
     let mut conn = db_conn()?;
     let repo_sign = format!("{repo_domain}/{repo_path_slug}");
-    let flock = fetch_flock_by_slugs(&mut conn, &repo_sign, flock_slug)?;
+    let flock = fetch_flock_by_path(&mut conn, &repo_sign, flock_slug)?;
 
     conn.transaction::<_, AppError, _>(|conn| {
         let deleted = diesel::update(
@@ -407,7 +407,7 @@ pub fn rate_flock(
     }
     let mut conn = db_conn()?;
     let repo_sign = format!("{repo_domain}/{repo_path_slug}");
-    let flock = fetch_flock_by_slugs(&mut conn, &repo_sign, flock_slug)?;
+    let flock = fetch_flock_by_path(&mut conn, &repo_sign, flock_slug)?;
 
     conn.transaction::<_, AppError, _>(|conn| {
         let existing = skill_ratings::table

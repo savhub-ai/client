@@ -249,6 +249,7 @@ pub fn get_repo_detail(domain: &str, path_slug: &str) -> Result<RepoDetailRespon
     } else {
         skills::table
             .filter(skills::flock_id.eq_any(&flock_ids))
+            .filter(skills::soft_deleted_at.is_null())
             .select(SkillRow::as_select())
             .load::<SkillRow>(&mut conn)?
     };
@@ -396,6 +397,7 @@ fn persist_flock_import(
         repo_id: repo.id,
         slug: flock_slug.to_string(),
         name: document.name.clone(),
+        path: String::new(),
         keywords: vec![],
         description: document.description.clone(),
         version: document.version.clone(),
@@ -419,6 +421,7 @@ fn persist_flock_import(
     };
     let flock_changeset = FlockChangeset {
         name: Some(document.name.clone()),
+        path: None,
         keywords: None,
         description: Some(document.description.clone()),
         version: document.version.clone(),
@@ -650,6 +653,7 @@ pub fn get_flock_detail(
     let users = load_users_map(&mut conn, vec![flock.imported_by_user_id])?;
     let skills = skills::table
         .filter(skills::flock_id.eq(flock.id))
+        .filter(skills::soft_deleted_at.is_null())
         .order(skills::slug.asc())
         .select(SkillRow::as_select())
         .load::<SkillRow>(&mut conn)?;
@@ -693,6 +697,7 @@ pub fn get_flock_by_id(
     let users = load_users_map(&mut conn, vec![flock.imported_by_user_id])?;
     let skills = skills::table
         .filter(skills::flock_id.eq(flock.id))
+        .filter(skills::soft_deleted_at.is_null())
         .order(skills::slug.asc())
         .select(SkillRow::as_select())
         .load::<SkillRow>(&mut conn)?;
@@ -727,6 +732,7 @@ pub(crate) fn load_flock_skill_counts(
     }
     let rows = skills::table
         .filter(skills::flock_id.eq_any(flock_ids))
+        .filter(skills::soft_deleted_at.is_null())
         .select(SkillRow::as_select())
         .load::<SkillRow>(conn)?;
     let mut counts = HashMap::new();

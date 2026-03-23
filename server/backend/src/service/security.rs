@@ -9,7 +9,7 @@ use shared::{
 use uuid::Uuid;
 
 use super::helpers::{
-    db_conn, fetch_flock_by_slugs, insert_audit_log, load_users_map, user_summary_from_row,
+    db_conn, fetch_flock_by_path, insert_audit_log, load_users_map, user_summary_from_row,
 };
 use super::llm_eval::{
     self, FileEntry, FileManifestEntry, SkillEvalContext, detect_injection_patterns,
@@ -37,7 +37,7 @@ pub fn update_flock_security_status(
     require_staff(auth)?;
     let mut conn = db_conn()?;
     let repo_sign = format!("{repo_domain}/{repo_path_slug}");
-    let flock = fetch_flock_by_slugs(&mut conn, &repo_sign, flock_slug)?;
+    let flock = fetch_flock_by_path(&mut conn, &repo_sign, flock_slug)?;
 
     let status_str = security_status_to_str(request.security_status);
 
@@ -86,7 +86,7 @@ pub fn update_skill_security_status(
     require_staff(auth)?;
     let mut conn = db_conn()?;
     let repo_sign = format!("{repo_domain}/{repo_path_slug}");
-    let flock = fetch_flock_by_slugs(&mut conn, &repo_sign, flock_slug)?;
+    let flock = fetch_flock_by_path(&mut conn, &repo_sign, flock_slug)?;
 
     let status_str = security_status_to_str(request.security_status);
 
@@ -919,7 +919,7 @@ pub fn list_flock_scans_by_slugs(
 ) -> Result<SecurityScanListResponse, AppError> {
     let mut conn = db_conn()?;
     let repo_sign = format!("{repo_domain}/{repo_path_slug}");
-    let flock = fetch_flock_by_slugs(&mut conn, &repo_sign, flock_slug)?;
+    let flock = fetch_flock_by_path(&mut conn, &repo_sign, flock_slug)?;
     list_security_scans("flock", flock.id)
 }
 

@@ -8,11 +8,11 @@ use shared::{
 };
 
 use super::helpers::{
-    DownloadResult, db_conn, ensure_skill_visible, fetch_owner, fetch_skill_by_slug,
-    fetch_skill_versions, load_skill_versions_map, load_users_map, locate_skill_version,
-    parse_files, resolve_latest_skill_version, score_text, skill_item_from_rows,
-    user_summary_from_row, version_detail_from_skill, version_summary_from_skill, viewer_is_admin,
-    viewer_is_staff, zip_files,
+    DownloadResult, db_conn, ensure_skill_visible, fetch_owner, fetch_skill_by_path,
+    fetch_skill_by_slug, fetch_skill_versions, load_skill_versions_map, load_users_map,
+    locate_skill_version, parse_files, resolve_latest_skill_version, score_text,
+    skill_item_from_rows, user_summary_from_row, version_detail_from_skill,
+    version_summary_from_skill, viewer_is_admin, viewer_is_staff, zip_files,
 };
 use crate::auth::{AuthContext, RequestUser};
 use crate::error::AppError;
@@ -44,52 +44,39 @@ pub fn list_skills(
     // Precise lookup by repo git_url + path
     if let Some(ref url) = repo_url {
         if let Some(ref p) = path {
-            let repo = repos::table
-                .filter(repos::git_url.eq(url))
-                .select(RepoRow::as_select())
-                .first::<RepoRow>(&mut conn)
-                .optional()?;
-            if let Some(repo) = repo {
-                let row = dsl::skills
-                    .filter(dsl::repo_id.eq(repo.id))
-                    .filter(dsl::path.eq(p))
-                    .filter(dsl::soft_deleted_at.is_null())
-                    .select(SkillRow::as_select())
-                    .first::<SkillRow>(&mut conn)
-                    .optional()?;
-                return match row {
-                    Some(row) => {
-                        if !viewer_is_staff(viewer) && row.moderation_status != "active" {
-                            return Ok(PagedResponse {
-                                items: Vec::new(),
-                                next_cursor: None,
-                            });
-                        }
-                        let owners = load_skill_owners(&mut conn, &[&row])?;
-                        let latest = row
-                            .latest_version_id
-                            .map(|id| load_skill_versions_map(&mut conn, vec![id]))
-                            .transpose()?
-                            .unwrap_or_default();
-                        let owner = owners
-                            .get(&row.flock_id)
-                            .ok_or_else(|| AppError::Internal("missing skill owner".to_string()))?;
-                        let lv = row.latest_version_id.and_then(|id| latest.get(&id));
-                        Ok(PagedResponse {
-                            items: vec![skill_item_from_rows(&row, &repo.git_url, owner, lv)],
+            let row = fetch_skill_by_path(&mut conn, url, p)?;
+            return match row {
+                Some(row) => {
+                    if !viewer_is_staff(viewer) && row.moderation_status != "active" {
+                        return Ok(PagedResponse {
+                            items: Vec::new(),
                             next_cursor: None,
-                        })
+                        });
                     }
-                    None => Ok(PagedResponse {
-                        items: Vec::new(),
+                    let repo = repos::table
+                        .find(row.repo_id)
+                        .select(RepoRow::as_select())
+                        .first::<RepoRow>(&mut conn)?;
+                    let owners = load_skill_owners(&mut conn, &[&row])?;
+                    let latest = row
+                        .latest_version_id
+                        .map(|id| load_skill_versions_map(&mut conn, vec![id]))
+                        .transpose()?
+                        .unwrap_or_default();
+                    let owner = owners
+                        .get(&row.flock_id)
+                        .ok_or_else(|| AppError::Internal("missing skill owner".to_string()))?;
+                    let lv = row.latest_version_id.and_then(|id| latest.get(&id));
+                    Ok(PagedResponse {
+                        items: vec![skill_item_from_rows(&row, &repo.git_url, owner, lv)],
                         next_cursor: None,
-                    }),
-                };
-            }
-            return Ok(PagedResponse {
-                items: Vec::new(),
-                next_cursor: None,
-            });
+                    })
+                }
+                None => Ok(PagedResponse {
+                    items: Vec::new(),
+                    next_cursor: None,
+                }),
+            };
         }
     }
 

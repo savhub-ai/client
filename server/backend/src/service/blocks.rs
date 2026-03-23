@@ -4,7 +4,7 @@ use serde_json::json;
 use shared::{BlockedFlockDto, DeleteResponse, FlockBlockListResponse};
 use uuid::Uuid;
 
-use super::helpers::{db_conn, fetch_flock_by_slugs, insert_audit_log};
+use super::helpers::{db_conn, fetch_flock_by_path, insert_audit_log};
 use crate::auth::AuthContext;
 use crate::error::AppError;
 use crate::models::{FlockRow, NewSkillBlockRow, RepoRow, SkillBlockRow};
@@ -18,7 +18,7 @@ pub fn block_flock(
 ) -> Result<DeleteResponse, AppError> {
     let mut conn = db_conn()?;
     let repo_sign = format!("{repo_domain}/{repo_path_slug}");
-    let flock = fetch_flock_by_slugs(&mut conn, &repo_sign, flock_slug)?;
+    let flock = fetch_flock_by_path(&mut conn, &repo_sign, flock_slug)?;
 
     let existing = skill_blocks::table
         .filter(skill_blocks::user_id.eq(auth.user.id))
@@ -62,7 +62,7 @@ pub fn unblock_flock(
 ) -> Result<DeleteResponse, AppError> {
     let mut conn = db_conn()?;
     let repo_sign = format!("{repo_domain}/{repo_path_slug}");
-    let flock = fetch_flock_by_slugs(&mut conn, &repo_sign, flock_slug)?;
+    let flock = fetch_flock_by_path(&mut conn, &repo_sign, flock_slug)?;
 
     let deleted = diesel::delete(
         skill_blocks::table

@@ -12,17 +12,14 @@ fn is_default_security(summary: &SecuritySummary) -> bool {
 pub struct RegistryFlock {
     #[serde(default)]
     pub schema_version: u32,
-    #[serde(default)]
-    pub sign: String,
-    #[serde(default, alias = "repo_sign")]
+    #[serde(default, alias = "repo_url")]
     pub repo: String,
     #[serde(default)]
     pub slug: String,
     pub name: String,
     #[serde(default)]
     pub description: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
+    pub path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
     #[serde(default)]

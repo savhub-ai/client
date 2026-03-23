@@ -142,39 +142,63 @@ pub fn db_conn() -> Result<crate::db::PgPooledConnection, AppError> {
         .map_err(|error| AppError::Internal(error.to_string()))
 }
 
-pub fn fetch_skill_by_slug(
+pub fn fetch_skill_by_path(
     conn: &mut PgConnection,
-    slug_value: &str,
+    repo_url: &str,
+    path: &str,
 ) -> Result<Option<SkillRow>, AppError> {
+    let repo_id = repos::table
+        .filter(repos::git_url.eq(repo_url))
+        .select(repos::id)
+        .first::<Uuid>(conn)
+        .optional()?;
+    let Some(repo_id) = repo_id else {
+        return Ok(None);
+    };
     skills::table
-        .filter(skills::slug.eq(slug_value))
+        .filter(skills::repo_id.eq(repo_id))
+        .filter(skills::path.eq(path))
+        .filter(skills::soft_deleted_at.is_null())
         .select(SkillRow::as_select())
         .first::<SkillRow>(conn)
         .optional()
         .map_err(Into::into)
 }
 
-pub fn fetch_flock_by_slugs(
+pub fn fetch_skill_by_slug(
+    conn: &mut PgConnection,
+    slug_value: &str,
+) -> Result<Option<SkillRow>, AppError> {
+    skills::table
+        .filter(skills::slug.eq(slug_value))
+        .filter(skills::soft_deleted_at.is_null())
+        .select(SkillRow::as_select())
+        .first::<SkillRow>(conn)
+        .optional()
+        .map_err(Into::into)
+}
+
+pub fn fetch_flock_by_path(
     conn: &mut PgConnection,
     repo_url: &str,
-    flock_slug: &str,
+    path: &str,
 ) -> Result<FlockRow, AppError> {
     let repo_id = repos::table
-        .filter(repos::git_url.eq(&repo_url))
+        .filter(repos::git_url.eq(repo_url))
         .select(repos::id)
         .first::<Uuid>(conn)
         .optional()?
         .ok_or_else(|| AppError::NotFound(format!("repo `{repo_url}` does not exist")))?;
     flocks::table
         .filter(flocks::repo_id.eq(repo_id))
-        .filter(flocks::slug.eq(flock_slug))
+        .filter(flocks::slug.eq(path).or(flocks::path.eq(path)))
         .filter(flocks::soft_deleted_at.is_null())
         .select(FlockRow::as_select())
         .first::<FlockRow>(conn)
         .optional()?
         .ok_or_else(|| {
             AppError::NotFound(format!(
-                "flock `{flock_slug}` does not exist under repo `{repo_url}`"
+                "flock `{path}` does not exist under repo `{repo_url}`"
             ))
         })
 }

@@ -1223,6 +1223,7 @@ pub(crate) fn persist_auto_import_flock(
             diesel::update(flocks::table.find(existing.id))
                 .set(FlockChangeset {
                     name: Some(flock_name.to_string()),
+                    path: Some(source_path.to_string()),
                     description: Some(flock_description.to_string()),
                     version: None,
                     source: Some(flock_source.clone()),
@@ -1240,6 +1241,7 @@ pub(crate) fn persist_auto_import_flock(
                     repo_id: repo.id,
                     slug: flock_slug.to_string(),
                     name: flock_name.to_string(),
+                    path: source_path.to_string(),
                     keywords: vec![],
                     description: flock_description.to_string(),
                     version: None,
