@@ -229,12 +229,11 @@ fn registry_skill_from_imported(item: ImportedSkillRecord) -> RegistrySkill {
 fn registry_flock_from_summary(item: FlockSummary) -> RegistryFlock {
     RegistryFlock {
         schema_version: 1,
-        sign: String::new(),
         repo: item.repo_url,
         slug: item.slug,
         name: item.name,
         description: item.description,
-        path: None,
+        path: String::new(),
         version: item.version,
         status: enum_string(&item.status),
         visibility: item.visibility.map(|value| enum_string(&value)),
@@ -246,12 +245,11 @@ fn registry_flock_from_summary(item: FlockSummary) -> RegistryFlock {
 fn registry_flock_from_detail(detail: FlockDetailResponse) -> RegistryFlock {
     RegistryFlock {
         schema_version: 1,
-        sign: String::new(),
         repo: detail.flock.repo_url,
         slug: detail.flock.slug,
         name: detail.flock.name,
         description: detail.flock.description,
-        path: detail.document.path,
+        path: detail.document.path.unwrap_or_default(),
         version: detail.flock.version,
         status: enum_string(&detail.flock.status),
         visibility: detail.flock.visibility.map(|value| enum_string(&value)),
