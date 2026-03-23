@@ -3234,13 +3234,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
 
         // Merge CLI --skills/--skip-skills/--flocks/--skip-flocks
         for s in &args.add_skills {
-            if !s.is_empty()
-                && !cfg
-                    .skills
-                    .manual_added
-                    .iter()
-                    .any(|e| e.path == *s)
-            {
+            if !s.is_empty() && !cfg.skills.manual_added.iter().any(|e| e.path == *s) {
                 cfg.skills
                     .manual_added
                     .push(savhub_local::presets::ProjectAddedSkill {

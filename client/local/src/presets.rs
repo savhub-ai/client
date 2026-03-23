@@ -397,10 +397,7 @@ fn lockfile_to_project_added_skills(lockfile: &Lockfile) -> Vec<ProjectAddedSkil
 fn project_added_skills_to_lockfile(skills: &[ProjectAddedSkill]) -> Lockfile {
     let mut lockfile = Lockfile::default();
     for skill in normalize_added_skills(skills) {
-        let repo_url = skill
-            .repo
-            .clone()
-            .unwrap_or_else(|| "unknown".to_string());
+        let repo_url = skill.repo.clone().unwrap_or_else(|| "unknown".to_string());
         lockfile.repos.entry(repo_url).or_default().insert(
             skill.path,
             LockEntry {
