@@ -2618,7 +2618,7 @@ fn cmd_flock(_opts: &GlobalOpts, command: FlockCommand) -> Result<()> {
                 return Ok(());
             }
             for flock in &flocks {
-                let skill_count = registry::list_flock_skill_slugs(&flock.slug)
+                let skill_count = registry::list_flock_skills(&flock.repo, &flock.slug)
                     .map(|s| s.len())
                     .unwrap_or(0);
                 println!(
@@ -2633,7 +2633,8 @@ fn cmd_flock(_opts: &GlobalOpts, command: FlockCommand) -> Result<()> {
             println!("\n{} flock(s)", flocks.len());
         }
         FlockCommand::Show(args) => {
-            let flock = registry::get_flock_by_slug(&args.slug)?;
+            let flock_ref = savhub_local::selectors::SelectorSkillRef::parse(&args.slug);
+            let flock = registry::get_flock_by_slug(&flock_ref.repo, &flock_ref.path)?;
             let Some(flock) = flock else {
                 println!(
                     "Flock \"{}\" not found. Run `savhub flock list` to see available flocks.",
@@ -2646,7 +2647,7 @@ fn cmd_flock(_opts: &GlobalOpts, command: FlockCommand) -> Result<()> {
             if !flock.description.is_empty() {
                 println!("Description: {}", flock.description);
             }
-            let skills = registry::list_skills_in_flock(&flock.slug)?;
+            let skills = registry::list_skills_in_flock(&flock.repo, &flock.slug)?;
             if skills.is_empty() {
                 println!("Skills:      (none)");
             } else {
@@ -2657,12 +2658,13 @@ fn cmd_flock(_opts: &GlobalOpts, command: FlockCommand) -> Result<()> {
             }
         }
         FlockCommand::Fetch(args) => {
-            let flock = registry::get_flock_by_slug(&args.slug)?;
+            let flock_ref = savhub_local::selectors::SelectorSkillRef::parse(&args.slug);
+            let flock = registry::get_flock_by_slug(&flock_ref.repo, &flock_ref.path)?;
             let Some(flock) = flock else {
                 println!("Flock \"{}\" not found.", args.slug);
                 return Ok(());
             };
-            let skill_slugs = registry::list_flock_skill_slugs(&flock.slug)?;
+            let skill_slugs = registry::list_flock_skills(&flock.repo, &flock.slug)?;
             if skill_slugs.is_empty() {
                 println!("Flock \"{}\" has no skills.", flock.slug);
                 return Ok(());
@@ -2964,7 +2966,8 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         let flock_skill_counts: std::collections::HashMap<String, usize> = matched_flocks
             .iter()
             .map(|slug| {
-                let count = registry::list_flock_skill_slugs(slug)
+                let flock_ref = savhub_local::selectors::SelectorSkillRef::parse(slug);
+                let count = registry::list_flock_skills(&flock_ref.repo, &flock_ref.path)
                     .map(|v| v.len())
                     .unwrap_or(0);
                 (slug.clone(), count)
@@ -3017,52 +3020,54 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         }
     }
 
-    // ── Expand selected flocks into skill slugs ──
+    // ── Expand selected flocks into skills (repo_url, skill_path) ──
     // Only use selectors that were selected (not skipped)
-    let mut all_skills: Vec<String> = Vec::new();
+    // Track skills as (repo, path) for fetch, and slug for diff/display.
+    let mut skill_map: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
     for m in &result.matched {
         if !selected_selectors.contains(&m.selector.name) {
             continue;
         }
         for skill in &m.skills {
-            let skill_sign = skill.to_string();
-            if !all_skills.contains(&skill_sign) {
-                all_skills.push(skill_sign);
-            }
+            skill_map
+                .entry(skill.to_string())
+                .or_insert_with(|| (skill.repo.clone(), skill.path.clone()));
         }
     }
     for flock_slug in &selected_flocks {
-        if let Ok(flock_skills) = registry::list_flock_skill_slugs(flock_slug) {
+        let flock_ref = savhub_local::selectors::SelectorSkillRef::parse(flock_slug);
+        if let Ok(flock_skills) = registry::list_skills_in_flock(&flock_ref.repo, &flock_ref.path) {
             if flock_skills.is_empty() {
                 eprintln!(
                     "  \x1b[33m!\x1b[0m flock \"{flock_slug}\" has 0 skills in the registry API"
                 );
             }
             for skill in flock_skills {
-                if !all_skills.contains(&skill) {
-                    all_skills.push(skill);
-                }
+                skill_map
+                    .entry(skill.slug.clone())
+                    .or_insert_with(|| (flock_ref.repo.clone(), skill.path.clone()));
             }
         }
     }
 
     // ── Include CLI --flocks skills ──
     for flock_slug in &args.add_flocks {
-        if let Ok(flock_skills) = registry::list_flock_skill_slugs(flock_slug) {
+        let flock_ref = savhub_local::selectors::SelectorSkillRef::parse(flock_slug);
+        if let Ok(flock_skills) = registry::list_skills_in_flock(&flock_ref.repo, &flock_ref.path) {
             for skill in flock_skills {
-                if !all_skills.contains(&skill) {
-                    all_skills.push(skill);
-                }
+                skill_map
+                    .entry(skill.slug.clone())
+                    .or_insert_with(|| (flock_ref.repo.clone(), skill.path.clone()));
             }
         }
     }
 
     // ── Include CLI --skills directly ──
     for s in &args.add_skills {
-        let slug = s.rsplit('/').next().unwrap_or(s).to_string();
-        if !slug.is_empty() && !all_skills.contains(&slug) {
-            all_skills.push(slug);
-        }
+        let skill_ref = savhub_local::selectors::SelectorSkillRef::parse(s);
+        skill_map
+            .entry(skill_ref.to_string())
+            .or_insert_with(|| (skill_ref.repo.clone(), skill_ref.path.clone()));
     }
 
     // ── Filter out skipped skills (existing config + CLI --skip-skills) ──
@@ -3074,9 +3079,10 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         }
     }
     let skipped = &skipped;
-    let desired_skills: BTreeSet<String> = all_skills
-        .into_iter()
+    let desired_skills: BTreeSet<String> = skill_map
+        .keys()
         .filter(|s| !registry::skill_matches_skipped(s, skipped))
+        .cloned()
         .collect();
 
     // ── Compute diff against current lockfile ──
@@ -3303,7 +3309,11 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     if !to_add.is_empty() {
         eprintln!("Fetching {} skill(s)...", to_add.len());
     }
-    let batch_results = registry::fetch_skills_batch(&to_add)?;
+    let to_add_pairs: Vec<(String, String)> = to_add
+        .iter()
+        .filter_map(|slug| skill_map.get(slug).cloned())
+        .collect();
+    let batch_results = registry::fetch_skills_batch(&to_add_pairs)?;
 
     // Build lock entries: start from current, remove deleted, add new
     let mut lock = current_lock.clone();

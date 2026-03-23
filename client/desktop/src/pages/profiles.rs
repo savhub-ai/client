@@ -836,9 +836,9 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                             result.flocks.iter().map(|s| s.to_string()).collect();
                         let mut skills: Vec<String> =
                             result.skills.iter().map(|s| s.to_string()).collect();
-                        for flock_sign in &flocks {
+                        for flock_ref in &result.flocks {
                             if let Ok(flock_skills) =
-                                savhub_local::registry::list_flock_skill_slugs(flock_sign)
+                                savhub_local::registry::list_flock_skills(&flock_ref.repo, &flock_ref.path)
                             {
                                 for s in flock_skills {
                                     if !skills.contains(&s) {
@@ -939,7 +939,14 @@ fn RescanModal(project_path: String, mut show: Signal<bool>, mut version: Signal
                             .cloned()
                             .collect();
 
-                        if let Ok(results) = savhub_local::registry::fetch_skills_batch(&filtered) {
+                        let filtered_pairs: Vec<(String, String)> = filtered
+                            .iter()
+                            .map(|s| {
+                                let r = savhub_local::selectors::SelectorSkillRef::parse(s);
+                                (r.repo, r.path)
+                            })
+                            .collect();
+                        if let Ok(results) = savhub_local::registry::fetch_skills_batch(&filtered_pairs) {
                             let agents = savhub_local::clients::resolve_clients(&checked_bg);
                             for info in &results {
                                 for client in &agents {

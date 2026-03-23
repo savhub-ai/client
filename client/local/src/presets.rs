@@ -901,7 +901,7 @@ fn resolve_project_skills_internal(workdir: &Path) -> Result<Vec<ResolvedProject
         }
         // Expand flocks from each matched selector
         for flock_ref in &matched.flocks {
-            if let Ok(skill_slugs) = crate::registry::list_flock_skill_slugs(&flock_ref.path) {
+            if let Ok(skill_slugs) = crate::registry::list_flock_skills(&flock_ref.repo, &flock_ref.path) {
                 for skill_slug in skill_slugs {
                     let entry = sources.entry(skill_slug).or_default();
                     add_unique(&mut entry.flocks, &flock_ref.path);
@@ -914,7 +914,7 @@ fn resolve_project_skills_internal(workdir: &Path) -> Result<Vec<ResolvedProject
             if let Ok(repo_flocks) = crate::registry::list_repo_flock_refs(&repo.git_url) {
                 for flock_ref in &repo_flocks {
                     if let Ok(skill_slugs) =
-                        crate::registry::list_flock_skill_slugs(&flock_ref.path)
+                        crate::registry::list_flock_skills(&flock_ref.repo, &flock_ref.path)
                     {
                         for skill_slug in skill_slugs {
                             let entry = sources.entry(skill_slug).or_default();
@@ -941,7 +941,8 @@ fn resolve_project_skills_internal(workdir: &Path) -> Result<Vec<ResolvedProject
     }
     all_flocks.retain(|s| !config.flocks.manual_skipped.contains(s));
     for flock_slug in &all_flocks {
-        if let Ok(skill_slugs) = crate::registry::list_flock_skill_slugs(flock_slug) {
+        let flock_ref = crate::selectors::SelectorSkillRef::parse(flock_slug);
+        if let Ok(skill_slugs) = crate::registry::list_flock_skills(&flock_ref.repo, &flock_ref.path) {
             for skill_slug in skill_slugs {
                 let entry = sources.entry(skill_slug).or_default();
                 add_unique(&mut entry.flocks, flock_slug);

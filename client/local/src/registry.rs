@@ -637,15 +637,27 @@ pub fn list_flocks() -> Result<Vec<RegistryFlock>> {
     }
 }
 
-pub fn get_flock_by_slug(slug: &str) -> Result<Option<RegistryFlock>> {
-    if let Some(detail) = remote_flock_detail(slug)? {
+pub fn get_flock_by_slug(repo_url: &str, path: &str) -> Result<Option<RegistryFlock>> {
+    let Some(repo) = remote_repo_detail(repo_url)? else {
+        return Ok(None);
+    };
+    let Some(summary) = repo.flocks.into_iter().find(|f| f.slug == path) else {
+        return Ok(None);
+    };
+    if let Some(detail) = remote_flock_detail_by_id(&summary.id.to_string())? {
         return Ok(Some(registry_flock_from_detail(detail)));
     }
-    Ok(find_flock_summary(slug)?.map(registry_flock_from_summary))
+    Ok(Some(registry_flock_from_summary(summary)))
 }
 
-pub fn list_skills_in_flock(flock_slug: &str) -> Result<Vec<RegistrySkill>> {
-    let Some(detail) = remote_flock_detail(flock_slug)? else {
+pub fn list_skills_in_flock(repo_url: &str, path: &str) -> Result<Vec<RegistrySkill>> {
+    let Some(repo) = remote_repo_detail(repo_url)? else {
+        return Ok(Vec::new());
+    };
+    let Some(summary) = repo.flocks.into_iter().find(|f| f.slug == path) else {
+        return Ok(Vec::new());
+    };
+    let Some(detail) = remote_flock_detail_by_id(&summary.id.to_string())? else {
         return Ok(Vec::new());
     };
     Ok(detail
@@ -655,15 +667,16 @@ pub fn list_skills_in_flock(flock_slug: &str) -> Result<Vec<RegistrySkill>> {
         .collect())
 }
 
-pub fn list_flock_skill_slugs(flock_slug: &str) -> Result<Vec<String>> {
-    Ok(list_skills_in_flock(flock_slug)?
+/// List skill paths in the given flock, without fetching full skill details.
+pub fn list_flock_skills(repo_url: &str, path: &str) -> Result<Vec<String>> {
+    Ok(list_skills_in_flock(repo_url, path)?
         .into_iter()
         .map(|skill| skill.slug)
         .collect())
 }
 
-pub fn list_repo_flock_refs(repo_sign: &str) -> Result<Vec<crate::selectors::SelectorSkillRef>> {
-    let Some(detail) = remote_repo_detail(repo_sign)? else {
+pub fn list_repo_flock_refs(repo_url: &str) -> Result<Vec<crate::selectors::SelectorSkillRef>> {
+    let Some(detail) = remote_repo_detail(repo_url)? else {
         return Ok(Vec::new());
     };
     Ok(detail
@@ -676,41 +689,39 @@ pub fn list_repo_flock_refs(repo_sign: &str) -> Result<Vec<crate::selectors::Sel
         .collect())
 }
 
-pub fn fetch_skills_batch(slugs: &[String]) -> Result<Vec<FetchedSkillInfo>> {
+pub fn fetch_skills_batch(repo_paths: &[(String, String)]) -> Result<Vec<FetchedSkillInfo>> {
     let mut seen = BTreeSet::new();
-    let mut requested = Vec::new();
-    for slug in slugs {
-        let slug = slug.trim();
-        if !slug.is_empty() && seen.insert(slug.to_string()) {
-            requested.push(slug.to_string());
+    let mut requested: Vec<(String, String)> = Vec::new();
+    for (repo_url, skill_path) in repo_paths {
+        let repo_url = repo_url.trim().to_string();
+        let skill_path = skill_path.trim().to_string();
+        let key = format!("{repo_url}/{skill_path}");
+        if !key.is_empty() && seen.insert(key) {
+            requested.push((repo_url, skill_path));
         }
     }
 
     let config_dir = get_config_dir()?;
     let mut results = Vec::new();
 
-    for slug in requested {
-        let descriptor = match remote_skill_detail(&slug)? {
+    for (repo_url, skill_path) in &requested {
+        let label = format!("{repo_url}/{skill_path}");
+        let repo = match remote_repo_detail(repo_url)? {
             Some(value) => value,
             None => {
-                eprintln!("  \x1b[33m!\x1b[0m {slug}: not found in registry API");
+                eprintln!("  \x1b[33m!\x1b[0m {label}: repo not found in registry API");
                 continue;
             }
         };
-        let repo = match remote_repo_detail(&descriptor.repo_sign)? {
-            Some(value) => value,
-            None => {
-                eprintln!(
-                    "  \x1b[33m!\x1b[0m {slug}: repo `{}` not found in registry API",
-                    descriptor.repo_sign
-                );
-                continue;
-            }
+        // Find the skill across all flocks in this repo
+        let descriptor = find_skill_descriptor_in_repo(&repo, skill_path);
+        let Some(descriptor) = descriptor else {
+            eprintln!("  \x1b[33m!\x1b[0m {label}: skill not found in registry API");
+            continue;
         };
         let Some(git_hash) = normalize_non_empty(repo.document.git_hash.clone()) else {
             eprintln!(
-                "  \x1b[33m!\x1b[0m {slug}: repo `{}` has no git_hash",
-                descriptor.repo_sign
+                "  \x1b[33m!\x1b[0m {label}: repo has no git_hash",
             );
             continue;
         };
@@ -724,11 +735,12 @@ pub fn fetch_skills_batch(slugs: &[String]) -> Result<Vec<FetchedSkillInfo>> {
         let local_path = match cache_remote_skill_from_repo(&spec) {
             Ok(path) => path,
             Err(error) => {
-                eprintln!("  \x1b[33m!\x1b[0m {slug}: {error}");
+                eprintln!("  \x1b[33m!\x1b[0m {label}: {error}");
                 continue;
             }
         };
 
+        let slug = skill_path.clone();
         let _ = write_repo_skill_origin(
             &local_path,
             &RepoSkillOrigin {
@@ -766,4 +778,26 @@ pub fn fetch_skills_batch(slugs: &[String]) -> Result<Vec<FetchedSkillInfo>> {
     }
 
     Ok(results)
+}
+
+/// Find a skill's descriptor by looking through all flocks in a repo detail response.
+fn find_skill_descriptor_in_repo(
+    repo: &RepoDetailResponse,
+    skill_path: &str,
+) -> Option<RemoteSkillDescriptor> {
+    let repo_sign = git_url_to_route_path(&repo.document.git_url);
+    for flock in &repo.flocks {
+        let detail = remote_flock_detail_by_id(&flock.id.to_string()).ok()??;
+        for skill in &detail.skills {
+            if skill.path == skill_path || skill.slug == skill_path {
+                let skill_version = normalize_non_empty(skill.version.clone());
+                return Some(RemoteSkillDescriptor {
+                    repo_sign: repo_sign.clone(),
+                    skill_path: skill.path.clone(),
+                    skill_version,
+                });
+            }
+        }
+    }
+    None
 }
