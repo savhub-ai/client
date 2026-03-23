@@ -143,16 +143,22 @@ pub(crate) fn collect_skill_candidates(
         }
     }
 
-    if has_skill_md {
+    // Always recurse into subdirectories first to find nested skills.
+    let before = out.len();
+    for (path, relative) in subdirs {
+        collect_skill_candidates(&path, &relative, out)?;
+    }
+    let found_children = out.len() > before;
+
+    // Only register this directory as a skill candidate if it has a SKILL.md
+    // and no child directories contained their own SKILL.md.  This prevents a
+    // root-level SKILL.md from swallowing an entire repo of sub-skills (e.g.
+    // repos where each subdirectory is a standalone skill).
+    if has_skill_md && !found_children {
         out.push(SkillCandidate {
             path: root.to_path_buf(),
             relative_dir: relative_dir.to_string(),
         });
-        return Ok(());
-    }
-
-    for (path, relative) in subdirs {
-        collect_skill_candidates(&path, &relative, out)?;
     }
     Ok(())
 }
