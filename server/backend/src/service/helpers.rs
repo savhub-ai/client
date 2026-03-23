@@ -371,14 +371,20 @@ pub fn parse_tag_map(value: &Value) -> indexmap::IndexMap<String, String> {
 
 pub fn parse_frontmatter(markdown: &str) -> Value {
     let markdown = markdown.trim_start_matches('\u{feff}');
-    if !markdown.starts_with("---") {
-        return Value::Object(Map::new());
+    if markdown.starts_with("---") {
+        let remainder = &markdown[3..];
+        if let Some((yaml, _body)) = remainder.split_once("\n---") {
+            return serde_saphyr::from_str::<Value>(yaml.trim())
+                .unwrap_or_else(|_| Value::Object(Map::new()));
+        }
     }
-    let remainder = &markdown[3..];
-    let Some((yaml, _body)) = remainder.split_once("\n---") else {
-        return Value::Object(Map::new());
-    };
-    serde_saphyr::from_str::<Value>(yaml.trim()).unwrap_or_else(|_| Value::Object(Map::new()))
+    // Fall back: try parsing the entire content as YAML (e.g. plain YAML without
+    // frontmatter delimiters). Only accept it when the result is a JSON object so
+    // that a regular markdown file is not misinterpreted.
+    match serde_saphyr::from_str::<Value>(markdown.trim()) {
+        Ok(value @ Value::Object(_)) => value,
+        _ => Value::Object(Map::new()),
+    }
 }
 
 pub fn extract_summary(parsed: &Value, markdown: &str) -> Option<String> {
