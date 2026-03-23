@@ -484,11 +484,21 @@ pub fn run_automated_scans_with_files(
 ///
 /// Returns `true` if a scan was actually executed, `false` if files couldn't
 /// be loaded (e.g. checkout missing).
-pub fn run_static_scan_for_skill(
-    conn: &mut PgConnection,
-    skill: &SkillRow,
-) -> Result<bool, AppError> {
-    let files = load_skill_files_from_repo_checkout(conn, skill);
+pub fn run_static_scan_for_skill(pool: &PgPool, skill: &SkillRow) -> Result<bool, AppError> {
+    let repo = {
+        let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
+        fetch_repo_for_skill(&mut conn, skill)
+    };
+    let Some(repo) = repo else {
+        tracing::debug!(
+            "[static-scan] repo not found for skill {} ({})",
+            skill.slug,
+            skill.id,
+        );
+        return Ok(false);
+    };
+
+    let files = load_skill_files_from_repo_checkout(&repo, skill);
     if files.is_empty() {
         tracing::debug!(
             "[static-scan] no files found for skill {} — skipping",
@@ -514,8 +524,9 @@ pub fn run_static_scan_for_skill(
         commit_hash: Some(skill.scan_commit_hash.clone()),
     };
 
+    let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
     run_automated_scans_with_files(
-        conn,
+        &mut conn,
         skill.flock_id,
         &[skill.clone()],
         &[scan_input],
@@ -562,12 +573,22 @@ pub async fn process_claimed_ai_scan_task(pool: &PgPool, skill: SkillRow) -> Res
         skill.id,
     );
 
-    let (files, static_result_opt) = {
+    let (mut files, repo, static_result_opt) = {
         let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
-        let files = load_skill_files_for_ai_eval(&mut conn, &skill);
+        let files = load_skill_files_from_versions(&mut conn, &skill);
+        let repo = if files.is_empty() {
+            fetch_repo_for_skill(&mut conn, &skill)
+        } else {
+            None
+        };
         let static_result_opt = load_latest_static_scan_result(&mut conn, skill.id)?;
-        (files, static_result_opt)
+        (files, repo, static_result_opt)
     };
+    if files.is_empty() {
+        if let Some(repo) = repo.as_ref() {
+            files = load_skill_files_from_repo_checkout(repo, &skill);
+        }
+    }
 
     if files.is_empty() {
         tracing::warn!(
@@ -658,14 +679,14 @@ pub async fn process_claimed_ai_scan_task(pool: &PgPool, skill: SkillRow) -> Res
                 ModerationVerdict::Clean => "verified",
             };
 
-            let conn2 = &mut pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
+            let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
 
             diesel::update(skills::table.find(skill.id))
                 .set(skills::security_status.eq(final_status))
-                .execute(conn2)?;
+                .execute(&mut conn)?;
             diesel::update(flocks::table.find(skill.flock_id))
                 .set(flocks::security_status.eq(final_status))
-                .execute(conn2)?;
+                .execute(&mut conn)?;
 
             // Merge LLM verdict into the version scan_summary
             if let Some(vid) = skill.latest_version_id {
@@ -675,7 +696,7 @@ pub async fn process_claimed_ai_scan_task(pool: &PgPool, skill: SkillRow) -> Res
                     "benign" | "clean" => ScanVerdict::Benign,
                     _ => ScanVerdict::Pending,
                 };
-                merge_llm_into_scan_summary(conn2, vid, llm_verdict, Some(&result.verdict));
+                merge_llm_into_scan_summary(&mut conn, vid, llm_verdict, Some(&result.verdict));
             }
 
             tracing::info!(
@@ -703,9 +724,20 @@ pub async fn process_claimed_ai_scan_task(pool: &PgPool, skill: SkillRow) -> Res
     Ok(())
 }
 
-/// Load file contents for AI evaluation from skill_versions or repo checkout.
-fn load_skill_files_for_ai_eval(conn: &mut PgConnection, skill: &SkillRow) -> Vec<FileContent> {
-    // Try skill_versions first (stored as Vec<StoredBundleFile>)
+fn fetch_repo_for_skill(conn: &mut PgConnection, skill: &SkillRow) -> Option<RepoRow> {
+    use crate::schema::repos;
+
+    repos::table
+        .find(skill.repo_id)
+        .select(RepoRow::as_select())
+        .first::<RepoRow>(conn)
+        .optional()
+        .ok()
+        .flatten()
+}
+
+/// Load file contents for AI evaluation from `skill_versions.files`.
+fn load_skill_files_from_versions(conn: &mut PgConnection, skill: &SkillRow) -> Vec<FileContent> {
     if let Some(vid) = skill.latest_version_id {
         let files_json: Option<serde_json::Value> = skill_versions::table
             .find(vid)
@@ -735,31 +767,11 @@ fn load_skill_files_for_ai_eval(conn: &mut PgConnection, skill: &SkillRow) -> Ve
             }
         }
     }
-
-    // Fallback 3: read directly from the repo checkout on disk
-    load_skill_files_from_repo_checkout(conn, skill)
+    vec![]
 }
 
 /// Read skill files directly from the repo checkout on disk.
-fn load_skill_files_from_repo_checkout(
-    conn: &mut PgConnection,
-    skill: &SkillRow,
-) -> Vec<FileContent> {
-    use crate::schema::repos;
-
-    // Look up the repo to get git_url and git_ref
-    let repo: Option<crate::models::RepoRow> = repos::table
-        .find(skill.repo_id)
-        .select(crate::models::RepoRow::as_select())
-        .first::<crate::models::RepoRow>(conn)
-        .optional()
-        .ok()
-        .flatten();
-
-    let Some(repo) = repo else {
-        return vec![];
-    };
-
+fn load_skill_files_from_repo_checkout(repo: &RepoRow, skill: &SkillRow) -> Vec<FileContent> {
     let config = &crate::state::app_state().config;
     let base_path = config.repo_checkout_base_path();
     let repo_dir = super::git_ops::cached_repo_dir(&base_path, &repo.git_url);

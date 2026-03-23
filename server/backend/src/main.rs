@@ -3,7 +3,7 @@ use salvo::cors::{Any, Cors};
 use salvo::http::Method;
 use salvo::prelude::*;
 use server::config::Config;
-use server::db::{new_pool, run_migrations};
+use server::db::{configured_pool_max_size, new_pool, run_migrations};
 use server::seed::ensure_seed_data;
 use server::state::init_state;
 
@@ -34,12 +34,19 @@ async fn main() -> Result<()> {
         Err(e) => tracing::error!("  git             = NOT FOUND: {e}"),
     }
 
+    let db_pool_max_size = configured_pool_max_size();
     let pool = new_pool(&config.database_url)?;
     {
         let mut conn = pool.get()?;
         run_migrations(&mut conn)?;
     }
     tracing::info!("  database        = connected, migrations applied");
+    tracing::info!("  db_pool_max_size = {}", db_pool_max_size);
+    tracing::info!("  index_job_concurrency = {}", config.max_parallel_index_jobs);
+    tracing::info!(
+        "  static_scan_concurrency = {}",
+        config.static_scan_concurrency
+    );
 
     // Security & AI diagnostics
     if config.ai_security_scan_enabled {
@@ -71,6 +78,17 @@ async fn main() -> Result<()> {
                 "  ai_provider     = NOT CONFIGURED (set SAVHUB_AI_PROVIDER and SAVHUB_AI_API_KEY)"
             );
         }
+    }
+
+    if config.max_parallel_index_jobs >= db_pool_max_size as usize {
+        tracing::warn!(
+            "  index_job_concurrency >= db_pool_max_size; concurrent indexing may contend with API traffic"
+        );
+    }
+    if config.static_scan_concurrency >= db_pool_max_size as usize {
+        tracing::warn!(
+            "  static_scan_concurrency >= db_pool_max_size; tune this if static scans pressure the pool"
+        );
     }
 
     let _state = init_state(config.clone(), pool.clone())?;

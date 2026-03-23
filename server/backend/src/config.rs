@@ -117,7 +117,7 @@ impl Config {
             static_scan_concurrency: env::var("SAVHUB_SECURITY_STATIC_SCAN_CONCURRENCY")
                 .ok()
                 .and_then(|v| v.parse().ok())
-                .unwrap_or(50),
+                .unwrap_or(5),
         })
     }
 }

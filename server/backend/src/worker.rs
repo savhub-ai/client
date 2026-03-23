@@ -459,8 +459,7 @@ fn run_static_scan_for_skill(pool: &PgPool, skill: SkillRow) {
     let slug = skill.slug.clone();
 
     let result = (|| -> Result<(), String> {
-        let mut conn = pool.get().map_err(|e| e.to_string())?;
-        match crate::service::security::run_static_scan_for_skill(&mut conn, &skill) {
+        match crate::service::security::run_static_scan_for_skill(pool, &skill) {
             Ok(true) => {
                 tracing::debug!("[static-scan] completed: skill={} ({})", slug, skill_id);
             }

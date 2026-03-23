@@ -174,11 +174,11 @@ pub async fn submit_index(
     let git_url = normalize_git_url(&request.git_url);
     let url_hash = hash_string(&git_url);
 
-    let mut conn = db_conn()?;
-
     // Only admins may set force=true
-    let is_admin =
-        matches!(auth.user.role, shared::UserRole::Admin) || is_site_admin(&mut conn, auth.user.id);
+    let is_admin = {
+        let mut conn = db_conn()?;
+        matches!(auth.user.role, shared::UserRole::Admin) || is_site_admin(&mut conn, auth.user.id)
+    };
     let force = request.force && is_admin;
     println!(
         "[index] user={} role={:?} request.force={} is_site_admin={} → force={}",
@@ -187,6 +187,7 @@ pub async fn submit_index(
 
     // Resolve the remote ref to a commit SHA before creating the job
     let commit_sha = resolve_remote_sha(&git_url, &request.git_ref).await?;
+    let mut conn = db_conn()?;
 
     // Check for an existing completed scan with the same url + sha
     if !force {
