@@ -31,7 +31,7 @@ RUN mkdir -p client/local/src && echo "" > client/local/src/lib.rs
 # Clean corrupted .cargo-ok sentinel files that can occur in cached registry sources.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
-    find /usr/local/cargo/registry/src -name .cargo-ok -exec rm -f {} + 2>/dev/null; \
+    find /usr/local/cargo/registry/src -name .cargo-ok -exec rm -rf {} + 2>/dev/null; \
     rm -rf /app/target/wasm32-unknown-unknown/release/deps/savhub_frontend* \
     && cd server/frontend && dx build --release --debug-symbols false \
     && mkdir -p /app/dist \
@@ -62,7 +62,7 @@ RUN mkdir -p client/local/src && echo "" > client/local/src/lib.rs
 # Clean corrupted .cargo-ok sentinel files that can occur in cached registry sources.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
-    find /usr/local/cargo/registry/src -name .cargo-ok -exec rm -f {} + 2>/dev/null; \
+    find /usr/local/cargo/registry/src -name .cargo-ok -exec rm -rf {} + 2>/dev/null; \
     cargo build --release -p server \
     && cp /app/target/release/server /app/savhub-server
 
