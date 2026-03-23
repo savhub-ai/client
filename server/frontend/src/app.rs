@@ -3275,7 +3275,11 @@ fn IndexPage(lang: String) -> Element {
             if token.trim().is_empty() || *loading_jobs.peek() {
                 return;
             }
-            loading_jobs.set(true);
+            // Only show loading spinner on initial load, not background refreshes
+            let show_loading = append || job_list.peek().is_empty();
+            if show_loading {
+                loading_jobs.set(true);
+            }
             let offset = if append {
                 job_list.peek().len() as i64
             } else {
