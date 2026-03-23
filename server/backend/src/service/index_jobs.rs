@@ -793,21 +793,19 @@ async fn do_auto_import(
 
         // Check ai_request_cache to see if flock metadata was already generated
         // for this commit — if so, reuse existing flock row data and skip AI.
-        let existing_flock_for_meta = {
+        let (existing_flock_for_meta, flock_meta_cached) = {
             let mut conn = db_conn()?;
-            flocks::table
+            let existing: Option<FlockRow> = flocks::table
                 .filter(flocks::repo_id.eq(repo.id))
                 .filter(flocks::slug.eq(&flock_slug))
                 .select(FlockRow::as_select())
                 .first::<FlockRow>(&mut conn)
-                .optional()?
+                .optional()?;
+            let cached = existing.as_ref().map_or(false, |f| {
+                has_cached_ai_request(&mut conn, "flock_metadata", f.id, &checkout.head_sha)
+            });
+            (existing, cached)
         };
-        let flock_meta_cached = existing_flock_for_meta.as_ref().map_or(false, |f| {
-            let mut conn = db_conn().ok();
-            conn.as_mut()
-                .map(|c| has_cached_ai_request(c, "flock_metadata", f.id, &checkout.head_sha))
-                .unwrap_or(false)
-        });
 
         let default_flock_name = derive_flock_name(&flock_slug, &repo_name);
         let (flock_name, flock_description) = if flock_meta_cached {
@@ -909,27 +907,26 @@ async fn do_auto_import(
                 &skills,
                 "scan_job.auto_import",
             )?;
-        }
 
-        // Record successful flock metadata in ai_request_cache so future
-        // re-indexes with the same commit can skip the AI call.
-        if !flock_meta_cached {
-            let mut conn = db_conn()?;
-            if let Ok(flock_row) = flocks::table
-                .filter(flocks::repo_id.eq(repo.id))
-                .filter(flocks::slug.eq(&flock_slug))
-                .select(FlockRow::as_select())
-                .first::<FlockRow>(&mut conn)
-            {
-                cache_ai_request(
-                    &mut conn,
-                    "flock_metadata",
-                    "flock",
-                    flock_row.id,
-                    &checkout.head_sha,
-                    true,
-                    None,
-                );
+            // Record successful flock metadata in ai_request_cache so future
+            // re-indexes with the same commit can skip the AI call.
+            if !flock_meta_cached {
+                if let Ok(flock_row) = flocks::table
+                    .filter(flocks::repo_id.eq(repo.id))
+                    .filter(flocks::slug.eq(&flock_slug))
+                    .select(FlockRow::as_select())
+                    .first::<FlockRow>(&mut conn)
+                {
+                    cache_ai_request(
+                        &mut conn,
+                        "flock_metadata",
+                        "flock",
+                        flock_row.id,
+                        &checkout.head_sha,
+                        true,
+                        None,
+                    );
+                }
             }
         }
 
@@ -974,13 +971,6 @@ async fn do_auto_import(
     }
 
     // Enhance repo metadata after all flocks are persisted.
-    //
-    // Check ai_request_cache for repo metadata.
-    let repo_meta_cached = {
-        let mut conn = db_conn()?;
-        has_cached_ai_request(&mut conn, "repo_metadata", repo.id, &checkout.head_sha)
-    };
-
     let is_fallback_desc = repo_description_for_check.starts_with("Auto-created repo for ");
     let mut repo_update = crate::models::RepoChangeset {
         updated_at: Some(Utc::now()),
@@ -989,73 +979,78 @@ async fn do_auto_import(
         git_ref: Some(Some(job.git_ref.clone())),
         ..Default::default()
     };
-    if repo_meta_cached {
-        tracing::info!(
-            "[index] ai_request_cache hit for repo_metadata {} (commit {})",
-            repo_sign,
-            &checkout.head_sha[..checkout.head_sha.len().min(8)],
-        );
-    } else if flock_slugs.len() == 1 {
+
+    // Check ai_request_cache and enhance repo metadata — single conn for sync
+    // paths; only the AI branch needs a separate conn after `.await`.
+    let needs_ai_repo_meta = {
         let mut conn = db_conn()?;
-        if let Ok(flock_row) = flocks::table
-            .filter(flocks::repo_id.eq(repo.id))
-            .select(crate::models::FlockRow::as_select())
-            .first::<crate::models::FlockRow>(&mut conn)
-        {
+        let repo_meta_cached =
+            has_cached_ai_request(&mut conn, "repo_metadata", repo.id, &checkout.head_sha);
+
+        if repo_meta_cached {
             tracing::info!(
-                "[index] single flock — updating repo {} with flock name={:?} desc={:?}",
+                "[index] ai_request_cache hit for repo_metadata {} (commit {})",
                 repo_sign,
-                flock_row.name,
-                take_chars(&flock_row.description, 60),
+                &checkout.head_sha[..checkout.head_sha.len().min(8)],
             );
-            repo_update.name = Some(flock_row.name.clone());
-            repo_update.description = Some(flock_row.description.clone());
-            repo_update.keywords = Some(flock_row.keywords.clone());
+            false
+        } else if flock_slugs.len() == 1 {
+            if let Ok(flock_row) = flocks::table
+                .filter(flocks::repo_id.eq(repo.id))
+                .select(crate::models::FlockRow::as_select())
+                .first::<crate::models::FlockRow>(&mut conn)
+            {
+                tracing::info!(
+                    "[index] single flock — updating repo {} with flock name={:?} desc={:?}",
+                    repo_sign,
+                    flock_row.name,
+                    take_chars(&flock_row.description, 60),
+                );
+                repo_update.name = Some(flock_row.name.clone());
+                repo_update.description = Some(flock_row.description.clone());
+                repo_update.keywords = Some(flock_row.keywords.clone());
+            }
+            cache_ai_request(
+                &mut conn,
+                "repo_metadata",
+                "repo",
+                repo.id,
+                &checkout.head_sha,
+                true,
+                None,
+            );
+            false
+        } else {
+            is_fallback_desc
         }
-        cache_ai_request(
-            &mut conn,
-            "repo_metadata",
-            "repo",
-            repo.id,
-            &checkout.head_sha,
-            true,
-            None,
-        );
-    } else if is_fallback_desc {
-        // Try AI generation from README
+    }; // conn dropped before potential AI .await
+
+    if needs_ai_repo_meta {
+        // Try AI generation from README (needs .await, so conn is acquired
+        // only after the async call completes).
         let readme_content = ["README.md", "readme.md", "Readme.md", "README"]
             .iter()
             .find_map(|f| fs::read_to_string(checkout.path.join(f)).ok());
         if let Some(content) = readme_content {
-            match super::ai::generate_repo_metadata(&content).await {
+            let (ai_ok, ai_update) = match super::ai::generate_repo_metadata(&content).await {
                 Some(ai_meta) => {
                     repo_update.name = Some(ai_meta.name);
                     repo_update.description = Some(ai_meta.description);
                     repo_update.keywords = Some(ai_meta.keywords.into_iter().map(Some).collect());
-                    let mut conn = db_conn()?;
-                    cache_ai_request(
-                        &mut conn,
-                        "repo_metadata",
-                        "repo",
-                        repo.id,
-                        &checkout.head_sha,
-                        true,
-                        None,
-                    );
+                    (true, None::<&str>)
                 }
-                None => {
-                    let mut conn = db_conn()?;
-                    cache_ai_request(
-                        &mut conn,
-                        "repo_metadata",
-                        "repo",
-                        repo.id,
-                        &checkout.head_sha,
-                        false,
-                        Some("AI returned no result"),
-                    );
-                }
-            }
+                None => (false, Some("AI returned no result")),
+            };
+            let mut conn = db_conn()?;
+            cache_ai_request(
+                &mut conn,
+                "repo_metadata",
+                "repo",
+                repo.id,
+                &checkout.head_sha,
+                ai_ok,
+                ai_update,
+            );
         }
     }
     {

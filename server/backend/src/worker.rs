@@ -382,6 +382,12 @@ async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
         return Ok(());
     }
 
+    let requested_by = flocks::table
+        .filter(flocks::repo_id.eq(repo.id))
+        .select(flocks::imported_by_user_id)
+        .first::<Uuid>(&mut conn)
+        .unwrap_or(Uuid::nil());
+
     let now = Utc::now();
     let job_id = Uuid::now_v7();
 
@@ -401,14 +407,7 @@ async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
             git_ref: git_ref.to_string(),
             git_subdir: ".".to_string(),
             repo_slug: None,
-            requested_by_user_id: {
-                let mut flock_conn = pool.get().map_err(|e| e.to_string())?;
-                flocks::table
-                    .filter(flocks::repo_id.eq(repo.id))
-                    .select(flocks::imported_by_user_id)
-                    .first::<Uuid>(&mut flock_conn)
-                    .unwrap_or(Uuid::nil())
-            },
+            requested_by_user_id: requested_by,
             result_data: serde_json::json!({}),
             error_message: None,
             started_at: None,

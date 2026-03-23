@@ -21,6 +21,7 @@ pub fn new_pool(database_url: &str) -> Result<PgPool> {
     let manager = ConnectionManager::<PgConnection>::new(database_url);
     Pool::builder()
         .max_size(max_size)
+        .connection_timeout(std::time::Duration::from_secs(5))
         .build(manager)
         .context("failed to create PostgreSQL pool")
 }
