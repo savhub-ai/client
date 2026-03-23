@@ -263,7 +263,7 @@ struct PilotAgentArgs {
     agents: Vec<String>,
 }
 
-#[derive(Debug, Default, Args)]
+#[derive(Debug, Default, Clone, Args)]
 struct ApplyArgs {
     /// Show what would be done without making changes
     #[arg(long = "dry-run", action = ArgAction::SetTrue)]
@@ -518,7 +518,12 @@ async fn main() -> Result<()> {
         Some(Command::Unstar(args)) => cmd_set_starred(&opts, args, false).await?,
         Some(Command::Registry { command }) => cmd_registry(&opts, command).await?,
         Some(Command::Selector { command }) => cmd_selector(&opts, command)?,
-        Some(Command::Apply(args)) => cmd_apply(&opts, args)?,
+        Some(Command::Apply(args)) => {
+            let opts = opts.clone();
+            tokio::task::spawn_blocking(move || cmd_apply(&opts, args))
+                .await
+                .context("apply task panicked")??;
+        }
         Some(Command::Flock { command }) => cmd_flock(&opts, command)?,
         Some(Command::Pilot { command }) => cmd_pilot(command)?,
         Some(Command::Docs) => {
@@ -539,7 +544,12 @@ async fn main() -> Result<()> {
                 let _ = std::process::Command::new("xdg-open").arg(url).spawn();
             }
         }
-        None => cmd_apply(&opts, ApplyArgs::default())?,
+        None => {
+            let opts = opts.clone();
+            tokio::task::spawn_blocking(move || cmd_apply(&opts, ApplyArgs::default()))
+                .await
+                .context("apply task panicked")??;
+        }
     }
 
     Ok(())
