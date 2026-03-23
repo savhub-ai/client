@@ -6158,7 +6158,7 @@ dependencies = [
 
 [[package]]
 name = "savhub"
-version = "0.1.14"
+version = "0.1.15"
 dependencies = [
  "anyhow",
  "chrono",
@@ -6182,7 +6182,7 @@ dependencies = [
 
 [[package]]
 name = "savhub-desktop"
-version = "0.1.14"
+version = "0.1.15"
 dependencies = [
  "arboard",
  "chrono",
@@ -6205,7 +6205,7 @@ dependencies = [
 
 [[package]]
 name = "savhub-frontend"
-version = "0.1.14"
+version = "0.1.15"
 dependencies = [
  "chrono",
  "dioxus",
@@ -6223,7 +6223,7 @@ dependencies = [
 
 [[package]]
 name = "savhub-local"
-version = "0.1.14"
+version = "0.1.15"
 dependencies = [
  "anyhow",
  "chrono",
@@ -6241,7 +6241,7 @@ dependencies = [
 
 [[package]]
 name = "savhub-shared"
-version = "0.1.14"
+version = "0.1.15"
 dependencies = [
  "chrono",
  "indexmap",
@@ -6493,7 +6493,7 @@ dependencies = [
 
 [[package]]
 name = "server"
-version = "0.1.14"
+version = "0.1.15"
 dependencies = [
  "ammonia",
  "anyhow",
