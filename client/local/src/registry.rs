@@ -267,7 +267,6 @@ struct RemoteSkillDescriptor {
     skill_version: Option<String>,
 }
 
-
 fn normalize_non_empty(value: Option<String>) -> Option<String> {
     value.and_then(|value| {
         let trimmed = value.trim();
@@ -499,7 +498,6 @@ fn estimate_total(page: usize, page_size: usize, len: usize, has_more: bool) -> 
     }
 }
 
-
 fn remote_repo_detail(repo_url: &str) -> Result<Option<RepoDetailResponse>> {
     let route_path = git_url_to_route_path(repo_url);
     RegistryApiClient::new()?.get_json_opt(&format!("/repos/{route_path}"))
@@ -517,7 +515,6 @@ fn git_url_to_route_path(url: &str) -> String {
 fn remote_flock_detail_by_id(id: &str) -> Result<Option<FlockDetailResponse>> {
     RegistryApiClient::new()?.get_json_opt(&format!("/flocks/{id}"))
 }
-
 
 pub fn list_skills(
     query: Option<&str>,
