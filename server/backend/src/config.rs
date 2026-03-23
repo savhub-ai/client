@@ -26,7 +26,7 @@ pub struct Config {
     /// doubao-1-5-pro-32k).
     pub ai_security_model: Option<String>,
     pub auto_index_min_interval_secs: u64,
-    /// Maximum number of index jobs that may execute in parallel. Default 10.
+    /// Maximum number of index jobs that may execute in parallel. Default 3.
     pub max_parallel_index_jobs: usize,
     /// Enable the enhanced security scanning pipeline (LLM). Default false.
     pub ai_security_scan_enabled: bool,
@@ -102,7 +102,7 @@ impl Config {
             max_parallel_index_jobs: env::var("SAVHUB_MAX_PARALLEL_INDEX_JOBS")
                 .ok()
                 .and_then(|v| v.parse().ok())
-                .unwrap_or(10),
+                .unwrap_or(3),
             ai_security_scan_enabled: env::var("SAVHUB_AI_SECURITY_SCAN")
                 .map(|v| matches!(v.trim().to_lowercase().as_str(), "true" | "1" | "yes"))
                 .unwrap_or(false),
