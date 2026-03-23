@@ -1814,14 +1814,14 @@ fn FlockPage(lang: String, id: String) -> Element {
                 .iter()
                 .map(|(label, value)| (label.clone(), value.clone()))
                 .collect::<Vec<_>>();
-            let repo_id_str = payload.flock.repo_url.clone();
-            let repo_slug_bc = repo_id_str.clone();
-            let repo_name_bc = repo_id_str.clone();
-            let star_repo = repo_id_str.clone();
+            let repo_slug = derive_repo_slug(&payload.flock.repo_url);
+            let repo_slug_bc = repo_slug.clone();
+            let repo_name_bc = short_repo_name(&payload.flock.repo_url).to_string();
+            let star_repo = repo_slug.clone();
             let star_flock = payload.flock.slug.clone();
-            let comment_repo = repo_id_str.clone();
+            let comment_repo = repo_slug.clone();
             let comment_flock = payload.flock.slug.clone();
-            let delete_comment_repo = repo_id_str.clone();
+            let delete_comment_repo = repo_slug.clone();
             let delete_comment_flock = payload.flock.slug.clone();
             let api_base = api.api_base;
             let token_signal = api.token;
