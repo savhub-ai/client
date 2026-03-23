@@ -42,7 +42,10 @@ async fn main() -> Result<()> {
     }
     tracing::info!("  database        = connected, migrations applied");
     tracing::info!("  db_pool_max_size = {}", db_pool_max_size);
-    tracing::info!("  index_job_concurrency = {}", config.max_parallel_index_jobs);
+    tracing::info!(
+        "  index_job_concurrency = {}",
+        config.max_parallel_index_jobs
+    );
     tracing::info!(
         "  static_scan_concurrency = {}",
         config.static_scan_concurrency

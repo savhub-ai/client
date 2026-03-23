@@ -3001,7 +3001,11 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             }
         }
         if !selected_flocks.is_empty() || !skipped_flocks.is_empty() {
-            let all_flocks: Vec<String> = selected_flocks.iter().chain(skipped_flocks.iter()).cloned().collect();
+            let all_flocks: Vec<String> = selected_flocks
+                .iter()
+                .chain(skipped_flocks.iter())
+                .cloned()
+                .collect();
             let selected_set: std::collections::HashSet<&String> = selected_flocks.iter().collect();
             for (repo, members) in tui::group_flocks_by_repo(&all_flocks) {
                 println!("Flock {repo}");
@@ -3027,7 +3031,8 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     // ── Expand selected flocks into skills (repo_url, skill_path) ──
     // Only use selectors that were selected (not skipped)
     // Track skills as (repo, path) for fetch, and slug for diff/display.
-    let mut skill_map: std::collections::HashMap<String, (String, String)> = std::collections::HashMap::new();
+    let mut skill_map: std::collections::HashMap<String, (String, String)> =
+        std::collections::HashMap::new();
     for m in &result.matched {
         if !selected_selectors.contains(&m.selector.name) {
             continue;
@@ -3122,7 +3127,12 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             .iter()
             .map(|m| m.selector.name.clone())
             .collect();
-        let old_flocks: BTreeSet<String> = config.flocks.matched.iter().map(|r| r.to_string()).collect();
+        let old_flocks: BTreeSet<String> = config
+            .flocks
+            .matched
+            .iter()
+            .map(|r| r.to_string())
+            .collect();
         let new_flocks: BTreeSet<String> = selected_flocks.iter().cloned().collect();
         if old_matched_names == new_matched_names && old_flocks == new_flocks {
             println!("\nProject is already up to date. Nothing to do.");

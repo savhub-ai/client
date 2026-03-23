@@ -129,8 +129,7 @@ pub fn read_skill_version_info(skill_folder: &Path) -> Result<SkillVersionInfo> 
                 {
                     let reference = git.reference.value.trim();
                     if !reference.is_empty() {
-                        info.git_sha =
-                            normalize_git_sha(reference).or(Some(reference.to_string()));
+                        info.git_sha = normalize_git_sha(reference).or(Some(reference.to_string()));
                     }
                 }
             }

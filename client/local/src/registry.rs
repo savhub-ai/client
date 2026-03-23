@@ -720,9 +720,7 @@ pub fn fetch_skills_batch(repo_paths: &[(String, String)]) -> Result<Vec<Fetched
             continue;
         };
         let Some(git_sha) = normalize_non_empty(repo.document.git_sha.clone()) else {
-            eprintln!(
-                "  \x1b[33m!\x1b[0m {label}: repo has no git_sha",
-            );
+            eprintln!("  \x1b[33m!\x1b[0m {label}: repo has no git_sha",);
             continue;
         };
         let spec = RemoteSkillFetchSpec {
