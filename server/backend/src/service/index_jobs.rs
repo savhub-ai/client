@@ -592,46 +592,47 @@ async fn do_auto_import(
     // If we reused an existing checkout (pull, not fresh clone), compute which
     // candidate indices actually have file changes so we can skip unchanged
     // flocks entirely.
-    let changed_indices: HashSet<usize> = if checkout.reused && checkout.previous_sha.is_some() && !job.force_index {
-        let prev = checkout.previous_sha.as_deref().unwrap();
-        let all_changed =
-            super::git_ops::changed_files_between(&checkout.path, prev, &checkout.head_sha)
-                .await
-                .unwrap_or_default();
+    let changed_indices: HashSet<usize> =
+        if checkout.reused && checkout.previous_sha.is_some() && !job.force_index {
+            let prev = checkout.previous_sha.as_deref().unwrap();
+            let all_changed =
+                super::git_ops::changed_files_between(&checkout.path, prev, &checkout.head_sha)
+                    .await
+                    .unwrap_or_default();
 
-        if all_changed.is_empty() {
-            // No files changed at all — nothing to do.
-            tracing::info!(
-                "[index{}] no file changes between {} and {}, skipping",
-                job.id,
-                &prev[..prev.len().min(8)],
-                &checkout.head_sha[..checkout.head_sha.len().min(8)],
-            );
-            HashSet::new()
+            if all_changed.is_empty() {
+                // No files changed at all — nothing to do.
+                tracing::info!(
+                    "[index{}] no file changes between {} and {}, skipping",
+                    job.id,
+                    &prev[..prev.len().min(8)],
+                    &checkout.head_sha[..checkout.head_sha.len().min(8)],
+                );
+                HashSet::new()
+            } else {
+                tracing::info!(
+                    "[index{}] incremental: {} files changed between {}..{}",
+                    job.id,
+                    all_changed.len(),
+                    &prev[..prev.len().min(8)],
+                    &checkout.head_sha[..checkout.head_sha.len().min(8)],
+                );
+                candidates
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, c)| {
+                        let prefix = join_repo_relative_path(effective_subdir, &c.relative_dir);
+                        all_changed
+                            .iter()
+                            .any(|f| f.starts_with(&format!("{}/", prefix)) || f == &prefix)
+                    })
+                    .map(|(i, _)| i)
+                    .collect()
+            }
         } else {
-            tracing::info!(
-                "[index{}] incremental: {} files changed between {}..{}",
-                job.id,
-                all_changed.len(),
-                &prev[..prev.len().min(8)],
-                &checkout.head_sha[..checkout.head_sha.len().min(8)],
-            );
-            candidates
-                .iter()
-                .enumerate()
-                .filter(|(_, c)| {
-                    let prefix = join_repo_relative_path(effective_subdir, &c.relative_dir);
-                    all_changed
-                        .iter()
-                        .any(|f| f.starts_with(&format!("{}/", prefix)) || f == &prefix)
-                })
-                .map(|(i, _)| i)
-                .collect()
-        }
-    } else {
-        // Fresh clone → every candidate is "changed"
-        (0..candidates.len()).collect()
-    };
+            // Fresh clone → every candidate is "changed"
+            (0..candidates.len()).collect()
+        };
 
     let is_incremental = checkout.reused && checkout.previous_sha.is_some() && !job.force_index;
 
