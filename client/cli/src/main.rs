@@ -30,9 +30,8 @@ use savhub_shared::{
     BanUserRequest, BanUserResponse, DeleteResponse, FileContentResponse, IndexRequest,
     MAX_BUNDLE_BYTES, ModerationStatus, ModerationUpdateRequest, PagedResponse, PublishBundleFile,
     PublishResponse, RemoteSkillFetchSpec, RepoDetailResponse, ResolveResponse, RoleUpdateResponse,
-    SearchResponse, SetUserRoleRequest, SkillDetailResponse, SkillListItem,
-    UserListResponse, UserRole, WhoAmIResponse, is_slug, normalize_bundle_files,
-    normalize_tags, total_bundle_bytes,
+    SearchResponse, SetUserRoleRequest, SkillDetailResponse, SkillListItem, UserListResponse,
+    UserRole, WhoAmIResponse, is_slug, normalize_bundle_files, normalize_tags, total_bundle_bytes,
 };
 use semver::Version;
 use serde_json::json;

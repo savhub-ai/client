@@ -44,8 +44,8 @@ pub async fn run_self_update() -> anyhow::Result<()> {
 
     // --- Check for update ---
     print!("Checking for updates... ");
-    let asset_name = platform_asset_name()
-        .ok_or_else(|| anyhow::anyhow!("unsupported platform"))?;
+    let asset_name =
+        platform_asset_name().ok_or_else(|| anyhow::anyhow!("unsupported platform"))?;
 
     let client = reqwest::Client::new();
     let url = format!("{GITHUB_API}/repos/{GITHUB_REPO}/releases/latest");
@@ -68,7 +68,10 @@ pub async fn run_self_update() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let tag = release.tag_name.strip_prefix('v').unwrap_or(&release.tag_name);
+    let tag = release
+        .tag_name
+        .strip_prefix('v')
+        .unwrap_or(&release.tag_name);
     let remote_version = Version::parse(tag)?;
 
     if remote_version <= local_version {
@@ -129,7 +132,11 @@ fn extract_from_zip(data: &[u8]) -> anyhow::Result<Vec<u8>> {
     let cursor = std::io::Cursor::new(data);
     let mut archive = zip::ZipArchive::new(cursor)?;
 
-    let binary_name = if cfg!(windows) { "savhub.exe" } else { "savhub" };
+    let binary_name = if cfg!(windows) {
+        "savhub.exe"
+    } else {
+        "savhub"
+    };
 
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)?;
@@ -145,6 +152,7 @@ fn extract_from_zip(data: &[u8]) -> anyhow::Result<Vec<u8>> {
 
 fn extract_from_tar_gz(data: &[u8]) -> anyhow::Result<Vec<u8>> {
     use std::io::Read;
+
     use flate2::read::GzDecoder;
 
     let decoder = GzDecoder::new(data);
