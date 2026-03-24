@@ -121,8 +121,10 @@ enum Command {
     Disable(DisableArgs),
     /// Fetch a skill by cloning its source repo
     Fetch(FetchArgs),
-    /// Update fetched skill(s)
+    /// Update project skill(s)
     Update(UpdateArgs),
+    /// List or update fetched skills from ~/.savhub/fetched.json
+    Fetched(FetchedArgs),
     /// Prune a skill
     Prune(PruneArgs),
     /// List fetched skills in the current project
@@ -338,13 +340,20 @@ struct FetchArgs {
 
 #[derive(Debug, Args)]
 struct UpdateArgs {
-    slug: Option<String>,
     #[arg(long, action = ArgAction::SetTrue)]
     all: bool,
     #[arg(short = 'g', long = "global", action = ArgAction::SetTrue)]
     global: bool,
-    #[arg(long)]
-    version: Option<String>,
+    #[arg(long, action = ArgAction::SetTrue)]
+    force: bool,
+}
+
+#[derive(Debug, Args)]
+struct FetchedArgs {
+    /// Update all fetched repos and skills to the latest version from the registry
+    #[arg(long, action = ArgAction::SetTrue)]
+    update: bool,
+    /// Force update even if already at latest
     #[arg(long, action = ArgAction::SetTrue)]
     force: bool,
 }
@@ -509,6 +518,7 @@ async fn main() -> Result<()> {
         Some(Command::Disable(args)) => cmd_disable(&opts, args)?,
         Some(Command::Fetch(args)) => cmd_fetch(&opts, args).await?,
         Some(Command::Update(args)) => cmd_update(&opts, args).await?,
+        Some(Command::Fetched(args)) => cmd_fetched(&opts, args).await?,
         Some(Command::Prune(args)) => cmd_prune(&opts, args)?,
         Some(Command::List) => cmd_list(&opts)?,
         Some(Command::Explore(args)) => cmd_explore(&opts, args).await?,
@@ -969,32 +979,21 @@ async fn cmd_fetch(opts: &GlobalOpts, args: FetchArgs) -> Result<()> {
 }
 
 async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
-    // Global mode: update global skills and sync to all AI clients
     if args.global {
         return cmd_update_global(opts, &args).await;
     }
-    if args.slug.is_none() && !args.all {
-        bail!("provide <slug>, --all, or -g/--global");
-    }
-    if args.slug.is_some() && args.all {
-        bail!("use either <slug> or --all");
-    }
-    if let Some(version) = &args.version {
-        Version::parse(version).with_context(|| format!("invalid semver: {version}"))?;
+    if !args.all {
+        bail!("use --all or -g/--global");
     }
 
     let mut lockfile = read_project_added_skills(&opts.workdir)?;
-    let slugs = if let Some(slug) = args.slug {
-        vec![normalize_slug(&slug)?]
-    } else {
-        lockfile
-            .iter_skills()
-            .map(|(_, _, _, s)| s.slug.clone())
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>()
-    };
+    let slugs: Vec<String> = lockfile
+        .iter_skills()
+        .map(|(_, _, _, s)| s.slug.clone())
+        .filter(|s| !s.is_empty())
+        .collect();
     if slugs.is_empty() {
-        println!("No fetched skills.");
+        println!("No project skills.");
         return Ok(());
     }
 
@@ -1108,7 +1107,105 @@ async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
     Ok(())
 }
 
-async fn cmd_update_global(opts: &GlobalOpts, args: &UpdateArgs) -> Result<()> {
+async fn cmd_fetched(opts: &GlobalOpts, args: FetchedArgs) -> Result<()> {
+    let config_dir = savhub_local::config::get_config_dir()?;
+    let lockfile = read_lockfile(&config_dir)?;
+    let flat = savhub_local::skills::flatten_lockfile(&lockfile);
+
+    if !args.update {
+        // List fetched skills
+        if flat.is_empty() {
+            println!("No fetched skills.");
+            return Ok(());
+        }
+        for entry in &flat {
+            println!("{}  {}  ({})", entry.slug, entry.version, entry.repo_url);
+        }
+        return Ok(());
+    }
+
+    // --update: update all fetched repos and skills to the latest version
+    if flat.is_empty() {
+        println!("No fetched skills. Use `savhub fetch <slug>` first.");
+        return Ok(());
+    }
+
+    println!("Updating {} fetched skill(s)...", flat.len());
+    let client = optional_client(opts)?;
+    let mut updated = 0usize;
+    let mut skipped = 0usize;
+    let mut failed = 0usize;
+
+    for entry in &flat {
+        let slug = &entry.slug;
+        match resolve_remote_skill_fetch(&client, slug).await {
+            Ok(remote) => {
+                let latest = remote.display_version.clone();
+                let flock_path = &entry.flock_path;
+
+                let local_sha = savhub_local::registry::repo_skill_local_path(
+                    &remote.spec.repo_sign,
+                    &remote.spec.skill_path,
+                )
+                .and_then(|p| {
+                    read_skill_version_info(&p)
+                        .ok()
+                        .and_then(|info| info.git_sha)
+                });
+
+                if local_sha.as_deref() == Some(remote.spec.git_sha.as_str()) && !args.force {
+                    println!("  {slug}: already at {latest}");
+                    skipped += 1;
+                    savhub_local::skills::update_lockfile_with_metadata(
+                        &config_dir,
+                        slug,
+                        &latest,
+                        &savhub_local::skills::FetchedSkillMetadata {
+                            remote_slug: Some(slug.clone()),
+                            repo_url: Some(remote.spec.repo_sign.clone()),
+                            path: Some(remote.spec.skill_path.clone()),
+                            flock_slug: Some(flock_path.to_string()),
+                            git_sha: Some(remote.spec.git_sha.clone()),
+                        },
+                    );
+                    continue;
+                }
+
+                match savhub_local::registry::cache_remote_skill_from_repo(&remote.spec) {
+                    Ok(_) => {
+                        savhub_local::skills::update_lockfile_with_metadata(
+                            &config_dir,
+                            slug,
+                            &latest,
+                            &savhub_local::skills::FetchedSkillMetadata {
+                                remote_slug: Some(slug.clone()),
+                                repo_url: Some(remote.spec.repo_sign.clone()),
+                                path: Some(remote.spec.skill_path.clone()),
+                                flock_slug: Some(flock_path.to_string()),
+                                git_sha: Some(remote.spec.git_sha.clone()),
+                            },
+                        );
+                        println!("  {slug}: updated -> {latest}");
+                        updated += 1;
+                    }
+                    Err(err) => {
+                        println!("  {slug}: failed - {err}");
+                        failed += 1;
+                    }
+                }
+            }
+            Err(err) => {
+                println!("  {slug}: failed - {err}");
+                failed += 1;
+            }
+        }
+    }
+
+    println!("\nDone. {updated} updated, {skipped} already up-to-date, {failed} failed.");
+    Ok(())
+}
+
+async fn cmd_update_global(opts: &GlobalOpts, _args: &UpdateArgs) -> Result<()> {
     let global_dir = savhub_local::clients::global_skills_dir();
     fs::create_dir_all(&global_dir).with_context(|| {
         format!(
@@ -1118,16 +1215,11 @@ async fn cmd_update_global(opts: &GlobalOpts, args: &UpdateArgs) -> Result<()> {
     })?;
     println!("Global skills directory: {}", global_dir.display());
 
-    // Update all skills in global dir using same logic as regular update
     let mut lockfile = read_lockfile(&global_dir)?;
-    let slugs: Vec<String> = if let Some(slug) = &args.slug {
-        vec![normalize_slug(slug)?]
-    } else {
-        lockfile
-            .iter_skills()
-            .map(|(_, _, _, s)| s.slug.clone())
-            .collect()
-    };
+    let slugs: Vec<String> = lockfile
+        .iter_skills()
+        .map(|(_, _, _, s)| s.slug.clone())
+        .collect();
 
     if slugs.is_empty() {
         println!("No global skills fetched. Fetch skills first with `savhub fetch <slug>`.");

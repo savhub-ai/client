@@ -1,0 +1,198 @@
+version = 1
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-auth"
+slug = "salvo-auth"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-basic-app"
+slug = "salvo-basic-app"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-caching"
+slug = "salvo-caching"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-compression"
+slug = "salvo-compression"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-concurrency-limiter"
+slug = "salvo-concurrency-limiter"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-cors"
+slug = "salvo-cors"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-csrf"
+slug = "salvo-csrf"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-data-extraction"
+slug = "salvo-data-extraction"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-database"
+slug = "salvo-database"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-error-handling"
+slug = "salvo-error-handling"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-file-handling"
+slug = "salvo-file-handling"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-flash"
+slug = "salvo-flash"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-graceful-shutdown"
+slug = "salvo-graceful-shutdown"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-logging"
+slug = "salvo-logging"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-middleware"
+slug = "salvo-middleware"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-openapi"
+slug = "salvo-openapi"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-path-syntax"
+slug = "salvo-path-syntax"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-proxy"
+slug = "salvo-proxy"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-rate-limiter"
+slug = "salvo-rate-limiter"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-realtime"
+slug = "salvo-realtime"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-routing"
+slug = "salvo-routing"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-session"
+slug = "salvo-session"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-sse"
+slug = "salvo-sse"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-static-files"
+slug = "salvo-static-files"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-testing"
+slug = "salvo-testing"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-timeout"
+slug = "salvo-timeout"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-tls-acme"
+slug = "salvo-tls-acme"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+
+[[skills]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-websocket"
+slug = "salvo-websocket"
+version = "0.89.3"
+git_sha = "d62a435591ba4340c9d413fc9c482eda8b711f25"
+

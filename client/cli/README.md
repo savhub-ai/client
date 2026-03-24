@@ -97,12 +97,19 @@ savhub fetch my-skill --version 1.2.0
 savhub fetch my-skill --force
 ```
 
-### `savhub update` — Update skills
+### `savhub update` — Update project skills
 
 ```bash
-savhub update my-skill       # Update one skill
-savhub update --all          # Update all fetched
+savhub update --all          # Update all project skills
 savhub update -g             # Update global skills and sync to AI clients
+```
+
+### `savhub fetched` — Manage fetched skills
+
+```bash
+savhub fetched               # List all fetched skills (from ~/.savhub/fetched.json)
+savhub fetched --update      # Update all fetched repos/skills to latest
+savhub fetched --update --force  # Force update even if already at latest
 ```
 
 ### `savhub prune` — Remove a skill
