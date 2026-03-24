@@ -329,15 +329,23 @@ async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
     let interval_secs = config.auto_index_min_interval_secs as i64;
 
     // Load all repos NOT already in pending_index_repos
+    // and NOT indexed within the last interval (default 1 hour)
     let repos_to_check = {
         let mut conn = pool.get().map_err(|e| e.to_string())?;
+        let threshold = Utc::now() - chrono::Duration::seconds(interval_secs);
 
         let pending_repo_ids: Vec<Uuid> = pending_index_repos::table
             .select(pending_index_repos::repo_id)
             .load(&mut conn)
             .map_err(|e| e.to_string())?;
 
-        let mut query = repos::table.into_boxed();
+        let mut query = repos::table
+            .filter(
+                repos::last_indexed_at
+                    .is_null()
+                    .or(repos::last_indexed_at.lt(threshold)),
+            )
+            .into_boxed();
         if !pending_repo_ids.is_empty() {
             query = query.filter(diesel::dsl::not(repos::id.eq_any(pending_repo_ids)));
         }
