@@ -104,6 +104,15 @@ diesel::table! {
 }
 
 diesel::table! {
+    pending_index_repos (id) {
+        id -> Uuid,
+        repo_id -> Uuid,
+        expected_start_at -> Timestamptz,
+        created_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
     index_rules (id) {
         id -> Uuid,
         repo_url -> Text,
@@ -324,6 +333,7 @@ diesel::joinable!(browse_histories -> users (user_id));
 diesel::joinable!(flocks -> repos (repo_id));
 diesel::joinable!(flocks -> users (imported_by_user_id));
 diesel::joinable!(index_jobs -> users (requested_by_user_id));
+diesel::joinable!(pending_index_repos -> repos (repo_id));
 diesel::joinable!(security_scans -> skill_versions (version_id));
 diesel::joinable!(security_scans -> users (scanned_by_user_id));
 diesel::joinable!(skill_blocks -> flocks (flock_id));
@@ -360,6 +370,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     flocks,
     index_jobs,
     index_rules,
+    pending_index_repos,
     reports,
     repos,
     security_scans,

@@ -7,8 +7,8 @@ use uuid::Uuid;
 
 use crate::schema::{
     ai_request_cache, ai_usage_logs, audit_logs, browse_histories, flocks, index_jobs, index_rules,
-    reports, repos, security_scans, site_admins, skill_blocks, skill_comments, skill_installs,
-    skill_ratings, skill_stars, skill_versions, skills, user_tokens, users,
+    pending_index_repos, reports, repos, security_scans, site_admins, skill_blocks, skill_comments,
+    skill_installs, skill_ratings, skill_stars, skill_versions, skills, user_tokens, users,
 };
 
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable)]
@@ -751,4 +751,23 @@ pub struct IndexRuleChangeset {
     pub strategy: Option<String>,
     pub description: Option<String>,
     pub updated_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Queryable, Selectable, Identifiable, Associations)]
+#[diesel(table_name = pending_index_repos)]
+#[diesel(belongs_to(RepoRow, foreign_key = repo_id))]
+pub struct PendingIndexRepoRow {
+    pub id: Uuid,
+    pub repo_id: Uuid,
+    pub expected_start_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Insertable)]
+#[diesel(table_name = pending_index_repos)]
+pub struct NewPendingIndexRepoRow {
+    pub id: Uuid,
+    pub repo_id: Uuid,
+    pub expected_start_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
 }

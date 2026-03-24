@@ -6,8 +6,8 @@ use tokio::task::{JoinHandle, JoinSet};
 use uuid::Uuid;
 
 use crate::db::PgPool;
-use crate::models::{IndexJobRow, NewIndexJobRow, RepoRow, SkillRow};
-use crate::schema::{flocks, index_jobs, repos, skills};
+use crate::models::{IndexJobRow, NewIndexJobRow, NewPendingIndexRepoRow, PendingIndexRepoRow, RepoRow, SkillRow};
+use crate::schema::{flocks, index_jobs, pending_index_repos, repos, skills};
 use crate::service::git_ops::resolve_remote_sha;
 use crate::service::helpers::{hash_string, normalize_git_url};
 use crate::state::app_state;
@@ -51,6 +51,7 @@ pub fn spawn_worker(pool: PgPool) -> JoinHandle<()> {
         let mut index_tick = tokio::time::interval(index_interval);
         let mut repo_check_tick = tokio::time::interval(repo_check_interval);
         let mut cleanup_tick = tokio::time::interval(std::time::Duration::from_secs(24 * 60 * 60));
+        let mut pending_index_tick = tokio::time::interval(std::time::Duration::from_secs(config.auto_index_min_interval_secs));
 
         // Static security scan: in-memory set tracks which skill IDs are
         // currently being scanned to prevent duplicate pickup.
@@ -192,6 +193,14 @@ pub fn spawn_worker(pool: PgPool) -> JoinHandle<()> {
                         Err(e) => tracing::warn!("browse history cleanup pool error: {e}"),
                     }
                 }
+                _ = pending_index_tick.tick() => {
+                    let pool = pool.clone();
+                    tokio::spawn(async move {
+                        if let Err(error) = process_pending_index_repos(&pool).await {
+                            tracing::warn!("pending index process error: {error}");
+                        }
+                    });
+                }
                 Some(result) = index_tasks.join_next(), if !index_tasks.is_empty() => {
                     match result {
                         Ok((job_id, url_hash)) => {
@@ -312,116 +321,242 @@ async fn execute_index_job(pool: &PgPool, job_id: Uuid, job_type: &str) {
     }
 }
 
+/// Check ALL repos for new commits and insert changed repos into
+/// `pending_index_repos` with `expected_start_at = last_indexed_at + 1 hour`.
+/// Repos already in `pending_index_repos` are skipped.
 async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
     let config = &app_state().config;
     let interval_secs = config.auto_index_min_interval_secs as i64;
-    let threshold = Utc::now() - chrono::Duration::seconds(interval_secs);
 
-    let repo = {
+    // Load all repos NOT already in pending_index_repos
+    let repos_to_check = {
         let mut conn = pool.get().map_err(|e| e.to_string())?;
-        repos::table
-            .filter(
-                repos::last_indexed_at
-                    .is_null()
-                    .or(repos::last_indexed_at.lt(threshold)),
-            )
-            .order(repos::last_indexed_at.asc().nulls_first())
+
+        let pending_repo_ids: Vec<Uuid> = pending_index_repos::table
+            .select(pending_index_repos::repo_id)
+            .load(&mut conn)
+            .map_err(|e| e.to_string())?;
+
+        let mut query = repos::table.into_boxed();
+        if !pending_repo_ids.is_empty() {
+            query = query.filter(diesel::dsl::not(repos::id.eq_any(pending_repo_ids)));
+        }
+        query
             .select(RepoRow::as_select())
-            .first::<RepoRow>(&mut conn)
-            .optional()
+            .load::<RepoRow>(&mut conn)
             .map_err(|e| e.to_string())?
     };
 
-    let Some(repo) = repo else {
+    if repos_to_check.is_empty() {
         return Ok(());
-    };
+    }
 
-    let git_url = normalize_git_url(&repo.git_url);
-    let url_hash = hash_string(&git_url);
-    let git_ref = repo.git_ref.as_deref().unwrap_or("HEAD");
+    tracing::info!(count = repos_to_check.len(), "checking repos for new commits");
 
-    let current_sha = match resolve_remote_sha(&git_url, git_ref).await {
-        Ok(sha) => sha,
-        Err(e) => {
-            tracing::debug!(repo_id = %repo.id, "failed to ls-remote for auto-index: {e}");
-            return Ok(());
+    for repo in repos_to_check {
+        let git_url = normalize_git_url(&repo.git_url);
+        let git_ref = repo.git_ref.as_deref().unwrap_or("HEAD");
+
+        let current_sha = match resolve_remote_sha(&git_url, git_ref).await {
+            Ok(sha) => sha,
+            Err(e) => {
+                tracing::debug!(repo_id = %repo.id, "failed to ls-remote: {e}");
+                continue;
+            }
+        };
+
+        // No change — skip
+        if current_sha == repo.git_sha {
+            continue;
         }
-    };
 
-    let mut conn = pool.get().map_err(|e| e.to_string())?;
+        let mut conn = pool.get().map_err(|e| e.to_string())?;
 
-    let already_indexed: i64 = index_jobs::table
-        .filter(index_jobs::git_url.eq(&git_url))
-        .filter(index_jobs::git_sha.eq(&current_sha))
-        .filter(index_jobs::status.eq("completed"))
-        .count()
-        .get_result(&mut conn)
-        .map_err(|e: diesel::result::Error| e.to_string())?;
+        // Already indexed this exact SHA — just update last_indexed_at
+        let already_indexed: i64 = index_jobs::table
+            .filter(index_jobs::git_url.eq(&git_url))
+            .filter(index_jobs::git_sha.eq(&current_sha))
+            .filter(index_jobs::status.eq("completed"))
+            .count()
+            .get_result(&mut conn)
+            .map_err(|e: diesel::result::Error| e.to_string())?;
 
-    if already_indexed > 0 {
-        diesel::update(repos::table.find(repo.id))
-            .set(crate::models::RepoChangeset {
-                last_indexed_at: Some(Some(Utc::now())),
-                updated_at: Some(Utc::now()),
-                git_sha: Some(current_sha),
-                ..Default::default()
+        if already_indexed > 0 {
+            diesel::update(repos::table.find(repo.id))
+                .set(crate::models::RepoChangeset {
+                    last_indexed_at: Some(Some(Utc::now())),
+                    updated_at: Some(Utc::now()),
+                    git_sha: Some(current_sha),
+                    ..Default::default()
+                })
+                .execute(&mut conn)
+                .map_err(|e: diesel::result::Error| e.to_string())?;
+            continue;
+        }
+
+        // Calculate expected_start_at = last_indexed_at + interval, but not before now
+        let now = Utc::now();
+        let expected_start_at = repo
+            .last_indexed_at
+            .map(|t| (t + chrono::Duration::seconds(interval_secs)).max(now))
+            .unwrap_or(now);
+
+        tracing::info!(
+            repo_id = %repo.id,
+            git_url = %git_url,
+            current_sha = %current_sha,
+            expected_start_at = %expected_start_at,
+            "repo changed, adding to pending index queue"
+        );
+
+        // Insert into pending_index_repos (do nothing on conflict = already queued)
+        diesel::insert_into(pending_index_repos::table)
+            .values(NewPendingIndexRepoRow {
+                id: Uuid::now_v7(),
+                repo_id: repo.id,
+                expected_start_at,
+                created_at: now,
+            })
+            .on_conflict(pending_index_repos::repo_id)
+            .do_nothing()
+            .execute(&mut conn)
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+/// Process the `pending_index_repos` queue: pick entries whose
+/// `expected_start_at <= now`, delete them one by one, create an index job,
+/// execute it, and loop until the queue is drained.
+async fn process_pending_index_repos(pool: &PgPool) -> Result<(), String> {
+    loop {
+        let now = Utc::now();
+
+        // Pick one ready entry
+        let entry = {
+            let mut conn = pool.get().map_err(|e| e.to_string())?;
+            pending_index_repos::table
+                .filter(pending_index_repos::expected_start_at.le(now))
+                .order(pending_index_repos::expected_start_at.asc())
+                .select(PendingIndexRepoRow::as_select())
+                .first::<PendingIndexRepoRow>(&mut conn)
+                .optional()
+                .map_err(|e| e.to_string())?
+        };
+
+        let Some(entry) = entry else {
+            break;
+        };
+
+        // Delete the entry from the queue
+        {
+            let mut conn = pool.get().map_err(|e| e.to_string())?;
+            diesel::delete(pending_index_repos::table.find(entry.id))
+                .execute(&mut conn)
+                .map_err(|e| e.to_string())?;
+        }
+
+        // Load the repo
+        let repo = {
+            let mut conn = pool.get().map_err(|e| e.to_string())?;
+            repos::table
+                .find(entry.repo_id)
+                .select(RepoRow::as_select())
+                .first::<RepoRow>(&mut conn)
+                .optional()
+                .map_err(|e| e.to_string())?
+        };
+
+        let Some(repo) = repo else {
+            tracing::warn!(repo_id = %entry.repo_id, "pending index repo not found, skipping");
+            continue;
+        };
+
+        let git_url = normalize_git_url(&repo.git_url);
+        let url_hash = hash_string(&git_url);
+        let git_ref = repo.git_ref.as_deref().unwrap_or("HEAD");
+
+        // Resolve current SHA
+        let current_sha = match resolve_remote_sha(&git_url, git_ref).await {
+            Ok(sha) => sha,
+            Err(e) => {
+                tracing::warn!(repo_id = %repo.id, "failed to resolve SHA for pending index: {e}");
+                continue;
+            }
+        };
+
+        // Skip if there is already an active job for this URL
+        let mut conn = pool.get().map_err(|e| e.to_string())?;
+        let active_count: i64 = index_jobs::table
+            .filter(index_jobs::url_hash.eq(&url_hash))
+            .filter(index_jobs::status.eq_any(["pending", "running"]))
+            .count()
+            .get_result(&mut conn)
+            .map_err(|e: diesel::result::Error| e.to_string())?;
+
+        if active_count > 0 {
+            tracing::debug!(repo_id = %repo.id, "skipping pending index, active job exists");
+            continue;
+        }
+
+        let requested_by = flocks::table
+            .filter(flocks::repo_id.eq(repo.id))
+            .select(flocks::imported_by_user_id)
+            .first::<Uuid>(&mut conn)
+            .unwrap_or(Uuid::nil());
+
+        let now = Utc::now();
+        let job_id = Uuid::now_v7();
+
+        tracing::info!(
+            repo_id = %repo.id,
+            job_id = %job_id,
+            git_url = %git_url,
+            commit_sha = %current_sha,
+            "creating index job from pending queue"
+        );
+
+        diesel::insert_into(index_jobs::table)
+            .values(NewIndexJobRow {
+                id: job_id,
+                status: "pending".to_string(),
+                job_type: "auto_import".to_string(),
+                git_url,
+                git_ref: git_ref.to_string(),
+                git_subdir: ".".to_string(),
+                repo_slug: None,
+                requested_by_user_id: requested_by,
+                result_data: serde_json::json!({}),
+                error_message: None,
+                started_at: None,
+                completed_at: None,
+                created_at: now,
+                updated_at: now,
+                progress_pct: 0,
+                progress_message: "Queued (auto-index)".to_string(),
+                git_sha: current_sha,
+                force_index: false,
+                url_hash: Some(url_hash),
             })
             .execute(&mut conn)
-            .map_err(|e: diesel::result::Error| e.to_string())?;
-        return Ok(());
+            .map_err(|e| e.to_string())?;
+
+        // Execute the job and wait for completion
+        drop(conn);
+        execute_index_job(pool, job_id, "auto_import").await;
+
+        // Update last_indexed_at
+        if let Ok(mut conn) = pool.get() {
+            let _ = diesel::update(repos::table.find(repo.id))
+                .set(crate::models::RepoChangeset {
+                    last_indexed_at: Some(Some(Utc::now())),
+                    updated_at: Some(Utc::now()),
+                    ..Default::default()
+                })
+                .execute(&mut conn);
+        }
     }
-
-    let active_count: i64 = index_jobs::table
-        .filter(index_jobs::url_hash.eq(&url_hash))
-        .filter(index_jobs::status.eq_any(["pending", "running"]))
-        .count()
-        .get_result(&mut conn)
-        .map_err(|e: diesel::result::Error| e.to_string())?;
-
-    if active_count > 0 {
-        return Ok(());
-    }
-
-    let requested_by = flocks::table
-        .filter(flocks::repo_id.eq(repo.id))
-        .select(flocks::imported_by_user_id)
-        .first::<Uuid>(&mut conn)
-        .unwrap_or(Uuid::nil());
-
-    let now = Utc::now();
-    let job_id = Uuid::now_v7();
-
-    tracing::info!(
-        repo_id = %repo.id,
-        git_url = %git_url,
-        commit_sha = %current_sha,
-        "auto-creating index job for repo with new commits"
-    );
-
-    diesel::insert_into(index_jobs::table)
-        .values(NewIndexJobRow {
-            id: job_id,
-            status: "pending".to_string(),
-            job_type: "auto_import".to_string(),
-            git_url,
-            git_ref: git_ref.to_string(),
-            git_subdir: ".".to_string(),
-            repo_slug: None,
-            requested_by_user_id: requested_by,
-            result_data: serde_json::json!({}),
-            error_message: None,
-            started_at: None,
-            completed_at: None,
-            created_at: now,
-            updated_at: now,
-            progress_pct: 0,
-            progress_message: "Queued (auto-index)".to_string(),
-            git_sha: current_sha,
-            force_index: false,
-            url_hash: Some(url_hash),
-        })
-        .execute(&mut conn)
-        .map_err(|e| e.to_string())?;
 
     Ok(())
 }

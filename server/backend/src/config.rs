@@ -78,7 +78,7 @@ impl Config {
             sync_interval_secs: env::var("SAVHUB_SYNC_INTERVAL_SECS")
                 .ok()
                 .and_then(|v| v.parse().ok())
-                .unwrap_or(300),
+                .unwrap_or(900),
             sync_stale_hours: env::var("SAVHUB_SYNC_STALE_HOURS")
                 .ok()
                 .and_then(|v| v.parse().ok())
