@@ -611,7 +611,10 @@ pub fn update_lockfile_with_metadata(
 
     let _ = fs::write(
         &lock_path,
-        format!("{}\n", serde_json::to_string_pretty(&lock).unwrap_or_default()),
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&lock).unwrap_or_default()
+        ),
     );
 }
 
@@ -698,7 +701,10 @@ pub fn prune_skill(workdir: &Path, slug: &str) -> Result<()> {
     }
     fs::write(
         &lock_path,
-        format!("{}\n", serde_json::to_string_pretty(&lock).unwrap_or_default()),
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&lock).unwrap_or_default()
+        ),
     )?;
     Ok(())
 }

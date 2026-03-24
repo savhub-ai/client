@@ -341,7 +341,6 @@ struct FetchArgs {
 #[derive(Debug, Args)]
 struct UpdateArgs {}
 
-
 #[derive(Debug, Args)]
 struct FetchedArgs {
     /// Update all fetched repos and skills to the latest version from the registry
@@ -1117,7 +1116,10 @@ fn cmd_fetched_prune(config_dir: &Path, lockfile: &savhub_shared::Lockfile) -> R
                     new_skills.push(skill.clone());
                     kept_skills += 1;
                 } else {
-                    println!("  removing: {} ({}:{})", skill.slug, repo.git_url, skill.path);
+                    println!(
+                        "  removing: {} ({}:{})",
+                        skill.slug, repo.git_url, skill.path
+                    );
                     removed_skills += 1;
                 }
             }
@@ -1181,7 +1183,12 @@ async fn cmd_fetched(opts: &GlobalOpts, args: FetchedArgs) -> Result<()> {
     let mut repos_updated = 0usize;
     let mut repos_skipped = 0usize;
     let mut repos_failed = 0usize;
-    let skill_count: usize = lockfile.repos.iter().flat_map(|r| &r.flocks).map(|f| f.skills.len()).sum();
+    let skill_count: usize = lockfile
+        .repos
+        .iter()
+        .flat_map(|r| &r.flocks)
+        .map(|f| f.skills.len())
+        .sum();
 
     for repo in &mut lockfile.repos {
         let repo_path = git_url_to_route_path(&repo.git_url);
@@ -1207,8 +1214,19 @@ async fn cmd_fetched(opts: &GlobalOpts, args: FetchedArgs) -> Result<()> {
         };
 
         if repo.git_sha == remote_sha && !args.force {
-            let skill_names: Vec<_> = repo.flocks.iter().flat_map(|f| &f.skills).map(|s| s.slug.as_str()).collect();
-            println!("  {}: already at {} ({} skills: {})", repo.git_url, &remote_sha[..12.min(remote_sha.len())], skill_names.len(), skill_names.join(", "));
+            let skill_names: Vec<_> = repo
+                .flocks
+                .iter()
+                .flat_map(|f| &f.skills)
+                .map(|s| s.slug.as_str())
+                .collect();
+            println!(
+                "  {}: already at {} ({} skills: {})",
+                repo.git_url,
+                &remote_sha[..12.min(remote_sha.len())],
+                skill_names.len(),
+                skill_names.join(", ")
+            );
             repos_skipped += 1;
             continue;
         }
@@ -1223,8 +1241,20 @@ async fn cmd_fetched(opts: &GlobalOpts, args: FetchedArgs) -> Result<()> {
                 let old_sha = &repo.git_sha;
                 let short_old = &old_sha[..12.min(old_sha.len())];
                 let short_new = &remote_sha[..12.min(remote_sha.len())];
-                let skill_names: Vec<_> = repo.flocks.iter().flat_map(|f| &f.skills).map(|s| s.slug.as_str()).collect();
-                println!("  {}: {} -> {} ({} skills: {})", repo.git_url, short_old, short_new, skill_names.len(), skill_names.join(", "));
+                let skill_names: Vec<_> = repo
+                    .flocks
+                    .iter()
+                    .flat_map(|f| &f.skills)
+                    .map(|s| s.slug.as_str())
+                    .collect();
+                println!(
+                    "  {}: {} -> {} ({} skills: {})",
+                    repo.git_url,
+                    short_old,
+                    short_new,
+                    skill_names.len(),
+                    skill_names.join(", ")
+                );
                 repo.git_sha = remote_sha;
                 repos_updated += 1;
             }

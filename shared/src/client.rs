@@ -1,4 +1,3 @@
-
 use serde::{Deserialize, Serialize};
 
 use crate::SecuritySummary;
@@ -213,10 +212,14 @@ impl Lockfile {
     pub fn iter_skills(&self) -> impl Iterator<Item = (&str, &str, &str, &LockSkill)> {
         self.repos.iter().flat_map(|repo| {
             repo.flocks.iter().flat_map(move |flock| {
-                flock
-                    .skills
-                    .iter()
-                    .map(move |skill| (repo.git_url.as_str(), repo.git_sha.as_str(), flock.path.as_str(), skill))
+                flock.skills.iter().map(move |skill| {
+                    (
+                        repo.git_url.as_str(),
+                        repo.git_sha.as_str(),
+                        flock.path.as_str(),
+                        skill,
+                    )
+                })
             })
         })
     }

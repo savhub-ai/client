@@ -46,17 +46,15 @@ pub fn FetchedPage() -> Element {
                 let flat = savhub_local::skills::flatten_lockfile(&lock);
                 let list: Vec<FetchedSkill> = flat
                     .into_iter()
-                    .map(|e| {
-                        FetchedSkill {
-                            slug: e.slug.clone(),
-                            version: e.version,
-                            fetched_at: "\u{2014}".to_string(),
-                            path: workdir_bg.join(&e.slug),
-                            remote_id: None,
-                            remote_slug: Some(e.slug),
-                            repo_url: Some(e.repo_url),
-                            remote_path: Some(e.path),
-                        }
+                    .map(|e| FetchedSkill {
+                        slug: e.slug.clone(),
+                        version: e.version,
+                        fetched_at: "\u{2014}".to_string(),
+                        path: workdir_bg.join(&e.slug),
+                        remote_id: None,
+                        remote_slug: Some(e.slug),
+                        repo_url: Some(e.repo_url),
+                        remote_path: Some(e.path),
                     })
                     .collect();
                 Some(list)
@@ -84,7 +82,12 @@ pub fn FetchedPage() -> Element {
                 let repo_url = repo.git_url.clone();
                 match crate::api::fetch_remote_repo_detail(&client, &repo_url).await {
                     Ok(detail) => {
-                        let Some(remote_sha) = detail.document.git_sha.as_ref().filter(|s| !s.trim().is_empty()) else {
+                        let Some(remote_sha) = detail
+                            .document
+                            .git_sha
+                            .as_ref()
+                            .filter(|s| !s.trim().is_empty())
+                        else {
                             failures.push(format!("{repo_url}: no git_sha"));
                             continue;
                         };
