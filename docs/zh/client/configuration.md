@@ -13,7 +13,6 @@ description: Savhub 客户端的配置文件和设置项
 |------|------|
 | `config.json` | 认证令牌、注册表 URL、语言偏好 |
 | `selectors.json` | 选择器定义（项目类型检测） |
-| `profiles.json` | 预设组定义（技能分组） |
 | `projects.json` | 已注册的项目目录 |
 | `fetched_skills.json` | 已获取技能的跟踪数据 |
 
@@ -32,7 +31,7 @@ Savhub 在项目根目录使用两个文件：`savhub.toml`（用户意图）和
 
 ### savhub.toml — 项目配置
 
-配置文件包含四个顶层节点：`[selectors]`、`[presets]`、`[flocks]`、`[skills]`。每个节点均支持：
+配置文件包含三个顶层节点：`[selectors]`、`[flocks]`、`[skills]`。每个节点均支持：
 
 - **`matched`** — 由 `savhub apply` 自动管理，每次运行时替换。
 - **`manual_added`** — 用户手动添加的条目，`savhub apply` 永远不会修改。
@@ -49,27 +48,15 @@ version = 1
 # 由 `savhub apply` 自动管理：
 [[selectors.matched]]
 selector = "Rust Project"
-presets = ["rust-core"]
 flocks = ["rust-dev"]
 
 [[selectors.matched]]
 selector = "Salvo Web Framework"
-presets = []
 flocks = ["salvo-skills"]
 
 # 用户自定义（可选）：
 # manual_added = ["my-custom-selector"]
 # manual_skipped = ["unwanted-selector"]
-
-# ── 预设组 ─────────────────────────────────────────────────
-[presets]
-
-# 自动管理：由匹配的选择器贡献的预设组。
-matched = ["rust-core"]
-
-# 用户自定义（可选）：
-# manual_added = ["my-extra-preset"]
-# manual_skipped = ["rust-core"]
 
 # ── 技能集 ─────────────────────────────────────────────────
 [flocks]
@@ -101,9 +88,7 @@ matched = ["rust-dev", "salvo-skills"]
 
 #### 各节点说明
 
-**`[selectors]`** — 每个 `[[selectors.matched]]` 记录匹配的选择器及其贡献的预设组和技能集。使用 `manual_skipped` 可以屏蔽某个选择器。
-
-**`[presets]`** — `matched` 列出选择器贡献的预设组。使用 `manual_added` 始终启用某个预设组。使用 `manual_skipped` 排除某个预设组。
+**`[selectors]`** — 每个 `[[selectors.matched]]` 记录匹配的选择器及其贡献的技能集。使用 `manual_skipped` 可以屏蔽某个选择器。
 
 **`[flocks]`** — `matched` 列出选择器贡献的技能集。使用 `manual_added` 始终安装某个技能集。使用 `manual_skipped` 排除某个技能集。
 
@@ -171,5 +156,4 @@ git_sha = "789def012345"
 |--------|----------|
 | `detectors.json` | `selectors.json` |
 | `savhub.toml` 中的 `[detectors]` | `[selectors]`（serde 别名） |
-| `.savhub/profile.json` | `savhub.toml` 的 presets 字段 |
 | `.savhub/lock.json` | `savhub.toml` 的 skills 部分 |

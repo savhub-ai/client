@@ -20,7 +20,7 @@ savhub apply
 
 1. **Selector matching** — All configured selectors run against the current directory. Each selector checks rules (file existence, glob patterns, etc.) to detect the project type.
 
-2. **Flock collection** — Matched selectors contribute flocks (skill collections) and presets. Presets may also reference flocks.
+2. **Flock collection** — Matched selectors contribute flocks (skill collections).
 
 3. **Interactive selection** — You choose which flocks to fetch via a multi-select dialog (skipped with `--yes`).
 
@@ -35,7 +35,7 @@ savhub apply
    - Codex: `.agents/skills/`
 
 8. **File updates:**
-   - `savhub.toml` — The `matched` fields in `[selectors]`, `[presets]`, and `[flocks]` are **replaced** with the current selector results. All `manual_*` fields are **never modified** by apply.
+   - `savhub.toml` — The `matched` fields in `[selectors]` and `[flocks]` are **replaced** with the current selector results. All `manual_*` fields are **never modified** by apply.
    - `savhub.lock` — Fetched skills are **appended** with their version and git commit.
 
 ### When No Selectors Match
@@ -45,7 +45,7 @@ If no selectors match, all skills previously applied by savhub will be removed:
 1. Reads `savhub.lock` to determine which skills were fetched.
 2. Lists skills to remove and asks for confirmation (unless `--yes`).
 3. Removes skill folders from AI client directories (`.claude/skills/`, `.agents/skills/`).
-4. Clears `selectors.matched`, `presets.matched`, and `flocks.matched` in `savhub.toml` (all `manual_*` fields are untouched).
+4. Clears `selectors.matched` and `flocks.matched` in `savhub.toml` (all `manual_*` fields are untouched).
 5. Deletes `savhub.lock`.
 
 ## Options
@@ -56,14 +56,12 @@ If no selectors match, all skills previously applied by savhub will be removed:
 | `--yes`, `-y` | Skip all confirmation prompts (accept all flocks) |
 | `--agents <list>` | Only sync to specific AI agents |
 | `--skip-agents <list>` | Skip specific AI agents |
-| `--presets <list>` | Manually add presets (saved to `presets.manual_added`) |
-| `--skip-presets <list>` | Manually skip presets (saved to `presets.manual_skipped`) |
 | `--skills <list>` | Manually add skills by slug or sign (saved to `skills.manual_added`) |
 | `--skip-skills <list>` | Manually skip skills (saved to `skills.manual_skipped`) |
 | `--flocks <list>` | Manually add flocks (saved to `flocks.manual_added`) |
 | `--skip-flocks <list>` | Manually skip flocks (saved to `flocks.manual_skipped`) |
 
-All `--presets`, `--skills`, `--flocks` and their `--skip-*` counterparts are **persistent** — they are saved to `savhub.toml` and apply on every subsequent run.
+All `--skills`, `--flocks` and their `--skip-*` counterparts are **persistent** — they are saved to `savhub.toml` and apply on every subsequent run.
 
 ## Skill Signs
 
@@ -101,9 +99,6 @@ savhub apply --skip-agents cursor
 # Multiple agents (comma-separated)
 savhub apply --agents claude-code,codex
 
-# Manually add a preset (persisted to savhub.toml)
-savhub apply --presets my-custom-preset
-
 # Manually add a flock
 savhub apply --flocks rust-dev
 
@@ -138,9 +133,6 @@ Matched selectors (by priority):
 
 Flocks to fetch:
   [+] rust-dev (5 skills)
-
-Presets from selectors:
-  [+] rust-core
 
 Skills to fetch:
   [+] rust-clippy

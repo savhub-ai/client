@@ -13,7 +13,6 @@ All global configuration is stored in `~/.config/savhub/` (or the platform-speci
 |------|-------------|
 | `config.json` | Auth token, registry URL, language preference |
 | `selectors.json` | Selector definitions for project type detection |
-| `profiles.json` | Preset definitions (named skill groups) |
 | `projects.json` | Registered project directories |
 | `fetched_skills.json` | Tracking data for fetched skills |
 
@@ -32,7 +31,7 @@ Savhub uses two files at the project root: `savhub.toml` (user intent) and `savh
 
 ### savhub.toml — Project Configuration
 
-The config file has four top-level sections: `[selectors]`, `[presets]`, `[flocks]`, and `[skills]`. Each section supports:
+The config file has three top-level sections: `[selectors]`, `[flocks]`, and `[skills]`. Each section supports:
 
 - **`matched`** — Auto-managed by `savhub apply`, replaced on each run.
 - **`manual_added`** — User-added entries, never modified by `savhub apply`.
@@ -49,27 +48,15 @@ version = 1
 # Auto-managed by `savhub apply`:
 [[selectors.matched]]
 selector = "Rust Project"
-presets = ["rust-core"]
 flocks = ["rust-dev"]
 
 [[selectors.matched]]
 selector = "Salvo Web Framework"
-presets = []
 flocks = ["salvo-skills"]
 
 # User overrides (optional):
 # manual_added = ["my-custom-selector"]
 # manual_skipped = ["unwanted-selector"]
-
-# ── Presets ────────────────────────────────────────────────
-[presets]
-
-# Auto-managed: presets contributed by matched selectors.
-matched = ["rust-core"]
-
-# User overrides (optional):
-# manual_added = ["my-extra-preset"]
-# manual_skipped = ["rust-core"]
 
 # ── Flocks ─────────────────────────────────────────────────
 [flocks]
@@ -101,9 +88,7 @@ matched = ["rust-dev", "salvo-skills"]
 
 #### Section Details
 
-**`[selectors]`** — Each `[[selectors.matched]]` entry records which selector matched and what presets/flocks it contributed. Use `manual_skipped` to suppress a selector.
-
-**`[presets]`** — `matched` lists presets contributed by selectors. Use `manual_added` to always enable a preset regardless of selectors. Use `manual_skipped` to exclude a preset even if a selector contributes it.
+**`[selectors]`** — Each `[[selectors.matched]]` entry records which selector matched and what flocks it contributed. Use `manual_skipped` to suppress a selector.
 
 **`[flocks]`** — `matched` lists flocks contributed by selectors. Use `manual_added` to always fetch a flock. Use `manual_skipped` to exclude a flock even if a selector contributes it.
 
@@ -171,5 +156,4 @@ The following legacy formats are automatically migrated:
 |--------|---------|
 | `detectors.json` | `selectors.json` |
 | `savhub.toml` with `[detectors]` | `[selectors]` (serde alias) |
-| `.savhub/profile.json` | `savhub.toml` presets field |
 | `.savhub/lock.json` | `savhub.toml` skills section |

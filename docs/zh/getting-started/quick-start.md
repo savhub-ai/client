@@ -92,4 +92,3 @@ savhub selector test
 
 - [Apply 命令](https://savhub.ai/zh/docs/client/apply) - apply 工作流的详细用法
 - [选择器](https://savhub.ai/zh/docs/client/selectors) - 创建自定义项目检测规则
-- [预设组](https://savhub.ai/zh/docs/client/presets) - 将技能分组为可复用的预设

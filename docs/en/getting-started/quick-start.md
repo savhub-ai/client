@@ -92,4 +92,3 @@ savhub selector test
 
 - [Apply Command](https://savhub.ai/en/docs/client/apply) - Detailed usage of the apply workflow
 - [Selectors](https://savhub.ai/en/docs/client/selectors) - Create custom project detection rules
-- [Presets](https://savhub.ai/en/docs/client/presets) - Group skills into reusable presets

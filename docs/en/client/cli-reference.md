@@ -38,8 +38,6 @@ savhub apply [options]
 | `--yes` | Skip all prompts |
 | `--agents <list>` | Only sync to these AI agents |
 | `--skip-agents <list>` | Skip these AI agents |
-| `--presets <list>` | Manually add presets |
-| `--skip-presets <list>` | Manually skip presets |
 | `--skills <list>` | Manually add skills |
 | `--skip-skills <list>` | Manually skip skills |
 | `--flocks <list>` | Manually add flocks |
@@ -82,7 +80,6 @@ savhub disable <slug> [--yes]                  # Disable project skill
 | Option | Description |
 |--------|-------------|
 | `--repo <path>` | Repository name |
-| `--preset <P>` | Associate with preset(s) |
 | `--selector <S>` | Associate with selector(s) |
 | `--use-repo` | Overwrite existing skill |
 | `--keep-existing` | Keep existing skill on conflict |

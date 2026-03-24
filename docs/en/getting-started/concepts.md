@@ -32,10 +32,6 @@ A repo (also called a *realm*) is a registered Git repository. Savhub clones it,
 
 A selector is a rule that detects what kind of project you are working in — e.g., "this is a Rust project" or "this repo uses React". The Savhub Client runs selectors during `savhub apply` to recommend the right flocks for your project.
 
-### Preset
-
-A preset is a named list of skills you want applied together, independent of selectors. Useful for personal workflows or team standards.
-
 ### Registry
 
 The registry is a Git repository that stores metadata about every indexed skill and flock. The Savhub Client syncs the registry locally so searches are fast and offline-capable.

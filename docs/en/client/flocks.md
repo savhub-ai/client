@@ -71,8 +71,7 @@ Done. 3 skill(s) added from flock "rust-dev".
 Flocks integrate with other Savhub features:
 
 - **Selectors** can reference flocks - when a selector matches, its flocks are suggested
-- **Presets** can include flocks - when a preset is enabled, its flock skills are resolved
-- **Apply command** - `savhub apply` collects flocks from selectors and presets, then lets you choose which to fetch
+- **Apply command** - `savhub apply` collects flocks from selectors, then lets you choose which to fetch
 
 ## Desktop App
 

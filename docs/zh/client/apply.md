@@ -20,7 +20,7 @@ savhub apply
 
 1. **选择器匹配** — 所有已配置的选择器对当前目录运行，每个选择器通过检查规则（文件是否存在、glob 模式等）来检测项目类型。
 
-2. **技能集收集** — 匹配的选择器贡献技能集（flock）和预设组（preset），预设组也可能引用技能集。
+2. **技能集收集** — 匹配的选择器贡献技能集（flock）。
 
 3. **交互式选择** — 通过多选对话框选择要安装的技能集（使用 `--yes` 可跳过）。
 
@@ -35,7 +35,7 @@ savhub apply
    - Codex：`.agents/skills/`
 
 8. **文件更新：**
-   - `savhub.toml` — `[selectors]`、`[presets]`、`[flocks]` 中的 `matched` 字段会被当前选择器结果**替换**。所有 `manual_*` 字段**永远不会**被 apply 修改。
+   - `savhub.toml` — `[selectors]`、`[flocks]` 中的 `matched` 字段会被当前选择器结果**替换**。所有 `manual_*` 字段**永远不会**被 apply 修改。
    - `savhub.lock` — 已安装的技能会被**追加**，记录版本和 git commit。
 
 ### 没有选择器匹配时
@@ -45,7 +45,7 @@ savhub apply
 1. 读取 `savhub.lock` 确定已安装的技能。
 2. 列出要移除的技能并请求确认（除非使用了 `--yes`）。
 3. 从 AI 客户端目录中删除技能文件夹（`.claude/skills/`、`.agents/skills/`）。
-4. 清除 `savhub.toml` 中的 `selectors.matched`、`presets.matched` 和 `flocks.matched`（所有 `manual_*` 字段保持不变）。
+4. 清除 `savhub.toml` 中的 `selectors.matched` 和 `flocks.matched`（所有 `manual_*` 字段保持不变）。
 5. 删除 `savhub.lock`。
 
 ## 选项
@@ -56,14 +56,12 @@ savhub apply
 | `--yes`, `-y` | 跳过所有确认提示（接受所有技能集） |
 | `--agents <列表>` | 仅同步到指定的 AI 客户端 |
 | `--skip-agents <列表>` | 跳过指定的 AI 客户端 |
-| `--presets <列表>` | 手动添加预设组（保存到 `presets.manual_added`） |
-| `--skip-presets <列表>` | 手动跳过预设组（保存到 `presets.manual_skipped`） |
 | `--skills <列表>` | 手动添加技能（保存到 `skills.manual_added`） |
 | `--skip-skills <列表>` | 手动跳过技能（保存到 `skills.manual_skipped`） |
 | `--flocks <列表>` | 手动添加技能集（保存到 `flocks.manual_added`） |
 | `--skip-flocks <列表>` | 手动跳过技能集（保存到 `flocks.manual_skipped`） |
 
-所有 `--presets`、`--skills`、`--flocks` 及其 `--skip-*` 对应项都是**持久化的**——它们保存到 `savhub.toml` 中，在后续每次运行时生效。
+所有 `--skills`、`--flocks` 及其 `--skip-*` 对应项都是**持久化的**——它们保存到 `savhub.toml` 中，在后续每次运行时生效。
 
 ## 技能签名
 
@@ -101,9 +99,6 @@ savhub apply --skip-agents cursor
 # 多个客户端（逗号分隔）
 savhub apply --agents claude-code,codex
 
-# 手动添加预设组（持久化到 savhub.toml）
-savhub apply --presets my-custom-preset
-
 # 手动添加技能集
 savhub apply --flocks rust-dev
 
@@ -138,9 +133,6 @@ Matched selectors (by priority):
 
 Flocks to fetch:
   [+] rust-dev (5 skills)
-
-Presets from selectors:
-  [+] rust-core
 
 Skills to fetch:
   [+] rust-clippy

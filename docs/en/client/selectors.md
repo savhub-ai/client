@@ -5,7 +5,7 @@ description: Configure project type detection rules
 
 # Selectors
 
-Selectors are rules that automatically detect your project type by checking files, folders, and environment conditions. When matched, they apply presets, add skills, or fetch flocks.
+Selectors are rules that automatically detect your project type by checking files, folders, and environment conditions. When matched, they add skills or fetch flocks.
 
 ## Overview
 
@@ -13,7 +13,7 @@ A selector consists of:
 - **Name** - Display name (e.g., "Rust Project")
 - **Rules** - One or more conditions to check
 - **Match mode** - How rules are combined (all, any, or custom expression)
-- **Actions** - Presets to enable, skills to add, and flocks to fetch
+- **Actions** - Skills to add and flocks to fetch
 - **Priority** - Higher priority selectors take precedence
 
 ## CLI Commands
@@ -72,14 +72,13 @@ Example: A selector with 3 rules using `(1 && 2) || 3` means "rules 1 AND 2 must
 
 When a selector matches, it can:
 
-1. **Enable presets** - Activate named skill groups
-2. **Add skills** - Directly add individual skills by slug
-3. **Add flocks** - Fetch entire skill collections
+1. **Add skills** - Directly add individual skills by slug
+2. **Add flocks** - Fetch entire skill collections
 
 ## Priority
 
 Selectors have an integer priority (default: 0). Higher values run first. When multiple selectors match:
-- All matched selectors contribute their presets, skills, and flocks
+- All matched selectors contribute their skills and flocks
 - The union of all actions is applied
 
 ## Default Selectors
@@ -91,7 +90,7 @@ On first use, Savhub creates a set of default selectors for common project types
 Selectors are best managed through the **Savhub Desktop** app, which provides a visual editor with:
 - Rule builder UI
 - Expression editor
-- Preset/skill/flock search
+- Skill/flock search
 - Template support
 
 Selectors are stored in `~/.config/savhub/selectors.json`. The file is automatically migrated from the legacy `detectors.json` if present.
@@ -111,7 +110,6 @@ A Rust project selector:
   ],
   "match_mode": "all_match",
   "custom_expression": "",
-  "presets": ["rust-core"],
   "add_skills": [],
   "add_flocks": ["rust-dev"],
   "priority": 10

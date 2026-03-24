@@ -38,8 +38,6 @@ savhub apply [选项]
 | `--yes` | 跳过所有提示 |
 | `--agents <列表>` | 仅同步到这些 AI 客户端 |
 | `--skip-agents <列表>` | 跳过这些 AI 客户端 |
-| `--presets <列表>` | 手动添加预设组 |
-| `--skip-presets <列表>` | 手动跳过预设组 |
 | `--skills <列表>` | 手动添加技能 |
 | `--skip-skills <列表>` | 手动跳过技能 |
 | `--flocks <列表>` | 手动添加技能集 |
@@ -82,7 +80,6 @@ savhub disable <slug> [--yes]               # 禁用项目技能
 | 选项 | 说明 |
 |------|------|
 | `--repo <路径>` | 仓库名称 |
-| `--preset <P>` | 关联预设组 |
 | `--selector <S>` | 关联选择器 |
 | `--use-repo` | 覆盖已有技能 |
 | `--keep-existing` | 冲突时保留已有技能 |
