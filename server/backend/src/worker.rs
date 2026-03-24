@@ -6,7 +6,9 @@ use tokio::task::{JoinHandle, JoinSet};
 use uuid::Uuid;
 
 use crate::db::PgPool;
-use crate::models::{IndexJobRow, NewIndexJobRow, NewPendingIndexRepoRow, PendingIndexRepoRow, RepoRow, SkillRow};
+use crate::models::{
+    IndexJobRow, NewIndexJobRow, NewPendingIndexRepoRow, PendingIndexRepoRow, RepoRow, SkillRow,
+};
 use crate::schema::{flocks, index_jobs, pending_index_repos, repos, skills};
 use crate::service::git_ops::resolve_remote_sha;
 use crate::service::helpers::{hash_string, normalize_git_url};
@@ -51,7 +53,9 @@ pub fn spawn_worker(pool: PgPool) -> JoinHandle<()> {
         let mut index_tick = tokio::time::interval(index_interval);
         let mut repo_check_tick = tokio::time::interval(repo_check_interval);
         let mut cleanup_tick = tokio::time::interval(std::time::Duration::from_secs(24 * 60 * 60));
-        let mut pending_index_tick = tokio::time::interval(std::time::Duration::from_secs(config.auto_index_min_interval_secs));
+        let mut pending_index_tick = tokio::time::interval(std::time::Duration::from_secs(
+            config.auto_index_min_interval_secs,
+        ));
 
         // Static security scan: in-memory set tracks which skill IDs are
         // currently being scanned to prevent duplicate pickup.
@@ -359,7 +363,10 @@ async fn check_repos_for_new_commits(pool: &PgPool) -> Result<(), String> {
         return Ok(());
     }
 
-    tracing::info!(count = repos_to_check.len(), "checking repos for new commits");
+    tracing::info!(
+        count = repos_to_check.len(),
+        "checking repos for new commits"
+    );
 
     for repo in repos_to_check {
         let git_url = normalize_git_url(&repo.git_url);
