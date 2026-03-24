@@ -145,6 +145,14 @@ savhub transfer reject <slug>             # 拒绝转移
 savhub transfer cancel <slug>             # 取消转移
 ```
 
+## 自更新
+
+```bash
+savhub self-update       # 将 CLI 更新到最新版本
+```
+
+从 GitHub Releases 检查是否有新版本，下载当前平台对应的二进制文件，原地替换当前可执行文件。旧版本会备份为 `.old` 文件，下次启动时自动清理。
+
 ## 其他
 
 ```bash

@@ -167,6 +167,14 @@ savhub transfer reject my-skill
 savhub transfer cancel my-skill
 ```
 
+### `savhub self-update` — Update the CLI
+
+Checks GitHub Releases for a newer version, downloads the matching binary for your platform, and replaces the current executable in place.
+
+```bash
+savhub self-update
+```
+
 ### `savhub delete` — Delete a skill (admin)
 
 ```bash

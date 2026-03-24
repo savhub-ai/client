@@ -107,6 +107,7 @@ Authenticates via GitHub OAuth so you can publish, star, and manage skills.
 | `savhub login` | Login via GitHub OAuth |
 | `savhub logout` | Clear local auth token |
 | `savhub whoami` | Show current authenticated user |
+| `savhub self-update` | Update the CLI to the latest version |
 
 ### Selectors
 

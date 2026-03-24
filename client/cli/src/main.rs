@@ -1,4 +1,5 @@
 mod tui;
+mod updater;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, BufReader, Write};
@@ -168,6 +169,8 @@ enum Command {
     },
     /// Open documentation in the browser
     Docs,
+    /// Update the savhub CLI to the latest version
+    SelfUpdate,
 }
 
 #[derive(Debug, Subcommand)]
@@ -503,6 +506,10 @@ async fn main() -> Result<()> {
         // SAFETY: called before any threads are spawned.
         unsafe { std::env::set_var("SAVHUB_CONFIG_DIR", profile) };
     }
+
+    // Clean up backup binary from a previous self-update
+    updater::cleanup_old_binary();
+
     let opts = resolve_global_opts(&cli)?;
 
     match cli.command {
@@ -557,6 +564,7 @@ async fn main() -> Result<()> {
                 let _ = std::process::Command::new("xdg-open").arg(url).spawn();
             }
         }
+        Some(Command::SelfUpdate) => updater::run_self_update().await?,
         None => {
             let opts = opts.clone();
             tokio::task::spawn_blocking(move || cmd_apply(&opts, ApplyArgs::default()))

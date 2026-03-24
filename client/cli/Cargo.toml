@@ -28,3 +28,5 @@ sha2.workspace = true
 tokio.workspace = true
 walkdir.workspace = true
 zip.workspace = true
+flate2.workspace = true
+self_update_tar.workspace = true

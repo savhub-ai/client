@@ -145,6 +145,14 @@ savhub transfer reject <slug>             # Reject transfer
 savhub transfer cancel <slug>             # Cancel transfer
 ```
 
+## Self-Update
+
+```bash
+savhub self-update       # Update the CLI to the latest version
+```
+
+Checks GitHub Releases for a newer version, downloads the platform-specific binary, and replaces the current executable in place. A backup of the old binary is created (`.old`) and automatically cleaned up on the next run.
+
 ## Other
 
 ```bash
