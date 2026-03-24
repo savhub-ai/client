@@ -97,22 +97,6 @@ savhub selector test              # 对当前目录运行选择器
 
 别名：`savhub detector`
 
-## 预设组
-
-```bash
-savhub preset create <名称> [--description D]   # 创建预设组
-savhub preset list                                # 列出预设组
-savhub preset show <名称>                         # 查看预设组
-savhub preset delete <名称> [--yes]               # 删除预设组
-savhub preset add <预设组> <技能...>              # 添加技能
-savhub preset remove <预设组> <技能...>           # 移除技能
-savhub preset bind <名称>                         # 绑定到项目
-savhub preset unbind                              # 解除绑定
-savhub preset status                              # 查看绑定状态
-```
-
-别名：`savhub profile`
-
 ## 技能集
 
 ```bash
@@ -128,13 +112,6 @@ savhub registry search <关键词...> [--limit N]          # 搜索注册表
 savhub registry list [--page N] [--page-size N] [--json] # 分页列出技能
 ```
 
-## 社交功能
-
-```bash
-savhub star <slug>       # 收藏技能
-savhub unstar <slug>     # 取消收藏
-```
-
 ## 自更新
 
 ```bash
@@ -146,6 +123,5 @@ savhub self-update       # 将 CLI 更新到最新版本
 ## 其他
 
 ```bash
-savhub delete <slug>     # 删除技能（仅管理员）
 savhub docs              # 在浏览器中打开文档
 ```

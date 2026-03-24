@@ -30,7 +30,7 @@ use savhub_shared::{
     BanUserRequest, BanUserResponse, DeleteResponse, FileContentResponse, IndexRequest,
     MAX_BUNDLE_BYTES, ModerationStatus, ModerationUpdateRequest, PagedResponse, PublishBundleFile,
     PublishResponse, RemoteSkillFetchSpec, RepoDetailResponse, ResolveResponse, RoleUpdateResponse,
-    SearchResponse, SetUserRoleRequest, SkillDetailResponse, SkillListItem, ToggleStarResponse,
+    SearchResponse, SetUserRoleRequest, SkillDetailResponse, SkillListItem,
     UserListResponse, UserRole, WhoAmIResponse, is_slug, normalize_bundle_files,
     normalize_tags, total_bundle_bytes,
 };
@@ -99,12 +99,6 @@ enum Command {
     Explore(ExploreArgs),
     /// View detailed info about a skill
     Inspect(InspectArgs),
-    /// Delete a skill from the registry (admin)
-    Delete(DeleteArgs),
-    /// Star a skill
-    Star(DeleteArgs),
-    /// Unstar a skill
-    Unstar(DeleteArgs),
     /// Manage registry access
     Registry {
         #[command(subcommand)]
@@ -461,9 +455,6 @@ async fn main() -> Result<()> {
         Some(Command::List) => cmd_list(&opts)?,
         Some(Command::Explore(args)) => cmd_explore(&opts, args).await?,
         Some(Command::Inspect(args)) => cmd_inspect(&opts, args).await?,
-        Some(Command::Delete(args)) => cmd_delete(&opts, args).await?,
-        Some(Command::Star(args)) => cmd_set_starred(&opts, args, true).await?,
-        Some(Command::Unstar(args)) => cmd_set_starred(&opts, args, false).await?,
         Some(Command::Registry { command }) => cmd_registry(&opts, command).await?,
         Some(Command::Selector { command }) => cmd_selector(&opts, command)?,
         Some(Command::Apply(args)) => {
@@ -1443,23 +1434,6 @@ async fn cmd_publish(opts: &GlobalOpts, args: PublishArgs) -> Result<()> {
     .await
 }
 
-async fn cmd_delete(opts: &GlobalOpts, args: DeleteArgs) -> Result<()> {
-    let slug = normalize_slug(&args.slug)?;
-    if !args.yes {
-        ensure_confirmed(
-            opts.input_allowed,
-            &format!("Delete {slug}?"),
-            "pass --yes when input is disabled",
-        )?;
-    }
-    let client = authed_client(opts)?;
-    client
-        .delete_json::<DeleteResponse>(&format!("/skills/{slug}"))
-        .await?;
-    println!("Deleted {slug}");
-    Ok(())
-}
-
 #[allow(dead_code)]
 async fn cmd_hide(opts: &GlobalOpts, args: DeleteArgs) -> Result<()> {
     moderate_skill(opts, &args, ModerationStatus::Hidden, "Hidden").await
@@ -1486,42 +1460,6 @@ async fn cmd_undelete(opts: &GlobalOpts, args: DeleteArgs) -> Result<()> {
 #[allow(dead_code)]
 async fn cmd_unhide(opts: &GlobalOpts, args: DeleteArgs) -> Result<()> {
     moderate_skill(opts, &args, ModerationStatus::Active, "Unhidden").await
-}
-
-async fn cmd_set_starred(opts: &GlobalOpts, args: DeleteArgs, desired: bool) -> Result<()> {
-    let slug = normalize_slug(&args.slug)?;
-    if !args.yes {
-        ensure_confirmed(
-            opts.input_allowed,
-            &format!("{} {slug}?", if desired { "Star" } else { "Unstar" }),
-            "pass --yes when input is disabled",
-        )?;
-    }
-    let client = authed_client(opts)?;
-    let detail = client
-        .get_json::<SkillDetailResponse>(&format!("/skills/{slug}"))
-        .await?;
-    if detail.starred == desired {
-        println!(
-            "{slug} is already {}",
-            if desired { "starred" } else { "not starred" }
-        );
-        return Ok(());
-    }
-    let result = client
-        .post_empty::<ToggleStarResponse>(&format!("/skills/{slug}/star"))
-        .await?;
-    println!(
-        "{} {} ({} stars)",
-        if result.starred {
-            "Starred"
-        } else {
-            "Unstarred"
-        },
-        slug,
-        result.stars
-    );
-    Ok(())
 }
 
 #[allow(dead_code)]

@@ -17,7 +17,6 @@ Savhub is a skill index for public Git repositories. It scans `SKILL.md` files f
 
 - [Apply Command](https://savhub.ai/en/docs/client/apply) - Auto-detect project type and apply skills
 - [Selectors](https://savhub.ai/en/docs/client/selectors) - Configure project type detection rules
-- [Presets](https://savhub.ai/en/docs/client/presets) - Manage named skill groups
 - [Flocks](https://savhub.ai/en/docs/client/flocks) - Browse and fetch skill collections
 - [CLI Reference](https://savhub.ai/en/docs/client/cli-reference) - Complete command reference
 - [Configuration](https://savhub.ai/en/docs/client/configuration) - Configuration files and settings

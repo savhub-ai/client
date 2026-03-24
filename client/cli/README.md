@@ -134,41 +134,12 @@ savhub enable my-skill --repo /path/to/repo
 savhub disable my-skill
 ```
 
-### `savhub preset` — Manage presets
-
-```bash
-savhub preset create rust-dev --description "Rust tools"
-savhub preset list
-savhub preset show rust-dev
-savhub preset add rust-dev cargo-audit clippy
-savhub preset remove rust-dev clippy
-savhub preset bind rust-dev    # Bind to current project
-savhub preset unbind
-savhub preset status
-savhub preset delete rust-dev
-```
-
-Also available as `savhub profile ...`.
-
-### `savhub star` / `savhub unstar` — Social
-
-```bash
-savhub star my-skill
-savhub unstar my-skill
-```
-
 ### `savhub self-update` — Update the CLI
 
 Checks GitHub Releases for a newer version, downloads the matching binary for your platform, and replaces the current executable in place.
 
 ```bash
 savhub self-update
-```
-
-### `savhub delete` — Delete a skill (admin)
-
-```bash
-savhub delete my-skill
 ```
 
 ### `savhub mcp` — MCP server

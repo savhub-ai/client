@@ -17,7 +17,6 @@ Savhub 是公开 Git 仓库的技能索引平台。它扫描仓库中的 `SKILL.
 
 - [Apply 命令](https://savhub.ai/zh/docs/client/apply) - 自动检测项目类型并应用技能
 - [选择器](https://savhub.ai/zh/docs/client/selectors) - 配置项目类型检测规则
-- [预设组](https://savhub.ai/zh/docs/client/presets) - 管理技能分组
 - [技能集](https://savhub.ai/zh/docs/client/flocks) - 浏览和安装技能集合
 - [CLI 参考](https://savhub.ai/zh/docs/client/cli-reference) - 完整命令参考
 - [配置文件](https://savhub.ai/zh/docs/client/configuration) - 配置文件和设置项

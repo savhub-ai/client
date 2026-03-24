@@ -97,22 +97,6 @@ savhub selector test              # Run selectors against current dir
 
 Alias: `savhub detector`
 
-## Presets
-
-```bash
-savhub preset create <name> [--description D]   # Create preset
-savhub preset list                                # List presets
-savhub preset show <name>                         # Show preset
-savhub preset delete <name> [--yes]               # Delete preset
-savhub preset add <preset> <skills...>            # Add skills
-savhub preset remove <preset> <skills...>         # Remove skills
-savhub preset bind <name>                         # Bind to project
-savhub preset unbind                              # Unbind from project
-savhub preset status                              # Show project status
-```
-
-Alias: `savhub profile`
-
 ## Flocks
 
 ```bash
@@ -128,13 +112,6 @@ savhub registry search <query...> [--limit N]           # Search registry
 savhub registry list [--page N] [--page-size N] [--json] # List skills
 ```
 
-## Social
-
-```bash
-savhub star <slug>       # Star a skill
-savhub unstar <slug>     # Unstar a skill
-```
-
 ## Self-Update
 
 ```bash
@@ -146,6 +123,5 @@ Checks GitHub Releases for a newer version, downloads the platform-specific bina
 ## Other
 
 ```bash
-savhub delete <slug>     # Delete skill (admin only)
 savhub docs              # Open documentation in browser
 ```
