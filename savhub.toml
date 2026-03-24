@@ -1,0 +1,23 @@
+version = 1
+
+[[selectors.matched]]
+selector = "Salvo Web Framework"
+
+[[selectors.matched.flocks]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-skills"
+
+[[selectors.matched]]
+selector = "Dioxus Framework"
+
+[[selectors.matched]]
+selector = "Rust Project"
+
+[[flocks.matched]]
+repo = "github.com/salvo-rs/salvo-skills"
+path = "salvo-skills"
+
+[skills]
+manual_added = []
+manual_skipped = []
+
