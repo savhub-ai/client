@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::clients::{global_skills_dir, home_dir};
 use crate::skills::{
-    LockEntry, Lockfile, RepoSkillFolder, RepoSkillOrigin, SkillFolder, copy_skill_folder,
+    LockSkill, Lockfile, RepoSkillFolder, RepoSkillOrigin, SkillFolder, copy_skill_folder,
     find_repo_skill_folders, find_skill_folders, read_skill_version_info, repo_git_sha,
     skill_folder_from_path, write_repo_skill_origin,
 };
@@ -388,8 +388,8 @@ fn lockfile_to_project_added_skills(lockfile: &Lockfile) -> Vec<ProjectAddedSkil
             slug: e.slug,
             repo: Some(e.repo_url),
             local: None,
-            version: Some(e.entry.version),
-            fetched_at: e.entry.fetched_at,
+            version: Some(e.version),
+            fetched_at: 0,
         })
         .collect()
 }
@@ -398,12 +398,15 @@ fn project_added_skills_to_lockfile(skills: &[ProjectAddedSkill]) -> Lockfile {
     let mut lockfile = Lockfile::default();
     for skill in normalize_added_skills(skills) {
         let repo_url = skill.repo.clone().unwrap_or_else(|| "unknown".to_string());
-        lockfile.repos.entry(repo_url).or_default().insert(
-            skill.path,
-            LockEntry {
-                version: skill.version.unwrap_or_else(|| "latest".to_string()),
-                fetched_at: skill.fetched_at,
-                ..LockEntry::default()
+        let version = skill.version.unwrap_or_else(|| "latest".to_string());
+        lockfile.insert(
+            &repo_url,
+            "",
+            &skill.path,
+            LockSkill {
+                path: skill.path.clone(),
+                slug: skill.slug,
+                version,
             },
         );
     }
@@ -814,7 +817,7 @@ fn collect_skill_folders(workdir: &Path) -> Vec<SkillFolder> {
         }
     }
 
-    // 3. Repo-fetched skills (from skills.fetched.json)
+    // 3. Repo-fetched skills (from fetched.json)
     let config_dir = crate::config::get_config_dir().unwrap_or_default();
     let lock = crate::skills::read_lockfile(&config_dir).unwrap_or_default();
     for flat in crate::skills::flatten_lockfile(&lock) {

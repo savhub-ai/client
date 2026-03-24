@@ -40,24 +40,20 @@ pub fn FetchedPage() -> Element {
         spawn(async move {
             let workdir_bg = workdir.clone();
             let list = tokio::task::spawn_blocking(move || {
-                let lock_path = workdir_bg.join("skills.fetched.json");
+                let lock_path = workdir_bg.join("fetched.json");
                 let raw = std::fs::read_to_string(&lock_path).ok()?;
                 let lock: Lockfile = serde_json::from_str(&raw).ok()?;
                 let flat = savhub_local::skills::flatten_lockfile(&lock);
                 let list: Vec<FetchedSkill> = flat
                     .into_iter()
                     .map(|e| {
-                        let slug = e.slug.clone();
-                        let ts = chrono::DateTime::from_timestamp(e.entry.fetched_at, 0)
-                            .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
-                            .unwrap_or_else(|| "\u{2014}".to_string());
                         FetchedSkill {
-                            slug: slug.clone(),
-                            version: e.entry.version,
-                            fetched_at: ts,
-                            path: workdir_bg.join(&slug),
-                            remote_id: e.entry.remote_id,
-                            remote_slug: e.entry.remote_slug,
+                            slug: e.slug.clone(),
+                            version: e.version,
+                            fetched_at: "\u{2014}".to_string(),
+                            path: workdir_bg.join(&e.slug),
+                            remote_id: None,
+                            remote_slug: Some(e.slug),
                             repo_url: Some(e.repo_url),
                             remote_path: Some(e.path),
                         }
@@ -211,19 +207,7 @@ fn FetchedRow(skill: FetchedSkill, mut skill_list: Signal<Vec<FetchedSkill>>) ->
         let slug = slug.clone();
         let skill_dir = workdir.join(&slug);
         let _ = std::fs::remove_dir_all(&skill_dir);
-
-        let lock_path = workdir.join("skills.fetched.json");
-        if let Ok(raw) = std::fs::read_to_string(&lock_path) {
-            if let Ok(mut lock) = serde_json::from_str::<serde_json::Value>(&raw) {
-                if let Some(map) = lock.get_mut("skills").and_then(|v| v.as_object_mut()) {
-                    map.remove(&slug);
-                }
-                let _ = std::fs::write(
-                    &lock_path,
-                    serde_json::to_string_pretty(&lock).unwrap_or_default(),
-                );
-            }
-        }
+        let _ = savhub_local::skills::prune_skill(&workdir, &slug);
         skill_list.with_mut(|items| items.retain(|entry| entry.slug != slug));
     };
 

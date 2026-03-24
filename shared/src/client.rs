@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -116,100 +115,150 @@ pub struct FetchedSkillEntry {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LockEntry {
+pub struct LockSkill {
+    pub path: String,
+    pub slug: String,
     pub version: String,
-    pub fetched_at: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub remote_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub remote_slug: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub flock_slug: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub git_sha: Option<String>,
 }
 
-/// Lock file format: `{ "version": 1, "<repo_url>": { "<skill_path>": LockEntry } }`
-///
-/// Uses `#[serde(flatten)]` so repo URLs appear as top-level keys alongside `version`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LockFlock {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<LockSkill>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LockRepo {
+    pub git_url: String,
+    #[serde(default)]
+    pub git_sha: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub flocks: Vec<LockFlock>,
+}
+
+/// Lock file format:
+/// ```json
+/// {
+///   "version": 1,
+///   "repos": [
+///     {
+///       "git_url": "github.com/owner/repo",
+///       "git_sha": "abc123",
+///       "flocks": [{ "path": "skills/foo", "skills": [{ "path": "skills/foo", "slug": "foo", "version": "1.0" }] }]
+///     }
+///   ]
+/// }
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Lockfile {
     pub version: u8,
-    #[serde(flatten)]
-    pub repos: BTreeMap<String, BTreeMap<String, LockEntry>>,
+    #[serde(default)]
+    pub repos: Vec<LockRepo>,
 }
 
 impl Default for Lockfile {
     fn default() -> Self {
         Self {
             version: 1,
-            repos: BTreeMap::new(),
+            repos: Vec::new(),
         }
     }
 }
 
 impl Lockfile {
-    /// Insert an entry keyed by repo_url + path.
-    pub fn insert(&mut self, repo_url: &str, path: &str, entry: LockEntry) {
-        self.repos
-            .entry(repo_url.to_string())
-            .or_default()
-            .insert(path.to_string(), entry);
+    /// Insert a skill into the lockfile under the given repo and flock.
+    pub fn insert(&mut self, git_url: &str, git_sha: &str, flock_path: &str, skill: LockSkill) {
+        let repo = match self.repos.iter_mut().find(|r| r.git_url == git_url) {
+            Some(r) => {
+                if !git_sha.is_empty() {
+                    r.git_sha = git_sha.to_string();
+                }
+                r
+            }
+            None => {
+                self.repos.push(LockRepo {
+                    git_url: git_url.to_string(),
+                    git_sha: git_sha.to_string(),
+                    flocks: Vec::new(),
+                });
+                self.repos.last_mut().unwrap()
+            }
+        };
+        let flock = match repo.flocks.iter_mut().find(|f| f.path == flock_path) {
+            Some(f) => f,
+            None => {
+                repo.flocks.push(LockFlock {
+                    path: flock_path.to_string(),
+                    skills: Vec::new(),
+                });
+                repo.flocks.last_mut().unwrap()
+            }
+        };
+        if let Some(existing) = flock.skills.iter_mut().find(|s| s.slug == skill.slug) {
+            *existing = skill;
+        } else {
+            flock.skills.push(skill);
+        }
     }
 
     /// Check if any entries exist.
     pub fn is_empty(&self) -> bool {
-        self.repos.values().all(|paths| paths.is_empty())
+        self.repos
+            .iter()
+            .all(|r| r.flocks.iter().all(|f| f.skills.is_empty()))
     }
 
-    /// Iterate over all entries as `(repo_url, path, &LockEntry)`.
-    pub fn iter_entries(&self) -> impl Iterator<Item = (&str, &str, &LockEntry)> {
-        self.repos.iter().flat_map(|(repo_url, paths)| {
-            paths
-                .iter()
-                .map(move |(path, entry)| (repo_url.as_str(), path.as_str(), entry))
+    /// Iterate over all skills as `(git_url, flock_path, &LockSkill)`.
+    pub fn iter_skills(&self) -> impl Iterator<Item = (&str, &str, &str, &LockSkill)> {
+        self.repos.iter().flat_map(|repo| {
+            repo.flocks.iter().flat_map(move |flock| {
+                flock
+                    .skills
+                    .iter()
+                    .map(move |skill| (repo.git_url.as_str(), repo.git_sha.as_str(), flock.path.as_str(), skill))
+            })
         })
     }
 
-    /// Find an entry by slug (remote_slug or path basename).
-    pub fn find_by_slug(&self, slug: &str) -> Option<(&str, &str, &LockEntry)> {
-        for (repo_url, paths) in &self.repos {
-            for (path, entry) in paths {
-                let entry_slug = entry
-                    .remote_slug
-                    .as_deref()
-                    .unwrap_or_else(|| path.rsplit('/').next().unwrap_or(path));
-                if entry_slug == slug {
-                    return Some((repo_url.as_str(), path.as_str(), entry));
+    /// Find a skill by slug.
+    pub fn find_by_slug(&self, slug: &str) -> Option<(&str, &str, &LockSkill)> {
+        for repo in &self.repos {
+            for flock in &repo.flocks {
+                for skill in &flock.skills {
+                    if skill.slug == slug {
+                        return Some((repo.git_url.as_str(), flock.path.as_str(), skill));
+                    }
                 }
             }
         }
         None
     }
 
-    /// Remove an entry by slug. Returns true if found.
+    /// Remove a skill by slug. Returns true if found.
     pub fn remove_by_slug(&mut self, slug: &str) -> bool {
         let mut found = false;
-        for paths in self.repos.values_mut() {
-            let before = paths.len();
-            paths.retain(|path, entry| {
-                let entry_slug = entry
-                    .remote_slug
-                    .as_deref()
-                    .unwrap_or_else(|| path.rsplit('/').next().unwrap_or(path));
-                entry_slug != slug
-            });
-            if paths.len() < before {
-                found = true;
+        for repo in &mut self.repos {
+            for flock in &mut repo.flocks {
+                let before = flock.skills.len();
+                flock.skills.retain(|s| s.slug != slug);
+                if flock.skills.len() < before {
+                    found = true;
+                }
             }
+            repo.flocks.retain(|f| !f.skills.is_empty());
         }
-        self.repos.retain(|_, paths| !paths.is_empty());
+        self.repos.retain(|r| !r.flocks.is_empty());
         found
     }
 
-    /// Count total entries.
+    /// Count total skill entries.
     pub fn len(&self) -> usize {
-        self.repos.values().map(|p| p.len()).sum()
+        self.repos
+            .iter()
+            .flat_map(|r| &r.flocks)
+            .map(|f| f.skills.len())
+            .sum()
     }
 }
 

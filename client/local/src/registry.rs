@@ -673,7 +673,6 @@ pub fn fetch_skills_batch(repo_paths: &[(String, String)]) -> Result<Vec<Fetched
             &slug,
             version,
             &FetchedSkillMetadata {
-                remote_id: None,
                 remote_slug: Some(slug.clone()),
                 repo_url: Some(descriptor.repo_sign.clone()),
                 path: Some(normalize_skill_repo_path(&descriptor.skill_path)),

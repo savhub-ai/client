@@ -183,6 +183,6 @@ savhub mcp serve                 # Start MCP server
 | `projects.json` | `~/.savhub/` | Known project directories |
 | `profiles.json` | `~/.savhub/` | Preset definitions |
 | `selectors.json` | `~/.savhub/` | Selector rules |
-| `skills.fetched.json` | `~/.savhub/` | Fetched skill tracking (lockfile) |
+| `fetched.json` | `~/.savhub/` | Fetched skill tracking (lockfile) |
 | `savhub.toml` | `<project>/` | Project presets and skills |
 | `savhub.lock` | `<project>/` | Locked skill versions |

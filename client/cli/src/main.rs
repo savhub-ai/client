@@ -20,7 +20,7 @@ use savhub_local::presets::{
 };
 use savhub_local::registry::{fetch_version_label, install_remote_skill_from_repo};
 use savhub_local::skills::{
-    LockEntry, RepoSkillOrigin, SkillFolder, compute_fingerprint, ensure_skill_marker,
+    LockSkill, RepoSkillOrigin, SkillFolder, compute_fingerprint, ensure_skill_marker,
     find_skill_folders, inspect_zip, list_publishable_files, load_local_skill_metadata,
     read_lockfile, read_skill_version_info, write_lockfile, write_repo_skill_origin,
 };
@@ -951,12 +951,12 @@ async fn cmd_fetch(opts: &GlobalOpts, args: FetchArgs) -> Result<()> {
     let mut lockfile = read_project_added_skills(&opts.workdir)?;
     lockfile.insert(
         &resolved.spec.repo_sign,
+        &resolved.spec.git_sha,
         &resolved.spec.skill_path,
-        LockEntry {
+        LockSkill {
+            path: resolved.spec.skill_path.clone(),
+            slug: slug.clone(),
             version: resolved.display_version.clone(),
-            fetched_at: now,
-            remote_slug: Some(slug.clone()),
-            ..LockEntry::default()
         },
     );
     write_project_added_skills(&opts.workdir, &lockfile)?;
@@ -988,8 +988,8 @@ async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
         vec![normalize_slug(&slug)?]
     } else {
         lockfile
-            .iter_entries()
-            .map(|(_, _, e)| e.remote_slug.clone().unwrap_or_default())
+            .iter_skills()
+            .map(|(_, _, _, s)| s.slug.clone())
             .filter(|s| !s.is_empty())
             .collect::<Vec<_>>()
     };
@@ -1036,18 +1036,14 @@ async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
 
         if local_version_info.git_sha.as_deref() == Some(remote.spec.git_sha.as_str()) {
             println!("{slug}: already at {latest}");
-            let prev_fetched_at = lockfile
-                .find_by_slug(&slug)
-                .map(|(_, _, e)| e.fetched_at)
-                .unwrap_or(now);
             lockfile.insert(
                 &remote.spec.repo_sign,
+                &remote.spec.git_sha,
                 &remote.spec.skill_path,
-                LockEntry {
+                LockSkill {
+                    path: remote.spec.skill_path.clone(),
+                    slug: slug.clone(),
                     version: latest.clone(),
-                    fetched_at: prev_fetched_at,
-                    remote_slug: Some(slug.clone()),
-                    ..LockEntry::default()
                 },
             );
             continue;
@@ -1097,12 +1093,12 @@ async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
         )?;
         lockfile.insert(
             &remote.spec.repo_sign,
+            &remote.spec.git_sha,
             &remote.spec.skill_path,
-            LockEntry {
+            LockSkill {
+                path: remote.spec.skill_path.clone(),
+                slug: slug.clone(),
                 version: latest.clone(),
-                fetched_at: now,
-                remote_slug: Some(slug.clone()),
-                ..LockEntry::default()
             },
         );
         println!("{slug}: updated -> {latest}");
@@ -1128,8 +1124,8 @@ async fn cmd_update_global(opts: &GlobalOpts, args: &UpdateArgs) -> Result<()> {
         vec![normalize_slug(slug)?]
     } else {
         lockfile
-            .iter_entries()
-            .filter_map(|(_, _, e)| e.remote_slug.clone())
+            .iter_skills()
+            .map(|(_, _, _, s)| s.slug.clone())
             .collect()
     };
 
@@ -1171,12 +1167,12 @@ async fn cmd_update_global(opts: &GlobalOpts, args: &UpdateArgs) -> Result<()> {
             )?;
             lockfile.insert(
                 &remote.spec.repo_sign,
+                &remote.spec.git_sha,
                 &remote.spec.skill_path,
-                LockEntry {
+                LockSkill {
+                    path: remote.spec.skill_path.clone(),
+                    slug: slug.clone(),
                     version: latest.clone(),
-                    fetched_at: now,
-                    remote_slug: Some(slug.clone()),
-                    ..LockEntry::default()
                 },
             );
             println!("{slug}: updated -> {latest}");
@@ -1229,9 +1225,8 @@ fn cmd_list(opts: &GlobalOpts) -> Result<()> {
         println!("No fetched skills.");
         return Ok(());
     }
-    for (_, _, entry) in lockfile.iter_entries() {
-        let slug = entry.remote_slug.as_deref().unwrap_or("?");
-        println!("{slug}  {}", entry.version);
+    for (_, _, _, skill) in lockfile.iter_skills() {
+        println!("{}  {}", skill.slug, skill.version);
     }
     Ok(())
 }
@@ -2693,21 +2688,17 @@ fn cmd_flock(_opts: &GlobalOpts, command: FlockCommand) -> Result<()> {
                 }
             }
             let mut lockfile = read_project_added_skills(&_opts.workdir)?;
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(0);
             let mut added = 0;
             for slug in &skill_slugs {
                 if lockfile.find_by_slug(slug).is_none() {
                     lockfile.insert(
                         "unknown",
+                        "",
                         slug,
-                        LockEntry {
+                        LockSkill {
+                            path: slug.clone(),
+                            slug: slug.clone(),
                             version: "latest".to_string(),
-                            fetched_at: now,
-                            remote_slug: Some(slug.clone()),
-                            ..LockEntry::default()
                         },
                     );
                     added += 1;

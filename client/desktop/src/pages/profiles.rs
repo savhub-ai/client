@@ -489,19 +489,12 @@ fn collect_repo_skill_options(_workdir: &Path) -> Vec<RepoSkillOption> {
     let lock = savhub_local::skills::read_lockfile(&savhub_dir).unwrap_or_default();
     let mut options: Vec<RepoSkillOption> = savhub_local::skills::flatten_lockfile(&lock)
         .into_iter()
-        .map(|e| {
-            let display = e
-                .entry
-                .remote_slug
-                .clone()
-                .unwrap_or_else(|| e.slug.clone());
-            RepoSkillOption {
-                repo_url: e.repo_url,
-                path: e.path,
-                slug: e.slug,
-                display_name: display,
-                flock_slug: e.entry.flock_slug,
-            }
+        .map(|e| RepoSkillOption {
+            repo_url: e.repo_url,
+            path: e.path.clone(),
+            slug: e.slug.clone(),
+            display_name: e.slug,
+            flock_slug: Some(e.flock_path),
         })
         .collect();
     options.sort_by(|a, b| {

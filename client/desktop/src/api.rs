@@ -307,7 +307,6 @@ pub async fn fetch_remote_skill_with_lookup(
         &install_slug,
         &version,
         &FetchedSkillMetadata {
-            remote_id: Some(skill.id.to_string()),
             remote_slug: Some(skill.slug.clone()),
             repo_url: Some(skill.repo_url.clone()),
             path: Some(skill.path.clone()),
