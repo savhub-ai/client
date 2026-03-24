@@ -352,7 +352,7 @@ fn strip_git_url_scheme(url: &str) -> String {
         .to_string()
 }
 
-fn ensure_repo_checkout(repo_sign: &str, git_url: &str, git_sha: &str) -> Result<PathBuf> {
+pub fn ensure_repo_checkout(repo_sign: &str, git_url: &str, git_sha: &str) -> Result<PathBuf> {
     let repo_root = repo_checkout_dir(repo_sign)?;
     let git_dir = repo_root.join(".git");
 

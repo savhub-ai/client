@@ -22,7 +22,7 @@ use savhub_local::registry::{fetch_version_label, install_remote_skill_from_repo
 use savhub_local::skills::{
     LockSkill, RepoSkillOrigin, SkillFolder, compute_fingerprint, ensure_skill_marker,
     find_skill_folders, inspect_zip, list_publishable_files, load_local_skill_metadata,
-    read_lockfile, read_skill_version_info, write_lockfile, write_repo_skill_origin,
+    read_lockfile, write_repo_skill_origin,
 };
 use savhub_local::utils::sanitize_slug;
 use savhub_shared::{
@@ -121,7 +121,7 @@ enum Command {
     Disable(DisableArgs),
     /// Fetch a skill by cloning its source repo
     Fetch(FetchArgs),
-    /// Update project skill(s)
+    /// Update all project skills from fetched repo cache
     Update(UpdateArgs),
     /// List or update fetched skills from ~/.savhub/fetched.json
     Fetched(FetchedArgs),
@@ -339,20 +339,17 @@ struct FetchArgs {
 }
 
 #[derive(Debug, Args)]
-struct UpdateArgs {
-    #[arg(long, action = ArgAction::SetTrue)]
-    all: bool,
-    #[arg(short = 'g', long = "global", action = ArgAction::SetTrue)]
-    global: bool,
-    #[arg(long, action = ArgAction::SetTrue)]
-    force: bool,
-}
+struct UpdateArgs {}
+
 
 #[derive(Debug, Args)]
 struct FetchedArgs {
     /// Update all fetched repos and skills to the latest version from the registry
     #[arg(long, action = ArgAction::SetTrue)]
     update: bool,
+    /// Remove repos/flocks/skills not used by any project
+    #[arg(long, action = ArgAction::SetTrue)]
+    prune: bool,
     /// Force update even if already at latest
     #[arg(long, action = ArgAction::SetTrue)]
     force: bool,
@@ -517,7 +514,7 @@ async fn main() -> Result<()> {
         Some(Command::Enable(args)) => cmd_enable(&opts, args)?,
         Some(Command::Disable(args)) => cmd_disable(&opts, args)?,
         Some(Command::Fetch(args)) => cmd_fetch(&opts, args).await?,
-        Some(Command::Update(args)) => cmd_update(&opts, args).await?,
+        Some(Command::Update(args)) => cmd_update(&opts, args)?,
         Some(Command::Fetched(args)) => cmd_fetched(&opts, args).await?,
         Some(Command::Prune(args)) => cmd_prune(&opts, args)?,
         Some(Command::List) => cmd_list(&opts)?,
@@ -978,320 +975,270 @@ async fn cmd_fetch(opts: &GlobalOpts, args: FetchArgs) -> Result<()> {
     Ok(())
 }
 
-async fn cmd_update(opts: &GlobalOpts, args: UpdateArgs) -> Result<()> {
-    if args.global {
-        return cmd_update_global(opts, &args).await;
-    }
-    if !args.all {
-        bail!("use --all or -g/--global");
-    }
-
-    let mut lockfile = read_project_added_skills(&opts.workdir)?;
-    let slugs: Vec<String> = lockfile
-        .iter_skills()
-        .map(|(_, _, _, s)| s.slug.clone())
-        .filter(|s| !s.is_empty())
-        .collect();
-    if slugs.is_empty() {
-        println!("No project skills.");
+fn cmd_update(opts: &GlobalOpts, _args: UpdateArgs) -> Result<()> {
+    // Read the project lock (savhub.lock) to find current skills + git_sha
+    let project_lock = savhub_local::presets::read_project_lockfile(&opts.workdir)?;
+    if project_lock.skills.is_empty() {
+        println!("No project skills in savhub.lock.");
         return Ok(());
     }
 
-    let client = optional_client(opts)?;
-    let now = now_millis();
-    for slug in slugs {
-        let target = opts.dir.join(&slug);
-        let remote = resolve_remote_skill_fetch(&client, &slug).await?;
-        let latest = remote.display_version.clone();
-        let local_files = if target.is_dir() {
-            list_publishable_files(&target)?
-        } else {
-            Vec::new()
-        };
-        let local_fingerprint =
-            (!local_files.is_empty()).then(|| compute_fingerprint(&local_files));
-        let local_version_info = if target.is_dir() {
-            read_skill_version_info(&target).unwrap_or_default()
-        } else {
-            Default::default()
-        };
-        let resolved = if remote.spec.skill_version.is_some() {
-            if let Some(fingerprint) = local_fingerprint.as_deref() {
-                resolve_skill_version(&client, &slug, fingerprint).await?
-            } else {
-                ResolveResponse {
-                    slug: slug.clone(),
-                    matched: None,
-                    latest_version: None,
-                }
+    // Read the central fetched.json to get the latest git_sha per repo
+    let config_dir = savhub_local::config::get_config_dir()?;
+    let fetched = read_lockfile(&config_dir)?;
+
+    // Build a map: repo_url -> latest git_sha from fetched.json
+    let fetched_sha: std::collections::HashMap<&str, &str> = fetched
+        .repos
+        .iter()
+        .map(|r| (r.git_url.as_str(), r.git_sha.as_str()))
+        .collect();
+
+    let mut updated = 0usize;
+    let mut skipped = 0usize;
+    let mut new_skills = Vec::new();
+
+    for skill in &project_lock.skills {
+        let slug = &skill.slug;
+        let repo_url = match skill.repo.as_deref().filter(|s| !s.is_empty()) {
+            Some(r) => r,
+            None => {
+                println!("  {slug}: no repo info, skipped");
+                new_skills.push(skill.clone());
+                skipped += 1;
+                continue;
             }
-        } else {
-            ResolveResponse {
-                slug: slug.clone(),
-                matched: None,
-                latest_version: None,
+        };
+        let skill_path = match skill.path.as_deref().filter(|s| !s.is_empty()) {
+            Some(p) => p,
+            None => {
+                println!("  {slug}: no path info, skipped");
+                new_skills.push(skill.clone());
+                skipped += 1;
+                continue;
             }
         };
 
-        if local_version_info.git_sha.as_deref() == Some(remote.spec.git_sha.as_str()) {
-            println!("{slug}: already at {latest}");
-            lockfile.insert(
-                &remote.spec.repo_sign,
-                &remote.spec.git_sha,
-                &remote.spec.skill_path,
-                LockSkill {
-                    path: remote.spec.skill_path.clone(),
-                    slug: slug.clone(),
-                    version: latest.clone(),
-                },
-            );
+        let latest_sha = fetched_sha.get(repo_url).copied().unwrap_or("");
+        if latest_sha.is_empty() {
+            println!("  {slug}: not in fetched.json, skipped");
+            new_skills.push(skill.clone());
+            skipped += 1;
             continue;
         }
 
-        if local_fingerprint.is_some() && !args.force {
-            let needs_confirmation = if remote.spec.skill_version.is_some() {
-                resolved.matched.is_none()
-            } else {
-                true
-            };
-            if needs_confirmation {
-                if !opts.input_allowed {
-                    println!("{slug}: local changes detected, skipped (use --force)");
-                    continue;
-                }
-                let confirmed = Confirm::new()
-                    .with_prompt(format!(
-                        "{slug}: local files may be overwritten by {latest}. Continue?"
-                    ))
-                    .default(false)
-                    .interact()
-                    .map_err(|error| anyhow!("failed to read confirmation: {error}"))?;
-                if !confirmed {
-                    println!("{slug}: skipped");
-                    continue;
-                }
-            }
+        let local_sha = skill.git_sha.as_deref().unwrap_or("");
+        if local_sha == latest_sha {
+            new_skills.push(skill.clone());
+            skipped += 1;
+            continue;
         }
 
+        // Copy from repo cache into project skills dir
+        let source = savhub_local::registry::repo_skill_local_path(repo_url, skill_path);
+        let Some(source) = source.filter(|p| p.is_dir()) else {
+            println!("  {slug}: repo cache not found, run `savhub fetched --update` first");
+            new_skills.push(skill.clone());
+            skipped += 1;
+            continue;
+        };
+
+        let target = opts.dir.join(slug);
         if target.exists() {
             fs::remove_dir_all(&target)
                 .with_context(|| format!("failed to remove {}", target.display()))?;
         }
-        install_remote_skill_from_repo(&remote.spec, &target)?;
-        write_repo_skill_origin(
-            &target,
-            &RepoSkillOrigin {
-                version: 1,
-                repo: opts.registry.clone(),
-                repo_sign: remote.spec.repo_sign.clone(),
-                repo_commit: Some(remote.spec.git_sha.clone()),
-                slug: slug.clone(),
-                skill_version: remote.spec.skill_version.clone(),
-                fetched_at: now,
-            },
-        )?;
-        lockfile.insert(
-            &remote.spec.repo_sign,
-            &remote.spec.git_sha,
-            &remote.spec.skill_path,
-            LockSkill {
-                path: remote.spec.skill_path.clone(),
-                slug: slug.clone(),
-                version: latest.clone(),
-            },
-        );
-        println!("{slug}: updated -> {latest}");
+        savhub_local::skills::copy_skill_folder(&source, &target)?;
+
+        let short_old = &local_sha[..12.min(local_sha.len())];
+        let short_new = &latest_sha[..12.min(latest_sha.len())];
+        println!("  {slug}: {short_old} -> {short_new}");
+
+        new_skills.push(savhub_local::presets::ProjectLockedSkill {
+            repo: skill.repo.clone(),
+            path: skill.path.clone(),
+            slug: slug.clone(),
+            version: skill.version.clone(),
+            git_sha: Some(latest_sha.to_string()),
+        });
+        updated += 1;
     }
 
-    write_project_added_skills(&opts.workdir, &lockfile)?;
+    savhub_local::presets::write_project_lockfile(
+        &opts.workdir,
+        &savhub_local::presets::ProjectLockFile {
+            version: 1,
+            skills: new_skills,
+        },
+    )?;
+
+    println!("\nDone. {updated} updated, {skipped} already up-to-date.");
+    Ok(())
+}
+
+/// Prune fetched.json: remove repos/flocks/skills not used by any project.
+fn cmd_fetched_prune(config_dir: &Path, lockfile: &savhub_shared::Lockfile) -> Result<()> {
+    use std::collections::HashSet;
+
+    // Collect all (repo_url, skill_path) pairs used across all projects
+    let projects = savhub_local::config::read_projects_list().unwrap_or_default();
+    let mut used: HashSet<(String, String)> = HashSet::new();
+
+    for project in &projects.projects {
+        let project_path = PathBuf::from(&project.path);
+        let project_lock =
+            savhub_local::presets::read_project_lockfile(&project_path).unwrap_or_default();
+        for skill in &project_lock.skills {
+            if let (Some(repo), Some(path)) = (skill.repo.as_deref(), skill.path.as_deref()) {
+                if !repo.is_empty() && !path.is_empty() {
+                    used.insert((repo.to_string(), path.to_string()));
+                }
+            }
+        }
+    }
+
+    println!(
+        "Scanning {} project(s), {} skill ref(s) in use.",
+        projects.projects.len(),
+        used.len()
+    );
+
+    // Walk the lockfile and keep only used entries
+    let mut new_lockfile = savhub_shared::Lockfile::default();
+    let mut kept_skills = 0usize;
+    let mut removed_skills = 0usize;
+
+    for repo in &lockfile.repos {
+        let mut new_flocks = Vec::new();
+        for flock in &repo.flocks {
+            let mut new_skills = Vec::new();
+            for skill in &flock.skills {
+                if used.contains(&(repo.git_url.clone(), skill.path.clone())) {
+                    new_skills.push(skill.clone());
+                    kept_skills += 1;
+                } else {
+                    println!("  removing: {} ({}:{})", skill.slug, repo.git_url, skill.path);
+                    removed_skills += 1;
+                }
+            }
+            if !new_skills.is_empty() {
+                new_flocks.push(savhub_shared::LockFlock {
+                    path: flock.path.clone(),
+                    skills: new_skills,
+                });
+            }
+        }
+        if !new_flocks.is_empty() {
+            new_lockfile.repos.push(savhub_shared::LockRepo {
+                git_url: repo.git_url.clone(),
+                git_sha: repo.git_sha.clone(),
+                flocks: new_flocks,
+            });
+        } else if !repo.flocks.is_empty() {
+            println!("  removing repo: {} (no skills in use)", repo.git_url);
+        }
+    }
+
+    savhub_local::skills::write_lockfile(config_dir, &new_lockfile)?;
+    println!(
+        "\nDone. {kept_skills} kept, {removed_skills} removed, {} repo(s) remaining.",
+        new_lockfile.repos.len()
+    );
     Ok(())
 }
 
 async fn cmd_fetched(opts: &GlobalOpts, args: FetchedArgs) -> Result<()> {
     let config_dir = savhub_local::config::get_config_dir()?;
-    let lockfile = read_lockfile(&config_dir)?;
-    let flat = savhub_local::skills::flatten_lockfile(&lockfile);
+    let mut lockfile = read_lockfile(&config_dir)?;
+
+    if args.prune {
+        return cmd_fetched_prune(&config_dir, &lockfile);
+    }
 
     if !args.update {
-        // List fetched skills
-        if flat.is_empty() {
+        if lockfile.is_empty() {
             println!("No fetched skills.");
             return Ok(());
         }
-        for entry in &flat {
-            println!("{}  {}  ({})", entry.slug, entry.version, entry.repo_url);
+        for repo in &lockfile.repos {
+            println!("{}  {}", repo.git_url, repo.git_sha);
+            for flock in &repo.flocks {
+                for skill in &flock.skills {
+                    println!("  {}  {}", skill.slug, skill.version);
+                }
+            }
         }
         return Ok(());
     }
 
-    // --update: update all fetched repos and skills to the latest version
-    if flat.is_empty() {
+    if lockfile.repos.is_empty() {
         println!("No fetched skills. Use `savhub fetch <slug>` first.");
         return Ok(());
     }
 
-    println!("Updating {} fetched skill(s)...", flat.len());
+    println!("Updating {} repo(s)...", lockfile.repos.len());
     let client = optional_client(opts)?;
-    let mut updated = 0usize;
-    let mut skipped = 0usize;
-    let mut failed = 0usize;
+    let mut repos_updated = 0usize;
+    let mut repos_skipped = 0usize;
+    let mut repos_failed = 0usize;
+    let skill_count: usize = lockfile.repos.iter().flat_map(|r| &r.flocks).map(|f| f.skills.len()).sum();
 
-    for entry in &flat {
-        let slug = &entry.slug;
-        match resolve_remote_skill_fetch(&client, slug).await {
-            Ok(remote) => {
-                let latest = remote.display_version.clone();
-                let flock_path = &entry.flock_path;
-
-                let local_sha = savhub_local::registry::repo_skill_local_path(
-                    &remote.spec.repo_sign,
-                    &remote.spec.skill_path,
-                )
-                .and_then(|p| {
-                    read_skill_version_info(&p)
-                        .ok()
-                        .and_then(|info| info.git_sha)
-                });
-
-                if local_sha.as_deref() == Some(remote.spec.git_sha.as_str()) && !args.force {
-                    println!("  {slug}: already at {latest}");
-                    skipped += 1;
-                    savhub_local::skills::update_lockfile_with_metadata(
-                        &config_dir,
-                        slug,
-                        &latest,
-                        &savhub_local::skills::FetchedSkillMetadata {
-                            remote_slug: Some(slug.clone()),
-                            repo_url: Some(remote.spec.repo_sign.clone()),
-                            path: Some(remote.spec.skill_path.clone()),
-                            flock_slug: Some(flock_path.to_string()),
-                            git_sha: Some(remote.spec.git_sha.clone()),
-                        },
-                    );
-                    continue;
-                }
-
-                match savhub_local::registry::cache_remote_skill_from_repo(&remote.spec) {
-                    Ok(_) => {
-                        savhub_local::skills::update_lockfile_with_metadata(
-                            &config_dir,
-                            slug,
-                            &latest,
-                            &savhub_local::skills::FetchedSkillMetadata {
-                                remote_slug: Some(slug.clone()),
-                                repo_url: Some(remote.spec.repo_sign.clone()),
-                                path: Some(remote.spec.skill_path.clone()),
-                                flock_slug: Some(flock_path.to_string()),
-                                git_sha: Some(remote.spec.git_sha.clone()),
-                            },
-                        );
-                        println!("  {slug}: updated -> {latest}");
-                        updated += 1;
-                    }
-                    Err(err) => {
-                        println!("  {slug}: failed - {err}");
-                        failed += 1;
-                    }
-                }
-            }
+    for repo in &mut lockfile.repos {
+        let repo_path = git_url_to_route_path(&repo.git_url);
+        let detail = match client
+            .get_json::<RepoDetailResponse>(&format!("/repos/{repo_path}"))
+            .await
+        {
+            Ok(d) => d,
             Err(err) => {
-                println!("  {slug}: failed - {err}");
-                failed += 1;
-            }
-        }
-    }
-
-    println!("\nDone. {updated} updated, {skipped} already up-to-date, {failed} failed.");
-    Ok(())
-}
-
-async fn cmd_update_global(opts: &GlobalOpts, _args: &UpdateArgs) -> Result<()> {
-    let global_dir = savhub_local::clients::global_skills_dir();
-    fs::create_dir_all(&global_dir).with_context(|| {
-        format!(
-            "failed to create global skills dir: {}",
-            global_dir.display()
-        )
-    })?;
-    println!("Global skills directory: {}", global_dir.display());
-
-    let mut lockfile = read_lockfile(&global_dir)?;
-    let slugs: Vec<String> = lockfile
-        .iter_skills()
-        .map(|(_, _, _, s)| s.slug.clone())
-        .collect();
-
-    if slugs.is_empty() {
-        println!("No global skills fetched. Fetch skills first with `savhub fetch <slug>`.");
-    } else {
-        let client = optional_client(opts)?;
-        let now = now_millis();
-        for slug in &slugs {
-            let target = global_dir.join(slug);
-            let remote = resolve_remote_skill_fetch(&client, slug).await?;
-            let latest = remote.display_version.clone();
-            let local_info = if target.is_dir() {
-                read_skill_version_info(&target).unwrap_or_default()
-            } else {
-                Default::default()
-            };
-
-            if local_info.git_sha.as_deref() == Some(remote.spec.git_sha.as_str()) {
-                println!("{slug}: already at {latest}");
+                println!("  {}: failed - {err}", repo.git_url);
+                repos_failed += 1;
                 continue;
             }
+        };
 
-            if target.exists() {
-                fs::remove_dir_all(&target)?;
+        let remote_sha = match normalize_remote_text(detail.document.git_sha.clone()) {
+            Some(sha) => sha,
+            None => {
+                println!("  {}: no git_sha from registry", repo.git_url);
+                repos_failed += 1;
+                continue;
             }
-            install_remote_skill_from_repo(&remote.spec, &target)?;
-            write_repo_skill_origin(
-                &target,
-                &RepoSkillOrigin {
-                    version: 1,
-                    repo: opts.registry.clone(),
-                    repo_sign: remote.spec.repo_sign.clone(),
-                    repo_commit: Some(remote.spec.git_sha.clone()),
-                    slug: slug.clone(),
-                    skill_version: remote.spec.skill_version.clone(),
-                    fetched_at: now,
-                },
-            )?;
-            lockfile.insert(
-                &remote.spec.repo_sign,
-                &remote.spec.git_sha,
-                &remote.spec.skill_path,
-                LockSkill {
-                    path: remote.spec.skill_path.clone(),
-                    slug: slug.clone(),
-                    version: latest.clone(),
-                },
-            );
-            println!("{slug}: updated -> {latest}");
-        }
-        write_lockfile(&global_dir, &lockfile)?;
-    }
+        };
 
-    // Sync to all detected AI clients
-    println!("\nSyncing to AI clients...");
-    let detected = savhub_local::clients::detect_clients();
-    let installed: Vec<_> = detected.iter().filter(|c| c.installed).collect();
-    if installed.is_empty() {
-        println!("No AI clients detected.");
-    } else {
-        for client in &installed {
-            match savhub_local::clients::sync_skills_to_client(client, &global_dir) {
-                Ok(count) => println!(
-                    "  {}: synced {} skill(s) -> {}",
-                    client.name,
-                    count,
-                    client.skills_dir.display()
-                ),
-                Err(e) => println!("  {}: error - {e}", client.name),
+        if repo.git_sha == remote_sha && !args.force {
+            let skill_names: Vec<_> = repo.flocks.iter().flat_map(|f| &f.skills).map(|s| s.slug.as_str()).collect();
+            println!("  {}: already at {} ({} skills: {})", repo.git_url, &remote_sha[..12.min(remote_sha.len())], skill_names.len(), skill_names.join(", "));
+            repos_skipped += 1;
+            continue;
+        }
+
+        // Update repo checkout
+        match savhub_local::registry::ensure_repo_checkout(
+            &repo.git_url,
+            &detail.document.git_url,
+            &remote_sha,
+        ) {
+            Ok(_) => {
+                let old_sha = &repo.git_sha;
+                let short_old = &old_sha[..12.min(old_sha.len())];
+                let short_new = &remote_sha[..12.min(remote_sha.len())];
+                let skill_names: Vec<_> = repo.flocks.iter().flat_map(|f| &f.skills).map(|s| s.slug.as_str()).collect();
+                println!("  {}: {} -> {} ({} skills: {})", repo.git_url, short_old, short_new, skill_names.len(), skill_names.join(", "));
+                repo.git_sha = remote_sha;
+                repos_updated += 1;
+            }
+            Err(err) => {
+                println!("  {}: failed - {err}", repo.git_url);
+                repos_failed += 1;
             }
         }
     }
 
+    savhub_local::skills::write_lockfile(&config_dir, &lockfile)?;
+    println!(
+        "\nDone. {repos_updated} repo(s) updated, {repos_skipped} already up-to-date, {repos_failed} failed. ({skill_count} skills total)"
+    );
     Ok(())
 }
 

@@ -99,9 +99,10 @@ savhub fetch my-skill --force
 
 ### `savhub update` — Update project skills
 
+Compares `savhub.lock` against `~/.savhub/fetched.json` and copies updated skill folders from the local repo cache. No network calls — run `savhub fetched --update` first to pull the latest from the registry.
+
 ```bash
-savhub update --all          # Update all project skills
-savhub update -g             # Update global skills and sync to AI clients
+savhub update
 ```
 
 ### `savhub fetched` — Manage fetched skills
@@ -110,6 +111,7 @@ savhub update -g             # Update global skills and sync to AI clients
 savhub fetched               # List all fetched skills (from ~/.savhub/fetched.json)
 savhub fetched --update      # Update all fetched repos/skills to latest
 savhub fetched --update --force  # Force update even if already at latest
+savhub fetched --prune       # Remove skills/repos not used by any project
 ```
 
 ### `savhub prune` — Remove a skill

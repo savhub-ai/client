@@ -72,47 +72,66 @@ pub fn FetchedPage() -> Element {
     let update_all = move |_| {
         let client = state.api_client();
         let workdir = state.workdir.read().clone();
-        let entries = skill_list.read().clone();
         let mut status = state.status_message;
         let mut skill_list_signal = skill_list;
         spawn(async move {
-            let mut updated = 0usize;
+            let mut lockfile = savhub_local::skills::read_lockfile(&workdir).unwrap_or_default();
+            let total_repos = lockfile.repos.len();
+            let mut repos_updated = 0usize;
             let mut failures = Vec::new();
-            for entry in &entries {
-                let lookup = crate::api::RemoteSkillLookup {
-                    local_slug: entry.slug.clone(),
-                    id: entry.remote_id.clone(),
-                    slug: entry
-                        .remote_slug
-                        .clone()
-                        .or_else(|| Some(entry.slug.clone())),
-                    repo_url: entry.repo_url.clone(),
-                    path: entry.remote_path.clone(),
-                    flock_slug: None,
-                };
-                match crate::api::fetch_remote_skill_with_lookup(&client, &workdir, lookup).await {
-                    Ok(result) => {
-                        updated += 1;
-                        let fetched_at = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
-                        skill_list_signal.with_mut(|items| {
-                            if let Some(item) =
-                                items.iter_mut().find(|item| item.slug == result.local_slug)
-                            {
-                                item.version = result.version.clone();
-                                item.fetched_at = fetched_at.clone();
-                                item.remote_id = Some(result.remote_id.clone());
-                                item.remote_slug = Some(result.remote_slug.clone());
-                                item.repo_url = Some(result.repo_url.clone());
-                                item.remote_path = Some(result.path.clone());
+
+            for repo in &mut lockfile.repos {
+                let repo_url = repo.git_url.clone();
+                match crate::api::fetch_remote_repo_detail(&client, &repo_url).await {
+                    Ok(detail) => {
+                        let Some(remote_sha) = detail.document.git_sha.as_ref().filter(|s| !s.trim().is_empty()) else {
+                            failures.push(format!("{repo_url}: no git_sha"));
+                            continue;
+                        };
+                        if &repo.git_sha == remote_sha {
+                            continue;
+                        }
+                        let git_url = detail.document.git_url.clone();
+                        let sha = remote_sha.clone();
+                        let sign = repo_url.clone();
+                        match tokio::task::spawn_blocking(move || {
+                            savhub_local::registry::ensure_repo_checkout(&sign, &git_url, &sha)
+                        })
+                        .await
+                        {
+                            Ok(Ok(_)) => {
+                                repo.git_sha = remote_sha.clone();
+                                repos_updated += 1;
                             }
-                        });
+                            Ok(Err(err)) => failures.push(format!("{repo_url}: {err}")),
+                            Err(err) => failures.push(format!("{repo_url}: {err}")),
+                        }
                     }
-                    Err(err) => failures.push(format!("{}: {err}", entry.slug)),
+                    Err(err) => failures.push(format!("{repo_url}: {err}")),
                 }
             }
-            let total = entries.len();
+
+            let _ = savhub_local::skills::write_lockfile(&workdir, &lockfile);
+
+            // Refresh the skill list UI
+            let flat = savhub_local::skills::flatten_lockfile(&lockfile);
+            skill_list_signal.set(
+                flat.into_iter()
+                    .map(|e| FetchedSkill {
+                        slug: e.slug.clone(),
+                        version: e.version,
+                        fetched_at: "\u{2014}".to_string(),
+                        path: workdir.join(&e.slug),
+                        remote_id: None,
+                        remote_slug: Some(e.slug),
+                        repo_url: Some(e.repo_url),
+                        remote_path: Some(e.path),
+                    })
+                    .collect(),
+            );
+
             let t = i18n::texts(*state.lang.read());
-            let base_message = t.fmt_updated_skills(updated, total);
+            let base_message = t.fmt_updated_skills(repos_updated, total_repos);
             if let Some(first_error) = failures.first() {
                 status.set(format!("{base_message} | {}", first_error));
             } else {
