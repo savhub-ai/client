@@ -157,16 +157,6 @@ savhub star my-skill
 savhub unstar my-skill
 ```
 
-### `savhub transfer` — Ownership transfer
-
-```bash
-savhub transfer request my-skill new-owner
-savhub transfer list
-savhub transfer accept my-skill
-savhub transfer reject my-skill
-savhub transfer cancel my-skill
-```
-
 ### `savhub self-update` — Update the CLI
 
 Checks GitHub Releases for a newer version, downloads the matching binary for your platform, and replaces the current executable in place.

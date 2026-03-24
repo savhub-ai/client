@@ -31,48 +31,13 @@ use savhub_shared::{
     MAX_BUNDLE_BYTES, ModerationStatus, ModerationUpdateRequest, PagedResponse, PublishBundleFile,
     PublishResponse, RemoteSkillFetchSpec, RepoDetailResponse, ResolveResponse, RoleUpdateResponse,
     SearchResponse, SetUserRoleRequest, SkillDetailResponse, SkillListItem, ToggleStarResponse,
-    UserListResponse, UserRole, UserSummary, WhoAmIResponse, is_slug, normalize_bundle_files,
+    UserListResponse, UserRole, WhoAmIResponse, is_slug, normalize_bundle_files,
     normalize_tags, total_bundle_bytes,
 };
 use semver::Version;
 use serde_json::json;
 
 const DEFAULT_SITE: &str = "https://savhub.ai";
-
-// Transfer types (removed from savhub-shared, kept locally for CLI transfer commands)
-#[derive(Debug, serde::Serialize)]
-struct TransferRequest {
-    to_handle: String,
-    message: Option<String>,
-    expires_in_hours: Option<u64>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct TransferSummary {
-    skill_slug: String,
-    status: String,
-    to_user: UserSummary,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct TransferEntry {
-    id: i64,
-    skill_slug: String,
-    status: String,
-    from_user: UserSummary,
-    to_user: UserSummary,
-    expires_at: DateTime<Utc>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct TransferListResponse {
-    transfers: Vec<TransferEntry>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct TransferDecisionResponse {
-    skill_slug: String,
-}
 
 fn exe_location() -> String {
     let path = std::env::current_exe()
@@ -136,11 +101,6 @@ enum Command {
     Inspect(InspectArgs),
     /// Delete a skill from the registry (admin)
     Delete(DeleteArgs),
-    /// Transfer skill ownership
-    Transfer {
-        #[command(subcommand)]
-        command: TransferCommand,
-    },
     /// Star a skill
     Star(DeleteArgs),
     /// Unstar a skill
@@ -171,15 +131,6 @@ enum Command {
     Docs,
     /// Update the savhub CLI to the latest version
     SelfUpdate,
-}
-
-#[derive(Debug, Subcommand)]
-enum TransferCommand {
-    Request(TransferRequestArgs),
-    List(TransferListArgs),
-    Accept(DeleteArgs),
-    Reject(DeleteArgs),
-    Cancel(DeleteArgs),
 }
 
 #[derive(Debug, Subcommand)]
@@ -400,22 +351,6 @@ struct DeleteArgs {
     yes: bool,
 }
 
-#[derive(Debug, Args)]
-struct TransferRequestArgs {
-    slug: String,
-    handle: String,
-    #[arg(long)]
-    message: Option<String>,
-    #[arg(long, action = ArgAction::SetTrue)]
-    yes: bool,
-}
-
-#[derive(Debug, Args)]
-struct TransferListArgs {
-    #[arg(long, action = ArgAction::SetTrue)]
-    outgoing: bool,
-}
-
 // Retained for internal handler code (commands removed from CLI surface)
 #[derive(Debug, Args)]
 struct PublishArgs {
@@ -527,13 +462,6 @@ async fn main() -> Result<()> {
         Some(Command::Explore(args)) => cmd_explore(&opts, args).await?,
         Some(Command::Inspect(args)) => cmd_inspect(&opts, args).await?,
         Some(Command::Delete(args)) => cmd_delete(&opts, args).await?,
-        Some(Command::Transfer { command }) => match command {
-            TransferCommand::Request(args) => cmd_transfer_request(&opts, args).await?,
-            TransferCommand::List(args) => cmd_transfer_list(&opts, args).await?,
-            TransferCommand::Accept(args) => cmd_transfer_decision(&opts, args, "accept").await?,
-            TransferCommand::Reject(args) => cmd_transfer_decision(&opts, args, "reject").await?,
-            TransferCommand::Cancel(args) => cmd_transfer_decision(&opts, args, "cancel").await?,
-        },
         Some(Command::Star(args)) => cmd_set_starred(&opts, args, true).await?,
         Some(Command::Unstar(args)) => cmd_set_starred(&opts, args, false).await?,
         Some(Command::Registry { command }) => cmd_registry(&opts, command).await?,
@@ -1560,107 +1488,6 @@ async fn cmd_unhide(opts: &GlobalOpts, args: DeleteArgs) -> Result<()> {
     moderate_skill(opts, &args, ModerationStatus::Active, "Unhidden").await
 }
 
-async fn cmd_transfer_request(opts: &GlobalOpts, args: TransferRequestArgs) -> Result<()> {
-    let slug = normalize_slug(&args.slug)?;
-    let handle = args.handle.trim().trim_start_matches('@').to_lowercase();
-    if handle.is_empty() {
-        bail!("recipient handle required");
-    }
-    if !args.yes {
-        ensure_confirmed(
-            opts.input_allowed,
-            &format!("Transfer {slug} to @{handle}?"),
-            "pass --yes when input is disabled",
-        )?;
-    }
-    let client = authed_client(opts)?;
-    let result = client
-        .post_json::<_, TransferSummary>(
-            &format!("/skills/{slug}/transfer"),
-            &TransferRequest {
-                to_handle: handle.clone(),
-                message: args.message,
-                expires_in_hours: None,
-            },
-        )
-        .await?;
-    println!(
-        "Transfer requested for {} -> @{} ({:?})",
-        result.skill_slug, result.to_user.handle, result.status
-    );
-    Ok(())
-}
-
-async fn cmd_transfer_list(opts: &GlobalOpts, args: TransferListArgs) -> Result<()> {
-    let client = authed_client(opts)?;
-    let path = if args.outgoing {
-        "/transfers/outgoing"
-    } else {
-        "/transfers/incoming"
-    };
-    let result = client.get_json::<TransferListResponse>(path).await?;
-    if result.transfers.is_empty() {
-        println!(
-            "{}",
-            if args.outgoing {
-                "No outgoing transfers."
-            } else {
-                "No incoming transfers."
-            }
-        );
-        return Ok(());
-    }
-    for transfer in result.transfers {
-        let other = if args.outgoing {
-            &transfer.to_user.handle
-        } else {
-            &transfer.from_user.handle
-        };
-        println!(
-            "{}  {:?}  @{}  expires {}",
-            transfer.skill_slug,
-            transfer.status,
-            other,
-            transfer.expires_at.to_rfc3339()
-        );
-    }
-    Ok(())
-}
-
-async fn cmd_transfer_decision(opts: &GlobalOpts, args: DeleteArgs, action: &str) -> Result<()> {
-    let slug = normalize_slug(&args.slug)?;
-    if !args.yes {
-        ensure_confirmed(
-            opts.input_allowed,
-            &format!("{} transfer for {slug}?", capitalize(action)),
-            "pass --yes when input is disabled",
-        )?;
-    }
-    let client = authed_client(opts)?;
-    let transfers = match action {
-        "cancel" => {
-            client
-                .get_json::<TransferListResponse>("/transfers/outgoing")
-                .await?
-        }
-        _ => {
-            client
-                .get_json::<TransferListResponse>("/transfers/incoming")
-                .await?
-        }
-    };
-    let transfer = transfers
-        .transfers
-        .into_iter()
-        .find(|transfer| transfer.skill_slug == slug)
-        .ok_or_else(|| anyhow!("no matching transfer found for {slug}"))?;
-    let response = client
-        .post_empty::<TransferDecisionResponse>(&format!("/transfers/{}/{}", transfer.id, action))
-        .await?;
-    println!("{} {}", capitalize(action), response.skill_slug);
-    Ok(())
-}
-
 async fn cmd_set_starred(opts: &GlobalOpts, args: DeleteArgs, desired: bool) -> Result<()> {
     let slug = normalize_slug(&args.slug)?;
     if !args.yes {
@@ -2348,14 +2175,6 @@ fn truncate(value: &str, max: usize) -> String {
             .take(max.saturating_sub(3))
             .collect::<String>()
             + "..."
-    }
-}
-
-fn capitalize(value: &str) -> String {
-    let mut chars = value.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-        None => String::new(),
     }
 }
 

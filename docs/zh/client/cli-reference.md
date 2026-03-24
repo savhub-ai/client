@@ -135,16 +135,6 @@ savhub star <slug>       # 收藏技能
 savhub unstar <slug>     # 取消收藏
 ```
 
-## 所有权转移
-
-```bash
-savhub transfer request <slug> <owner>   # 请求转移所有权
-savhub transfer list                      # 列出待处理的转移请求
-savhub transfer accept <slug>             # 接受转移
-savhub transfer reject <slug>             # 拒绝转移
-savhub transfer cancel <slug>             # 取消转移
-```
-
 ## 自更新
 
 ```bash

@@ -135,16 +135,6 @@ savhub star <slug>       # Star a skill
 savhub unstar <slug>     # Unstar a skill
 ```
 
-## Transfer
-
-```bash
-savhub transfer request <slug> <owner>   # Request ownership transfer
-savhub transfer list                      # List pending transfers
-savhub transfer accept <slug>             # Accept transfer
-savhub transfer reject <slug>             # Reject transfer
-savhub transfer cancel <slug>             # Cancel transfer
-```
-
 ## Self-Update
 
 ```bash
