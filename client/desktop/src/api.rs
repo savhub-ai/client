@@ -209,19 +209,20 @@ pub async fn resolve_remote_skill(
         .repo_url
         .as_deref()
         .filter(|value| !value.trim().is_empty())
-        && let Some(path) = lookup.path.as_deref().filter(|v| !v.trim().is_empty()) {
-            let mut url = client.v1_url("/skills").map_err(|e| e.to_string())?;
-            url.query_pairs_mut()
-                .append_pair("repo", repo_url)
-                .append_pair("path", path);
-            let response = client
-                .get_json_url::<PagedResponse<SkillListItem>>(url)
-                .await
-                .map_err(|e| e.to_string())?;
-            if let Some(item) = response.items.into_iter().next() {
-                return Ok(item);
-            }
+        && let Some(path) = lookup.path.as_deref().filter(|v| !v.trim().is_empty())
+    {
+        let mut url = client.v1_url("/skills").map_err(|e| e.to_string())?;
+        url.query_pairs_mut()
+            .append_pair("repo", repo_url)
+            .append_pair("path", path);
+        let response = client
+            .get_json_url::<PagedResponse<SkillListItem>>(url)
+            .await
+            .map_err(|e| e.to_string())?;
+        if let Some(item) = response.items.into_iter().next() {
+            return Ok(item);
         }
+    }
 
     let queries = collect_skill_queries(&lookup);
     let mut seen = HashSet::new();

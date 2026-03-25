@@ -248,22 +248,22 @@ fn scan_code_file(path: &str, content: &str, findings: &mut Vec<ModerationFindin
     // WebSocket to non-standard port
     if let Some(caps) = RE_WEBSOCKET_PORT.captures(content)
         && let Some(port_str) = caps.get(1)
-            && let Ok(port) = port_str.as_str().parse::<u16>()
-                && !STANDARD_PORTS.contains(&port) {
-                    let (line, text) = find_first_line(content, &RE_WEBSOCKET_PORT);
-                    push_finding(
-                        findings,
-                        ModerationFinding {
-                            code: reason_codes::SUSPICIOUS_NETWORK.to_string(),
-                            severity: FindingSeverity::Warn,
-                            file: path.to_string(),
-                            line,
-                            message: "WebSocket connection to non-standard port detected."
-                                .to_string(),
-                            evidence: text,
-                        },
-                    );
-                }
+        && let Ok(port) = port_str.as_str().parse::<u16>()
+        && !STANDARD_PORTS.contains(&port)
+    {
+        let (line, text) = find_first_line(content, &RE_WEBSOCKET_PORT);
+        push_finding(
+            findings,
+            ModerationFinding {
+                code: reason_codes::SUSPICIOUS_NETWORK.to_string(),
+                severity: FindingSeverity::Warn,
+                file: path.to_string(),
+                line,
+                message: "WebSocket connection to non-standard port detected.".to_string(),
+                evidence: text,
+            },
+        );
+    }
 
     // File read + network send (exfiltration)
     let has_file_read = RE_FILE_READ.is_match(content);
@@ -483,19 +483,20 @@ pub fn run_static_scan(input: &ScanInput) -> StaticScanResult {
 
     // Check metadata JSON for URL shorteners
     if let Some(meta_json) = input.metadata_json
-        && RE_URL_SHORTENER.is_match(meta_json) {
-            push_finding(
-                &mut findings,
-                ModerationFinding {
-                    code: reason_codes::SUSPICIOUS_INSTALL_SOURCE.to_string(),
-                    severity: FindingSeverity::Warn,
-                    file: "metadata".to_string(),
-                    line: 1,
-                    message: "Install metadata references shortener URL.".to_string(),
-                    evidence: meta_json.chars().take(160).collect(),
-                },
-            );
-        }
+        && RE_URL_SHORTENER.is_match(meta_json)
+    {
+        push_finding(
+            &mut findings,
+            ModerationFinding {
+                code: reason_codes::SUSPICIOUS_INSTALL_SOURCE.to_string(),
+                severity: FindingSeverity::Warn,
+                file: "metadata".to_string(),
+                line: 1,
+                message: "Install metadata references shortener URL.".to_string(),
+                evidence: meta_json.chars().take(160).collect(),
+            },
+        );
+    }
 
     // Check always=true flag
     if input.frontmatter_always == Some(true) {

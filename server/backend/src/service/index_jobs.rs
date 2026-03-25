@@ -198,43 +198,43 @@ pub async fn submit_index(
             &request.git_subdir,
             request.repo_slug.as_deref(),
             &commit_sha,
-        )? {
+        )?
+    {
+        println!(
+            "[index] skipping duplicate scan for {} @ {} (existing job {})",
+            git_url, commit_sha, existing.id
+        );
+        return Ok(SubmitIndexResponse {
+            ok: true,
+            job_id: existing.id,
+            skipped: true,
+            existing_job_id: Some(existing.id),
+        });
+    }
+
+    // Smart dedup: check for active (pending/running) job with same url_hash
+    if !force && let Some(active) = find_active_index_by_url_hash(&mut conn, &url_hash)? {
+        if active.git_sha == commit_sha {
+            // Same commit — return existing job
             println!(
-                "[index] skipping duplicate scan for {} @ {} (existing job {})",
-                git_url, commit_sha, existing.id
+                "[index] reusing active job {} for {} @ {}",
+                active.id, git_url, commit_sha
             );
             return Ok(SubmitIndexResponse {
                 ok: true,
-                job_id: existing.id,
+                job_id: active.id,
                 skipped: true,
-                existing_job_id: Some(existing.id),
+                existing_job_id: Some(active.id),
             });
+        } else {
+            // Different commit — supersede old job, create new one
+            println!(
+                "[index] superseding active job {} for {} (old={} new={})",
+                active.id, git_url, &active.git_sha, commit_sha
+            );
+            supersede_index_job(&mut conn, active.id)?;
         }
-
-    // Smart dedup: check for active (pending/running) job with same url_hash
-    if !force
-        && let Some(active) = find_active_index_by_url_hash(&mut conn, &url_hash)? {
-            if active.git_sha == commit_sha {
-                // Same commit — return existing job
-                println!(
-                    "[index] reusing active job {} for {} @ {}",
-                    active.id, git_url, commit_sha
-                );
-                return Ok(SubmitIndexResponse {
-                    ok: true,
-                    job_id: active.id,
-                    skipped: true,
-                    existing_job_id: Some(active.id),
-                });
-            } else {
-                // Different commit — supersede old job, create new one
-                println!(
-                    "[index] superseding active job {} for {} (old={} new={})",
-                    active.id, git_url, &active.git_sha, commit_sha
-                );
-                supersede_index_job(&mut conn, active.id)?;
-            }
-        }
+    }
 
     let now = Utc::now();
     let job_id = Uuid::now_v7();
@@ -670,7 +670,6 @@ async fn do_auto_import(
     // so the pool is not held during the (potentially long) per-flock loop.
     let repo = {
         let mut conn = db_conn()?;
-        
 
         // NOTE: previous flocks/skills are preserved and updated via upsert
         // in persist_auto_import_flock. Stale skills (no longer in the repo)
@@ -914,17 +913,17 @@ async fn do_auto_import(
                     .filter(flocks::slug.eq(&flock_slug))
                     .select(FlockRow::as_select())
                     .first::<FlockRow>(&mut conn)
-                {
-                    cache_ai_request(
-                        &mut conn,
-                        "flock_metadata",
-                        "flock",
-                        flock_row.id,
-                        &checkout.head_sha,
-                        true,
-                        None,
-                    );
-                }
+            {
+                cache_ai_request(
+                    &mut conn,
+                    "flock_metadata",
+                    "flock",
+                    flock_row.id,
+                    &checkout.head_sha,
+                    true,
+                    None,
+                );
+            }
         }
 
         flock_slugs.push(flock_slug);
@@ -1590,9 +1589,10 @@ fn extract_repo_description(checkout_path: &std::path::Path, repo_name: &str) ->
                     }
                 }
                 None
-            }) {
-                return heading;
-            }
+            })
+        {
+            return heading;
+        }
     }
     default
 }

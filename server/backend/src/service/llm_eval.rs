@@ -524,11 +524,16 @@ fn verdict_to_status(verdict: &str) -> &str {
 // Determine endpoint / model for the configured AI provider
 // ---------------------------------------------------------------------------
 
-fn security_eval_endpoint(provider: &str) -> &'static str {
+fn security_eval_endpoint(provider: &str) -> String {
+    let config = &crate::state::app_state().config;
+    if let Some(base) = config.ai_api_url.as_deref() {
+        let base = base.trim_end_matches('/');
+        return format!("{base}/chat/completions");
+    }
     match provider {
-        "zhipu" => "https://open.bigmodel.cn/api/paas/v4/chat/completions",
-        "doubao" => "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
-        _ => "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+        "zhipu" => "https://open.bigmodel.cn/api/paas/v4/chat/completions".to_string(),
+        "doubao" => "https://ark.cn-beijing.volces.com/api/v3/chat/completions".to_string(),
+        _ => "https://open.bigmodel.cn/api/paas/v4/chat/completions".to_string(),
     }
 }
 
@@ -615,7 +620,7 @@ pub async fn evaluate_skill_with_llm(
     let mut response = None;
     for attempt in 0..=max_retries {
         let resp = client
-            .post(endpoint)
+            .post(&endpoint)
             .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
             .json(&request)
@@ -658,22 +663,23 @@ pub async fn evaluate_skill_with_llm(
 
     // Log AI token usage
     if let Some(usage) = &chat_resp.usage
-        && let Ok(mut conn) = db_conn() {
-            let _ = diesel::insert_into(ai_usage_logs::table)
-                .values(NewAiUsageLogRow {
-                    id: Uuid::now_v7(),
-                    task_type: "security_scan".to_string(),
-                    provider: provider.to_string(),
-                    model: model.to_string(),
-                    prompt_tokens: usage.prompt_tokens,
-                    completion_tokens: usage.completion_tokens,
-                    total_tokens: usage.total_tokens,
-                    target_type: Some("skill".to_string()),
-                    target_id: Some(skill_id),
-                    created_at: Utc::now(),
-                })
-                .execute(&mut conn);
-        }
+        && let Ok(mut conn) = db_conn()
+    {
+        let _ = diesel::insert_into(ai_usage_logs::table)
+            .values(NewAiUsageLogRow {
+                id: Uuid::now_v7(),
+                task_type: "security_scan".to_string(),
+                provider: provider.to_string(),
+                model: model.to_string(),
+                prompt_tokens: usage.prompt_tokens,
+                completion_tokens: usage.completion_tokens,
+                total_tokens: usage.total_tokens,
+                target_type: Some("skill".to_string()),
+                target_id: Some(skill_id),
+                created_at: Utc::now(),
+            })
+            .execute(&mut conn);
+    }
 
     let raw_content = chat_resp
         .choices

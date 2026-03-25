@@ -75,11 +75,18 @@ pub struct GeneratedRepoMeta {
 }
 
 /// Determine the chat completions endpoint URL for the configured provider.
-fn chat_endpoint(provider: &str) -> &'static str {
+/// If `SAVHUB_AI_API_URL` is set, it is used as the base and
+/// `/chat/completions` is appended.
+fn chat_endpoint(provider: &str) -> String {
+    let config = &crate::state::app_state().config;
+    if let Some(base) = config.ai_api_url.as_deref() {
+        let base = base.trim_end_matches('/');
+        return format!("{base}/chat/completions");
+    }
     match provider {
-        "zhipu" => "https://open.bigmodel.cn/api/paas/v4/chat/completions",
-        "doubao" => "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
-        _ => "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+        "zhipu" => "https://open.bigmodel.cn/api/paas/v4/chat/completions".to_string(),
+        "doubao" => "https://ark.cn-beijing.volces.com/api/v3/chat/completions".to_string(),
+        _ => "https://open.bigmodel.cn/api/paas/v4/chat/completions".to_string(),
     }
 }
 
@@ -197,22 +204,23 @@ Respond with ONLY the JSON object, no markdown fences."#
 
     // Log AI usage
     if let Some(usage) = &chat_resp.usage
-        && let Ok(mut conn) = db_conn() {
-            let _ = diesel::insert_into(ai_usage_logs::table)
-                .values(NewAiUsageLogRow {
-                    id: Uuid::now_v7(),
-                    task_type: "flock_metadata".to_string(),
-                    provider: provider.to_string(),
-                    model: model.to_string(),
-                    prompt_tokens: usage.prompt_tokens,
-                    completion_tokens: usage.completion_tokens,
-                    total_tokens: usage.total_tokens,
-                    target_type: Some("flock".to_string()),
-                    target_id: None,
-                    created_at: Utc::now(),
-                })
-                .execute(&mut conn);
-        }
+        && let Ok(mut conn) = db_conn()
+    {
+        let _ = diesel::insert_into(ai_usage_logs::table)
+            .values(NewAiUsageLogRow {
+                id: Uuid::now_v7(),
+                task_type: "flock_metadata".to_string(),
+                provider: provider.to_string(),
+                model: model.to_string(),
+                prompt_tokens: usage.prompt_tokens,
+                completion_tokens: usage.completion_tokens,
+                total_tokens: usage.total_tokens,
+                target_type: Some("flock".to_string()),
+                target_id: None,
+                created_at: Utc::now(),
+            })
+            .execute(&mut conn);
+    }
 
     let content = chat_resp.choices.first()?.message.content.clone();
 
@@ -312,22 +320,23 @@ Respond with ONLY the JSON object, no markdown fences."#
     let chat_resp: ChatResponse = response.json().await.ok()?;
 
     if let Some(usage) = &chat_resp.usage
-        && let Ok(mut conn) = db_conn() {
-            let _ = diesel::insert_into(ai_usage_logs::table)
-                .values(NewAiUsageLogRow {
-                    id: Uuid::now_v7(),
-                    task_type: "repo_metadata".to_string(),
-                    provider: provider.to_string(),
-                    model: model.to_string(),
-                    prompt_tokens: usage.prompt_tokens,
-                    completion_tokens: usage.completion_tokens,
-                    total_tokens: usage.total_tokens,
-                    target_type: Some("repo".to_string()),
-                    target_id: None,
-                    created_at: Utc::now(),
-                })
-                .execute(&mut conn);
-        }
+        && let Ok(mut conn) = db_conn()
+    {
+        let _ = diesel::insert_into(ai_usage_logs::table)
+            .values(NewAiUsageLogRow {
+                id: Uuid::now_v7(),
+                task_type: "repo_metadata".to_string(),
+                provider: provider.to_string(),
+                model: model.to_string(),
+                prompt_tokens: usage.prompt_tokens,
+                completion_tokens: usage.completion_tokens,
+                total_tokens: usage.total_tokens,
+                target_type: Some("repo".to_string()),
+                target_id: None,
+                created_at: Utc::now(),
+            })
+            .execute(&mut conn);
+    }
 
     let content = chat_resp.choices.first()?.message.content.clone();
     let json_str = content

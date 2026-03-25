@@ -259,25 +259,26 @@ pub fn run_automated_scans_with_files(
 
     // Skip if this commit_hash was already scanned for this flock.
     if let Some(ref hash) = commit_hash
-        && !hash.is_empty() {
-            let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
-            let already_scanned = security_scans::table
-                .filter(security_scans::target_type.eq("flock"))
-                .filter(security_scans::target_id.eq(flock_id))
-                .filter(security_scans::commit_hash.eq(hash))
-                .select(security_scans::id)
-                .first::<Uuid>(&mut conn)
-                .optional()?
-                .is_some();
-            if already_scanned {
-                tracing::info!(
-                    "[security] flock {} already scanned at commit {} — skipping",
-                    flock_id,
-                    &hash[..hash.len().min(8)],
-                );
-                return Ok("clean".to_string());
-            }
+        && !hash.is_empty()
+    {
+        let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
+        let already_scanned = security_scans::table
+            .filter(security_scans::target_type.eq("flock"))
+            .filter(security_scans::target_id.eq(flock_id))
+            .filter(security_scans::commit_hash.eq(hash))
+            .select(security_scans::id)
+            .first::<Uuid>(&mut conn)
+            .optional()?
+            .is_some();
+        if already_scanned {
+            tracing::info!(
+                "[security] flock {} already scanned at commit {} — skipping",
+                flock_id,
+                &hash[..hash.len().min(8)],
+            );
+            return Ok("clean".to_string());
         }
+    }
 
     let ai_scan_enabled = crate::state::app_state().config.ai_security_scan_enabled;
     let mut worst_verdict = ModerationVerdict::Clean;
@@ -427,11 +428,12 @@ pub fn run_automated_scans_with_files(
             if let Some(vid) = scan_input.version_id {
                 let scan_summary = build_initial_scan_summary(&static_result);
                 if let Ok(val) = serde_json::to_value(&scan_summary)
-                    && let Ok(mut conn) = pool.get() {
-                        let _ = diesel::update(skill_versions::table.find(vid))
-                            .set(skill_versions::scan_summary.eq(Some(val)))
-                            .execute(&mut conn);
-                    }
+                    && let Ok(mut conn) = pool.get()
+                {
+                    let _ = diesel::update(skill_versions::table.find(vid))
+                        .set(skill_versions::scan_summary.eq(Some(val)))
+                        .execute(&mut conn);
+                }
             }
 
             // AI scan runs separately via the background worker — skills with
@@ -606,9 +608,10 @@ pub async fn process_claimed_ai_scan_task(pool: &PgPool, skill: SkillRow) -> Res
         (files, repo, static_result_opt)
     };
     if files.is_empty()
-        && let Some(repo) = repo.as_ref() {
-            files = load_skill_files_from_repo_checkout(repo, &skill);
-        }
+        && let Some(repo) = repo.as_ref()
+    {
+        files = load_skill_files_from_repo_checkout(repo, &skill);
+    }
 
     if files.is_empty() {
         tracing::warn!(
@@ -769,19 +772,21 @@ fn load_skill_files_from_versions(conn: &mut PgConnection, skill: &SkillRow) -> 
         if let Some(val) = files_json {
             if let Ok(stored) =
                 serde_json::from_value::<Vec<savhub_shared::StoredBundleFile>>(val.clone())
-                && !stored.is_empty() {
-                    return stored
-                        .into_iter()
-                        .map(|f| FileContent {
-                            path: f.path,
-                            content: f.content,
-                        })
-                        .collect();
-                }
+                && !stored.is_empty()
+            {
+                return stored
+                    .into_iter()
+                    .map(|f| FileContent {
+                        path: f.path,
+                        content: f.content,
+                    })
+                    .collect();
+            }
             if let Ok(files) = serde_json::from_value::<Vec<FileContent>>(val)
-                && !files.is_empty() {
-                    return files;
-                }
+                && !files.is_empty()
+            {
+                return files;
+            }
         }
     }
     vec![]

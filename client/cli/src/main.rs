@@ -1015,9 +1015,11 @@ fn cmd_fetched_prune(config_dir: &Path, lockfile: &savhub_shared::Lockfile) -> R
             savhub_local::presets::read_project_lockfile(&project_path).unwrap_or_default();
         for skill in &project_lock.skills {
             if let (Some(repo), Some(path)) = (skill.repo.as_deref(), skill.path.as_deref())
-                && !repo.is_empty() && !path.is_empty() {
-                    used.insert((repo.to_string(), path.to_string()));
-                }
+                && !repo.is_empty()
+                && !path.is_empty()
+            {
+                used.insert((repo.to_string(), path.to_string()));
+            }
         }
     }
 
@@ -3216,20 +3218,21 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     // Fire-and-forget install tracking
     if !batch_results.is_empty()
         && let Ok(client) = optional_client(opts)
-            && let Ok(handle) = tokio::runtime::Handle::try_current() {
-                for info in &batch_results {
-                    let slug = info.slug.clone();
-                    let client = client.clone();
-                    handle.spawn(async move {
-                        let _ = client
-                            .post_json::<serde_json::Value, serde_json::Value>(
-                                &format!("/collect?skill={slug}"),
-                                &json!({ "client_type": "cli" }),
-                            )
-                            .await;
-                    });
-                }
-            }
+        && let Ok(handle) = tokio::runtime::Handle::try_current()
+    {
+        for info in &batch_results {
+            let slug = info.slug.clone();
+            let client = client.clone();
+            handle.spawn(async move {
+                let _ = client
+                    .post_json::<serde_json::Value, serde_json::Value>(
+                        &format!("/collect?skill={slug}"),
+                        &json!({ "client_type": "cli" }),
+                    )
+                    .await;
+            });
+        }
+    }
 
     let removed_count = to_remove.len();
     if fetched_count > 0 || removed_count > 0 {

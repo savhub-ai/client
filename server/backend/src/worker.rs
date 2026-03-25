@@ -67,7 +67,22 @@ pub fn spawn_worker(pool: PgPool) -> JoinHandle<()> {
         let mut ai_scan_tick = tokio::time::interval(std::time::Duration::from_secs(2));
         let mut ai_scan_tasks: JoinSet<Uuid> = JoinSet::new();
         let max_ai_scan_concurrency = config.ai_security_concurrency.max(1);
-        let ai_scan_enabled = config.ai_provider.is_some() && config.ai_api_key.is_some();
+        let ai_scan_enabled = config.ai_security_scan_enabled
+            && config.ai_provider.is_some()
+            && config.ai_api_key.is_some();
+        if ai_scan_enabled {
+            tracing::info!(
+                "[ai-scan] worker enabled (concurrency={})",
+                config.ai_security_concurrency
+            );
+        } else {
+            tracing::info!(
+                "[ai-scan] worker disabled (ai_security_scan={}, provider={}, key={})",
+                config.ai_security_scan_enabled,
+                config.ai_provider.is_some(),
+                config.ai_api_key.is_some(),
+            );
+        }
         let mut ai_scanning_ids: HashSet<Uuid> = HashSet::new();
 
         let mut index_tasks: JoinSet<(Uuid, String)> = JoinSet::new();

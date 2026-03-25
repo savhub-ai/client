@@ -151,14 +151,15 @@ pub fn restart() {
 /// Remove the `.old` backup left by a previous update.
 pub fn cleanup_old_binary() {
     if let Ok(exe) = std::env::current_exe()
-        && let Some(parent) = exe.parent() {
-            let old_name = if cfg!(windows) {
-                "savhub-desktop.old.exe"
-            } else {
-                "savhub-desktop.old"
-            };
-            let _ = std::fs::remove_file(parent.join(old_name));
-        }
+        && let Some(parent) = exe.parent()
+    {
+        let old_name = if cfg!(windows) {
+            "savhub-desktop.old.exe"
+        } else {
+            "savhub-desktop.old"
+        };
+        let _ = std::fs::remove_file(parent.join(old_name));
+    }
 }
 
 // --- Internal helpers ---

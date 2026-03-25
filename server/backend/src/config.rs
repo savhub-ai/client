@@ -20,6 +20,8 @@ pub struct Config {
     pub ai_provider: Option<String>,
     /// API key for the configured AI provider.
     pub ai_api_key: Option<String>,
+    /// Custom API base URL (overrides provider default endpoint).
+    pub ai_api_url: Option<String>,
     /// Model name override for chat completions.
     pub ai_chat_model: Option<String>,
     /// Model name override for LLM security evaluation (defaults to glm-4-plus /
@@ -87,6 +89,9 @@ impl Config {
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
             ai_api_key: env::var("SAVHUB_AI_API_KEY")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+            ai_api_url: env::var("SAVHUB_AI_API_URL")
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
             ai_chat_model: env::var("SAVHUB_AI_CHAT_MODEL")

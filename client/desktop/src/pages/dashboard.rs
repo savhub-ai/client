@@ -158,15 +158,14 @@ pub fn DashboardPage() -> Element {
         pagination::slice_for_page(&agents, agents_current_page, DETECTED_AGENTS_PAGE_SIZE);
     let agents_total_pages = pagination::total_pages(agents.len(), DETECTED_AGENTS_PAGE_SIZE);
     let compat = state.registry_compat.read().clone();
-    let registry_accent = if registry_error.is_some()
-        || matches!(compat, ApiCompatibility::Incompatible { .. })
-    {
-        Theme::DANGER
-    } else if registry_value.starts_with("ok") {
-        Theme::SUCCESS
-    } else {
-        Theme::DANGER
-    };
+    let registry_accent =
+        if registry_error.is_some() || matches!(compat, ApiCompatibility::Incompatible { .. }) {
+            Theme::DANGER
+        } else if registry_value.starts_with("ok") {
+            Theme::SUCCESS
+        } else {
+            Theme::DANGER
+        };
 
     rsx! {
         div { style: "display: flex; flex-direction: column; height: 100%;",

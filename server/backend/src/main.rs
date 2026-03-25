@@ -62,6 +62,10 @@ async fn main() -> Result<()> {
         (Some(provider), Some(_)) => {
             tracing::info!("  ai_provider     = {provider}");
             tracing::info!(
+                "  ai_api_url      = {}",
+                config.ai_api_url.as_deref().unwrap_or("(provider default)")
+            );
+            tracing::info!(
                 "  ai_chat_model   = {}",
                 config.ai_chat_model.as_deref().unwrap_or("(default)")
             );

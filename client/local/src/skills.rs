@@ -103,48 +103,51 @@ pub fn read_skill_version_info(skill_folder: &Path) -> Result<SkillVersionInfo> 
 
     if let Ok(raw) = fs::read_to_string(skill_folder.join("_meta.json"))
         && let Ok(meta) = serde_json::from_str::<SkillCatalogMeta>(&raw)
-            && let Some(latest) = meta.latest {
-                if let Some(version) = clean_optional_string(latest.version) {
-                    info.version = Some(version);
-                }
-                if let Some(commit) = clean_optional_string(latest.commit) {
-                    info.git_sha = normalize_git_sha(&commit).or(Some(commit));
-                }
-            }
+        && let Some(latest) = meta.latest
+    {
+        if let Some(version) = clean_optional_string(latest.version) {
+            info.version = Some(version);
+        }
+        if let Some(commit) = clean_optional_string(latest.commit) {
+            info.git_sha = normalize_git_sha(&commit).or(Some(commit));
+        }
+    }
 
     if (info.version.is_none() || info.git_sha.is_none())
         && let Ok(raw) = fs::read_to_string(skill_folder.join(BUNDLE_META_FILE))
-            && let Ok(meta) = serde_json::from_str::<BundleMetadata>(&raw) {
-                if info.version.is_none() {
-                    let version = meta.package.version.trim();
-                    if !version.is_empty() {
-                        info.version = Some(version.to_string());
-                    }
-                }
-                if info.git_sha.is_none()
-                    && let Some(git) = meta.source.git
-                    && git.reference.kind == BundleSourceKind::Git
-                {
-                    let reference = git.reference.value.trim();
-                    if !reference.is_empty() {
-                        info.git_sha = normalize_git_sha(reference).or(Some(reference.to_string()));
-                    }
-                }
-            }
-
-    if (info.version.is_none() || info.git_sha.is_none())
-        && let Some(origin) = read_repo_skill_origin(skill_folder)? {
-            if info.version.is_none() {
-                info.version = clean_optional_string(origin.skill_version);
-            }
-            if info.git_sha.is_none() {
-                info.git_sha = origin
-                    .repo_commit
-                    .as_deref()
-                    .and_then(normalize_git_sha)
-                    .or(origin.repo_commit);
+        && let Ok(meta) = serde_json::from_str::<BundleMetadata>(&raw)
+    {
+        if info.version.is_none() {
+            let version = meta.package.version.trim();
+            if !version.is_empty() {
+                info.version = Some(version.to_string());
             }
         }
+        if info.git_sha.is_none()
+            && let Some(git) = meta.source.git
+            && git.reference.kind == BundleSourceKind::Git
+        {
+            let reference = git.reference.value.trim();
+            if !reference.is_empty() {
+                info.git_sha = normalize_git_sha(reference).or(Some(reference.to_string()));
+            }
+        }
+    }
+
+    if (info.version.is_none() || info.git_sha.is_none())
+        && let Some(origin) = read_repo_skill_origin(skill_folder)?
+    {
+        if info.version.is_none() {
+            info.version = clean_optional_string(origin.skill_version);
+        }
+        if info.git_sha.is_none() {
+            info.git_sha = origin
+                .repo_commit
+                .as_deref()
+                .and_then(normalize_git_sha)
+                .or(origin.repo_commit);
+        }
+    }
 
     Ok(info)
 }
@@ -428,14 +431,15 @@ pub fn skill_folder_from_path(path: &Path) -> Option<SkillFolder> {
     }
     let base = path.file_name()?.to_string_lossy();
     if let Ok(files) = list_publishable_files(path)
-        && let Ok(Some(metadata)) = load_local_skill_metadata(&files) {
-            return Some(SkillFolder {
-                folder: path.to_path_buf(),
-                slug: metadata.package.slug,
-                display_name: metadata.package.name,
-                flock_slug: None,
-            });
-        }
+        && let Ok(Some(metadata)) = load_local_skill_metadata(&files)
+    {
+        return Some(SkillFolder {
+            folder: path.to_path_buf(),
+            slug: metadata.package.slug,
+            display_name: metadata.package.name,
+            flock_slug: None,
+        });
+    }
 
     let slug = sanitize_slug(&base);
     if slug.is_empty() {

@@ -19,7 +19,6 @@ pub enum BundleSourceKind {
     Git,
 }
 
-
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct BundleMetadata {
     #[serde(default)]

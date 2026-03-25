@@ -797,10 +797,11 @@ fn collect_skill_folders(workdir: &Path) -> Vec<SkillFolder> {
     for flat in crate::skills::flatten_lockfile(&lock) {
         if let Some(path) = crate::registry::repo_skill_local_path(&flat.repo_url, &flat.path)
             && path.is_dir()
-                && let Some(skill) = skill_folder_from_path(&path)
-                    && !all_folders.iter().any(|e| e.slug == skill.slug) {
-                        all_folders.push(skill);
-                    }
+            && let Some(skill) = skill_folder_from_path(&path)
+            && !all_folders.iter().any(|e| e.slug == skill.slug)
+        {
+            all_folders.push(skill);
+        }
     }
 
     all_folders

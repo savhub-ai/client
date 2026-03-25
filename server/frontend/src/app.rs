@@ -2866,9 +2866,10 @@ fn query_param(key: &str) -> Option<String> {
     let qs = qs.strip_prefix('?').unwrap_or(&qs);
     for pair in qs.split('&') {
         if let Some((k, v)) = pair.split_once('=')
-            && k == key {
-                return Some(v.to_string());
-            }
+            && k == key
+        {
+            return Some(v.to_string());
+        }
     }
     None
 }
@@ -3333,12 +3334,12 @@ fn IndexPage(lang: String) -> Element {
     // Refresh job list when a tracked job completes or fails
     if let Some(ref evt) = ws_event
         && let Some(id) = sel_id
-            && (evt.status == "completed" || evt.status == "failed")
-                && *refreshed_for.read() != Some(id)
-            {
-                refreshed_for.set(Some(id));
-                fetch_jobs(false);
-            }
+        && (evt.status == "completed" || evt.status == "failed")
+        && *refreshed_for.read() != Some(id)
+    {
+        refreshed_for.set(Some(id));
+        fetch_jobs(false);
+    }
 
     rsx! {
         document::Title { "{t.index_title}" }

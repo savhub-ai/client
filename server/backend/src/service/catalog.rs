@@ -43,41 +43,42 @@ pub fn list_skills(
 
     // Precise lookup by repo git_url + path
     if let Some(ref url) = repo_url
-        && let Some(ref p) = path {
-            let row = fetch_skill_by_path(&mut conn, url, p)?;
-            return match row {
-                Some(row) => {
-                    if !viewer_is_staff(viewer) && row.moderation_status != "active" {
-                        return Ok(PagedResponse {
-                            items: Vec::new(),
-                            next_cursor: None,
-                        });
-                    }
-                    let repo = repos::table
-                        .find(row.repo_id)
-                        .select(RepoRow::as_select())
-                        .first::<RepoRow>(&mut conn)?;
-                    let owners = load_skill_owners(&mut conn, &[&row])?;
-                    let latest = row
-                        .latest_version_id
-                        .map(|id| load_skill_versions_map(&mut conn, vec![id]))
-                        .transpose()?
-                        .unwrap_or_default();
-                    let owner = owners
-                        .get(&row.flock_id)
-                        .ok_or_else(|| AppError::Internal("missing skill owner".to_string()))?;
-                    let lv = row.latest_version_id.and_then(|id| latest.get(&id));
-                    Ok(PagedResponse {
-                        items: vec![skill_item_from_rows(&row, &repo.git_url, owner, lv)],
+        && let Some(ref p) = path
+    {
+        let row = fetch_skill_by_path(&mut conn, url, p)?;
+        return match row {
+            Some(row) => {
+                if !viewer_is_staff(viewer) && row.moderation_status != "active" {
+                    return Ok(PagedResponse {
+                        items: Vec::new(),
                         next_cursor: None,
-                    })
+                    });
                 }
-                None => Ok(PagedResponse {
-                    items: Vec::new(),
+                let repo = repos::table
+                    .find(row.repo_id)
+                    .select(RepoRow::as_select())
+                    .first::<RepoRow>(&mut conn)?;
+                let owners = load_skill_owners(&mut conn, &[&row])?;
+                let latest = row
+                    .latest_version_id
+                    .map(|id| load_skill_versions_map(&mut conn, vec![id]))
+                    .transpose()?
+                    .unwrap_or_default();
+                let owner = owners
+                    .get(&row.flock_id)
+                    .ok_or_else(|| AppError::Internal("missing skill owner".to_string()))?;
+                let lv = row.latest_version_id.and_then(|id| latest.get(&id));
+                Ok(PagedResponse {
+                    items: vec![skill_item_from_rows(&row, &repo.git_url, owner, lv)],
                     next_cursor: None,
-                }),
-            };
-        }
+                })
+            }
+            None => Ok(PagedResponse {
+                items: Vec::new(),
+                next_cursor: None,
+            }),
+        };
+    }
 
     let limit = limit.clamp(1, 100);
     let offset = cursor
@@ -235,39 +236,40 @@ pub fn list_flocks(
 
     // Precise lookup by repo git_url + flock slug
     if let Some(ref url) = repo_url
-        && let Some(ref s) = slug {
-            let repo = repos::table
-                .filter(repos::git_url.eq(url))
-                .select(RepoRow::as_select())
-                .first::<RepoRow>(&mut conn)
+        && let Some(ref s) = slug
+    {
+        let repo = repos::table
+            .filter(repos::git_url.eq(url))
+            .select(RepoRow::as_select())
+            .first::<RepoRow>(&mut conn)
+            .optional()?;
+        if let Some(repo) = repo {
+            let flock = dsl::flocks
+                .filter(dsl::repo_id.eq(repo.id))
+                .filter(dsl::slug.eq(s))
+                .filter(dsl::soft_deleted_at.is_null())
+                .select(crate::models::FlockRow::as_select())
+                .first::<crate::models::FlockRow>(&mut conn)
                 .optional()?;
-            if let Some(repo) = repo {
-                let flock = dsl::flocks
-                    .filter(dsl::repo_id.eq(repo.id))
-                    .filter(dsl::slug.eq(s))
-                    .filter(dsl::soft_deleted_at.is_null())
-                    .select(crate::models::FlockRow::as_select())
-                    .first::<crate::models::FlockRow>(&mut conn)
-                    .optional()?;
-                return match flock {
-                    Some(flock) => {
-                        let items = build_flock_summaries(&mut conn, vec![&flock])?;
-                        Ok(PagedResponse {
-                            items,
-                            next_cursor: None,
-                        })
-                    }
-                    None => Ok(PagedResponse {
-                        items: Vec::new(),
+            return match flock {
+                Some(flock) => {
+                    let items = build_flock_summaries(&mut conn, vec![&flock])?;
+                    Ok(PagedResponse {
+                        items,
                         next_cursor: None,
-                    }),
-                };
-            }
-            return Ok(PagedResponse {
-                items: Vec::new(),
-                next_cursor: None,
-            });
+                    })
+                }
+                None => Ok(PagedResponse {
+                    items: Vec::new(),
+                    next_cursor: None,
+                }),
+            };
         }
+        return Ok(PagedResponse {
+            items: Vec::new(),
+            next_cursor: None,
+        });
+    }
 
     let mut conn = db_conn()?;
     let limit = limit.clamp(1, 100);

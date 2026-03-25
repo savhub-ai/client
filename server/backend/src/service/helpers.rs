@@ -104,10 +104,11 @@ pub fn parse_git_url_parts(git_url: &str) -> (String, String) {
 
     // git@host:path (shouldn't happen after normalize, but handle anyway)
     if let Some(rest) = url.strip_prefix("git@")
-        && let Some((host, path)) = rest.split_once(':') {
-            let domain = host.replace(':', "-");
-            return (domain, path.to_string());
-        }
+        && let Some((host, path)) = rest.split_once(':')
+    {
+        let domain = host.replace(':', "-");
+        return (domain, path.to_string());
+    }
 
     ("unknown".to_string(), url.to_string())
 }
@@ -519,13 +520,12 @@ pub fn ensure_skill_visible(row: &SkillRow, viewer: Option<&RequestUser>) -> Res
     let can_view_hidden = viewer
         .map(|viewer| matches!(viewer.role, UserRole::Admin | UserRole::Moderator))
         .unwrap_or(false);
-    if (row.soft_deleted_at.is_some() || row.moderation_status == "removed")
-        && !can_view_hidden {
-            return Err(AppError::NotFound(format!(
-                "skill `{}` does not exist",
-                row.slug
-            )));
-        }
+    if (row.soft_deleted_at.is_some() || row.moderation_status == "removed") && !can_view_hidden {
+        return Err(AppError::NotFound(format!(
+            "skill `{}` does not exist",
+            row.slug
+        )));
+    }
     if row.moderation_status == "hidden" && !can_view_hidden {
         return Err(AppError::NotFound(format!(
             "skill `{}` does not exist",
