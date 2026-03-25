@@ -445,7 +445,7 @@ fn hex_encode(value: &str) -> String {
 }
 
 fn hex_decode(value: &str) -> Option<String> {
-    if value.len() % 2 != 0 {
+    if !value.len().is_multiple_of(2) {
         return None;
     }
 

@@ -657,8 +657,8 @@ pub async fn evaluate_skill_with_llm(
         .map_err(|e| AppError::Internal(format!("Failed to parse LLM response: {e}")))?;
 
     // Log AI token usage
-    if let Some(usage) = &chat_resp.usage {
-        if let Ok(mut conn) = db_conn() {
+    if let Some(usage) = &chat_resp.usage
+        && let Ok(mut conn) = db_conn() {
             let _ = diesel::insert_into(ai_usage_logs::table)
                 .values(NewAiUsageLogRow {
                     id: Uuid::now_v7(),
@@ -674,7 +674,6 @@ pub async fn evaluate_skill_with_llm(
                 })
                 .execute(&mut conn);
         }
-    }
 
     let raw_content = chat_resp
         .choices

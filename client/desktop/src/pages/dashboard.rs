@@ -158,9 +158,9 @@ pub fn DashboardPage() -> Element {
         pagination::slice_for_page(&agents, agents_current_page, DETECTED_AGENTS_PAGE_SIZE);
     let agents_total_pages = pagination::total_pages(agents.len(), DETECTED_AGENTS_PAGE_SIZE);
     let compat = state.registry_compat.read().clone();
-    let registry_accent = if registry_error.is_some() {
-        Theme::DANGER
-    } else if matches!(compat, ApiCompatibility::Incompatible { .. }) {
+    let registry_accent = if registry_error.is_some()
+        || matches!(compat, ApiCompatibility::Incompatible { .. })
+    {
         Theme::DANGER
     } else if registry_value.starts_with("ok") {
         Theme::SUCCESS

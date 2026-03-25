@@ -383,14 +383,13 @@ pub fn validate_imported_skill_record(
         Version::parse(v.trim())
             .map_err(|_| format!("skill `{}` version must be valid semver", skill.slug))?;
     }
-    if let Some(runtime) = &skill.runtime {
-        if runtime.memory_mb.is_some_and(|value| value <= 0) {
+    if let Some(runtime) = &skill.runtime
+        && runtime.memory_mb.is_some_and(|value| value <= 0) {
             return Err(format!(
                 "skill `{}` runtime.memory_mb must be positive",
                 skill.slug
             ));
         }
-    }
     validate_maintainers(
         &format!("skill `{}`.maintainers", skill.slug),
         &skill.metadata.maintainers,

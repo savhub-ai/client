@@ -101,9 +101,9 @@ pub fn write_repo_skill_origin(skill_folder: &Path, origin: &RepoSkillOrigin) ->
 pub fn read_skill_version_info(skill_folder: &Path) -> Result<SkillVersionInfo> {
     let mut info = SkillVersionInfo::default();
 
-    if let Ok(raw) = fs::read_to_string(skill_folder.join("_meta.json")) {
-        if let Ok(meta) = serde_json::from_str::<SkillCatalogMeta>(&raw) {
-            if let Some(latest) = meta.latest {
+    if let Ok(raw) = fs::read_to_string(skill_folder.join("_meta.json"))
+        && let Ok(meta) = serde_json::from_str::<SkillCatalogMeta>(&raw)
+            && let Some(latest) = meta.latest {
                 if let Some(version) = clean_optional_string(latest.version) {
                     info.version = Some(version);
                 }
@@ -111,12 +111,10 @@ pub fn read_skill_version_info(skill_folder: &Path) -> Result<SkillVersionInfo> 
                     info.git_sha = normalize_git_sha(&commit).or(Some(commit));
                 }
             }
-        }
-    }
 
-    if info.version.is_none() || info.git_sha.is_none() {
-        if let Ok(raw) = fs::read_to_string(skill_folder.join(BUNDLE_META_FILE)) {
-            if let Ok(meta) = serde_json::from_str::<BundleMetadata>(&raw) {
+    if (info.version.is_none() || info.git_sha.is_none())
+        && let Ok(raw) = fs::read_to_string(skill_folder.join(BUNDLE_META_FILE))
+            && let Ok(meta) = serde_json::from_str::<BundleMetadata>(&raw) {
                 if info.version.is_none() {
                     let version = meta.package.version.trim();
                     if !version.is_empty() {
@@ -133,11 +131,9 @@ pub fn read_skill_version_info(skill_folder: &Path) -> Result<SkillVersionInfo> 
                     }
                 }
             }
-        }
-    }
 
-    if info.version.is_none() || info.git_sha.is_none() {
-        if let Some(origin) = read_repo_skill_origin(skill_folder)? {
+    if (info.version.is_none() || info.git_sha.is_none())
+        && let Some(origin) = read_repo_skill_origin(skill_folder)? {
             if info.version.is_none() {
                 info.version = clean_optional_string(origin.skill_version);
             }
@@ -149,7 +145,6 @@ pub fn read_skill_version_info(skill_folder: &Path) -> Result<SkillVersionInfo> 
                     .or(origin.repo_commit);
             }
         }
-    }
 
     Ok(info)
 }
@@ -432,8 +427,8 @@ pub fn skill_folder_from_path(path: &Path) -> Option<SkillFolder> {
         return None;
     }
     let base = path.file_name()?.to_string_lossy();
-    if let Ok(files) = list_publishable_files(path) {
-        if let Ok(Some(metadata)) = load_local_skill_metadata(&files) {
+    if let Ok(files) = list_publishable_files(path)
+        && let Ok(Some(metadata)) = load_local_skill_metadata(&files) {
             return Some(SkillFolder {
                 folder: path.to_path_buf(),
                 slug: metadata.package.slug,
@@ -441,7 +436,6 @@ pub fn skill_folder_from_path(path: &Path) -> Option<SkillFolder> {
                 flock_slug: None,
             });
         }
-    }
 
     let slug = sanitize_slug(&base);
     if slug.is_empty() {

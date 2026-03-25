@@ -93,13 +93,12 @@ pub fn uninstall(agents: &[String]) -> Result<Vec<PathBuf>> {
     let mut removed = Vec::new();
 
     for &(skill_name, _) in BUNDLED_SKILLS {
-        if let Ok(shared) = shared_skill_dir(skill_name) {
-            if shared.exists() {
+        if let Ok(shared) = shared_skill_dir(skill_name)
+            && shared.exists() {
                 fs::remove_dir_all(&shared)
                     .with_context(|| format!("failed to remove {}", shared.display()))?;
                 removed.push(shared);
             }
-        }
 
         for agent in agents {
             let dir = agent_skill_dir(agent, skill_name)?;

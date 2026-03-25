@@ -212,11 +212,10 @@ impl ApiClient {
 async fn parse_error(response: Response) -> String {
     let status = response.status();
     let text = response.text().await.unwrap_or_default();
-    if let Ok(payload) = serde_json::from_str::<Value>(&text) {
-        if let Some(message) = payload.get("error").and_then(Value::as_str) {
+    if let Ok(payload) = serde_json::from_str::<Value>(&text)
+        && let Some(message) = payload.get("error").and_then(Value::as_str) {
             return format!("{}: {}", status.as_u16(), message);
         }
-    }
     if text.trim().is_empty() {
         status.to_string()
     } else {

@@ -258,8 +258,8 @@ pub fn run_automated_scans_with_files(
     let commit_hash = scan_ctx.and_then(|c| c.commit_hash.clone());
 
     // Skip if this commit_hash was already scanned for this flock.
-    if let Some(ref hash) = commit_hash {
-        if !hash.is_empty() {
+    if let Some(ref hash) = commit_hash
+        && !hash.is_empty() {
             let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
             let already_scanned = security_scans::table
                 .filter(security_scans::target_type.eq("flock"))
@@ -278,7 +278,6 @@ pub fn run_automated_scans_with_files(
                 return Ok("clean".to_string());
             }
         }
-    }
 
     let ai_scan_enabled = crate::state::app_state().config.ai_security_scan_enabled;
     let mut worst_verdict = ModerationVerdict::Clean;
@@ -427,13 +426,12 @@ pub fn run_automated_scans_with_files(
             // Write consolidated scan_summary to the skill_version row
             if let Some(vid) = scan_input.version_id {
                 let scan_summary = build_initial_scan_summary(&static_result);
-                if let Ok(val) = serde_json::to_value(&scan_summary) {
-                    if let Ok(mut conn) = pool.get() {
+                if let Ok(val) = serde_json::to_value(&scan_summary)
+                    && let Ok(mut conn) = pool.get() {
                         let _ = diesel::update(skill_versions::table.find(vid))
                             .set(skill_versions::scan_summary.eq(Some(val)))
                             .execute(&mut conn);
                     }
-                }
             }
 
             // AI scan runs separately via the background worker — skills with
@@ -550,7 +548,7 @@ pub fn run_static_scan_for_skill(pool: &PgPool, skill: &SkillRow) -> Result<bool
     run_automated_scans_with_files(
         pool,
         skill.flock_id,
-        &[skill.clone()],
+        std::slice::from_ref(skill),
         &[scan_input],
         Some(&scan_ctx),
     )?;
@@ -607,11 +605,10 @@ pub async fn process_claimed_ai_scan_task(pool: &PgPool, skill: SkillRow) -> Res
         let static_result_opt = load_latest_static_scan_result(&mut conn, skill.id)?;
         (files, repo, static_result_opt)
     };
-    if files.is_empty() {
-        if let Some(repo) = repo.as_ref() {
+    if files.is_empty()
+        && let Some(repo) = repo.as_ref() {
             files = load_skill_files_from_repo_checkout(repo, &skill);
         }
-    }
 
     if files.is_empty() {
         tracing::warn!(
@@ -772,8 +769,7 @@ fn load_skill_files_from_versions(conn: &mut PgConnection, skill: &SkillRow) -> 
         if let Some(val) = files_json {
             if let Ok(stored) =
                 serde_json::from_value::<Vec<savhub_shared::StoredBundleFile>>(val.clone())
-            {
-                if !stored.is_empty() {
+                && !stored.is_empty() {
                     return stored
                         .into_iter()
                         .map(|f| FileContent {
@@ -782,12 +778,10 @@ fn load_skill_files_from_versions(conn: &mut PgConnection, skill: &SkillRow) -> 
                         })
                         .collect();
                 }
-            }
-            if let Ok(files) = serde_json::from_value::<Vec<FileContent>>(val) {
-                if !files.is_empty() {
+            if let Ok(files) = serde_json::from_value::<Vec<FileContent>>(val)
+                && !files.is_empty() {
                     return files;
                 }
-            }
         }
     }
     vec![]

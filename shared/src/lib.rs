@@ -138,10 +138,10 @@ impl VersionScanSummary {
             self.virustotal.as_ref().map(|v| v.verdict),
             self.llm_analysis.as_ref().map(|v| v.verdict),
         ];
-        if verdicts.iter().any(|v| *v == Some(ScanVerdict::Malicious)) {
+        if verdicts.contains(&Some(ScanVerdict::Malicious)) {
             return ScanVerdict::Malicious;
         }
-        if verdicts.iter().any(|v| *v == Some(ScanVerdict::Suspicious)) {
+        if verdicts.contains(&Some(ScanVerdict::Suspicious)) {
             return ScanVerdict::Suspicious;
         }
         if verdicts.iter().all(|v| *v == Some(ScanVerdict::Benign)) {

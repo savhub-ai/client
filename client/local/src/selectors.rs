@@ -47,9 +47,9 @@ pub fn normalize_git_url(raw: &str) -> String {
         } else {
             url.to_string()
         }
-    } else if url.starts_with("http://") {
+    } else if let Some(rest) = url.strip_prefix("http://") {
         // Upgrade http → https
-        format!("https://{}", &url["http://".len()..])
+        format!("https://{rest}")
     } else if !url.starts_with("https://") {
         // Bare host/path — assume https
         format!("https://{url}")

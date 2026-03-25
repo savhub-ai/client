@@ -1014,11 +1014,10 @@ fn cmd_fetched_prune(config_dir: &Path, lockfile: &savhub_shared::Lockfile) -> R
         let project_lock =
             savhub_local::presets::read_project_lockfile(&project_path).unwrap_or_default();
         for skill in &project_lock.skills {
-            if let (Some(repo), Some(path)) = (skill.repo.as_deref(), skill.path.as_deref()) {
-                if !repo.is_empty() && !path.is_empty() {
+            if let (Some(repo), Some(path)) = (skill.repo.as_deref(), skill.path.as_deref())
+                && !repo.is_empty() && !path.is_empty() {
                     used.insert((repo.to_string(), path.to_string()));
                 }
-            }
         }
     }
 
@@ -2286,7 +2285,7 @@ async fn cmd_registry(_opts: &GlobalOpts, command: RegistryCommand) -> Result<()
                 );
             }
 
-            let total_pages = (total + args.page_size - 1) / args.page_size;
+            let total_pages = total.div_ceil(args.page_size);
             println!(
                 "\nPage {}/{} ({} total skills)",
                 args.page, total_pages, total
@@ -3215,9 +3214,9 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     let _ = savhub_local::config::add_project(&workdir.display().to_string());
 
     // Fire-and-forget install tracking
-    if !batch_results.is_empty() {
-        if let Ok(client) = optional_client(opts) {
-            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+    if !batch_results.is_empty()
+        && let Ok(client) = optional_client(opts)
+            && let Ok(handle) = tokio::runtime::Handle::try_current() {
                 for info in &batch_results {
                     let slug = info.slug.clone();
                     let client = client.clone();
@@ -3231,8 +3230,6 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
                     });
                 }
             }
-        }
-    }
 
     let removed_count = to_remove.len();
     if fetched_count > 0 || removed_count > 0 {

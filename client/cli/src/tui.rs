@@ -490,7 +490,7 @@ fn help_key(key: &str, desc: &str) -> Vec<Span<'static>> {
 }
 
 fn render_search_overlay(filter: &str, area: Rect, frame: &mut ratatui::Frame<'_>) {
-    let width = 40.min(area.width.saturating_sub(4)) as u16;
+    let width = 40.min(area.width.saturating_sub(4));
     let x = area.width.saturating_sub(width + 2);
     let overlay = Rect::new(x, 1, width + 2, 3);
     let text = format!(" / {filter}_");

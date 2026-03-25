@@ -911,7 +911,7 @@ async fn login_hoop(req: &mut Request, depot: &mut Depot, res: &mut Response, ct
 /// Hoop: reject requests from non-staff users (must be placed after `login_hoop`).
 #[handler]
 async fn staff_hoop(depot: &mut Depot, res: &mut Response, ctrl: &mut FlowCtrl) {
-    let is_staff = depot.get::<AuthContext>("auth_context").map_or(false, |a| {
+    let is_staff = depot.get::<AuthContext>("auth_context").is_ok_and(|a| {
         matches!(
             a.user.role,
             shared::UserRole::Admin | shared::UserRole::Moderator
@@ -1240,13 +1240,11 @@ async fn ws_events(req: &mut Request, res: &mut Response) -> Result<(), StatusEr
                                 let job_id_str = match evt {
                                     crate::state::WsEvent::IndexProgress { job_id, .. } => job_id.to_string(),
                                 };
-                                if subscriptions.contains(&job_id_str) {
-                                    if let Ok(text) = serde_json::to_string(evt) {
-                                        if ws.send(salvo::websocket::Message::text(text)).await.is_err() {
+                                if subscriptions.contains(&job_id_str)
+                                    && let Ok(text) = serde_json::to_string(evt)
+                                        && ws.send(salvo::websocket::Message::text(text)).await.is_err() {
                                             break;
                                         }
-                                    }
-                                }
                             }
                             Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                             Err(_) => break,
@@ -1255,9 +1253,9 @@ async fn ws_events(req: &mut Request, res: &mut Response) -> Result<(), StatusEr
                     msg = ws.next() => {
                         match msg {
                             Some(Ok(msg)) => {
-                                if msg.is_text() {
-                                    if let Ok(text) = msg.as_str() {
-                                        if let Ok(cmd) = serde_json::from_str::<WsClientMessage>(text) {
+                                if msg.is_text()
+                                    && let Ok(text) = msg.as_str()
+                                        && let Ok(cmd) = serde_json::from_str::<WsClientMessage>(text) {
                                             match cmd.action.as_str() {
                                                 "subscribe" => {
                                                     if let Some(id) = cmd.job_id {
@@ -1272,8 +1270,6 @@ async fn ws_events(req: &mut Request, res: &mut Response) -> Result<(), StatusEr
                                                 _ => {}
                                             }
                                         }
-                                    }
-                                }
                             }
                             _ => break,
                         }

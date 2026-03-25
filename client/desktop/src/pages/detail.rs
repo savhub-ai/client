@@ -417,7 +417,7 @@ fn SecurityScanPanel(scan: VersionScanSummary) -> Element {
     let t = i18n::texts(*state.lang.read());
     let overall = scan.overall_verdict();
     let overall_color = verdict_color(overall);
-    let overall_label = verdict_label(overall, &t);
+    let overall_label = verdict_label(overall, t);
 
     rsx! {
         div { style: "background: {Theme::PANEL}; border: 1px solid {Theme::LINE}; border-radius: 8px; padding: 16px; margin-bottom: 16px;",
@@ -434,7 +434,7 @@ fn SecurityScanPanel(scan: VersionScanSummary) -> Element {
                     if let Some(vt) = &scan.virustotal {
                         {
                             let color = verdict_color(vt.verdict);
-                            let label = verdict_label(vt.verdict, &t);
+                            let label = verdict_label(vt.verdict, t);
                             rsx! {
                                 p { style: "font-size: 14px; font-weight: 600; color: {color};", "{label}" }
                                 if let Some(url) = &vt.report_url {
@@ -456,7 +456,7 @@ fn SecurityScanPanel(scan: VersionScanSummary) -> Element {
                     if let Some(llm) = &scan.llm_analysis {
                         {
                             let color = verdict_color(llm.verdict);
-                            let label = verdict_label(llm.verdict, &t);
+                            let label = verdict_label(llm.verdict, t);
                             rsx! {
                                 p { style: "font-size: 14px; font-weight: 600; color: {color};", "{label}" }
                                 if let Some(conf) = &llm.confidence {

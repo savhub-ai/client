@@ -246,10 +246,10 @@ fn scan_code_file(path: &str, content: &str, findings: &mut Vec<ModerationFindin
     }
 
     // WebSocket to non-standard port
-    if let Some(caps) = RE_WEBSOCKET_PORT.captures(content) {
-        if let Some(port_str) = caps.get(1) {
-            if let Ok(port) = port_str.as_str().parse::<u16>() {
-                if !STANDARD_PORTS.contains(&port) {
+    if let Some(caps) = RE_WEBSOCKET_PORT.captures(content)
+        && let Some(port_str) = caps.get(1)
+            && let Ok(port) = port_str.as_str().parse::<u16>()
+                && !STANDARD_PORTS.contains(&port) {
                     let (line, text) = find_first_line(content, &RE_WEBSOCKET_PORT);
                     push_finding(
                         findings,
@@ -264,9 +264,6 @@ fn scan_code_file(path: &str, content: &str, findings: &mut Vec<ModerationFindin
                         },
                     );
                 }
-            }
-        }
-    }
 
     // File read + network send (exfiltration)
     let has_file_read = RE_FILE_READ.is_match(content);
@@ -485,8 +482,8 @@ pub fn run_static_scan(input: &ScanInput) -> StaticScanResult {
     }
 
     // Check metadata JSON for URL shorteners
-    if let Some(meta_json) = input.metadata_json {
-        if RE_URL_SHORTENER.is_match(meta_json) {
+    if let Some(meta_json) = input.metadata_json
+        && RE_URL_SHORTENER.is_match(meta_json) {
             push_finding(
                 &mut findings,
                 ModerationFinding {
@@ -499,7 +496,6 @@ pub fn run_static_scan(input: &ScanInput) -> StaticScanResult {
                 },
             );
         }
-    }
 
     // Check always=true flag
     if input.frontmatter_always == Some(true) {

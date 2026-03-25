@@ -42,8 +42,8 @@ pub fn list_skills(
     let mut conn = db_conn()?;
 
     // Precise lookup by repo git_url + path
-    if let Some(ref url) = repo_url {
-        if let Some(ref p) = path {
+    if let Some(ref url) = repo_url
+        && let Some(ref p) = path {
             let row = fetch_skill_by_path(&mut conn, url, p)?;
             return match row {
                 Some(row) => {
@@ -78,7 +78,6 @@ pub fn list_skills(
                 }),
             };
         }
-    }
 
     let limit = limit.clamp(1, 100);
     let offset = cursor
@@ -235,8 +234,8 @@ pub fn list_flocks(
     let mut conn = db_conn()?;
 
     // Precise lookup by repo git_url + flock slug
-    if let Some(ref url) = repo_url {
-        if let Some(ref s) = slug {
+    if let Some(ref url) = repo_url
+        && let Some(ref s) = slug {
             let repo = repos::table
                 .filter(repos::git_url.eq(url))
                 .select(RepoRow::as_select())
@@ -269,7 +268,6 @@ pub fn list_flocks(
                 next_cursor: None,
             });
         }
-    }
 
     let mut conn = db_conn()?;
     let limit = limit.clamp(1, 100);

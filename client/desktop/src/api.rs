@@ -209,8 +209,7 @@ pub async fn resolve_remote_skill(
         .repo_url
         .as_deref()
         .filter(|value| !value.trim().is_empty())
-    {
-        if let Some(path) = lookup.path.as_deref().filter(|v| !v.trim().is_empty()) {
+        && let Some(path) = lookup.path.as_deref().filter(|v| !v.trim().is_empty()) {
             let mut url = client.v1_url("/skills").map_err(|e| e.to_string())?;
             url.query_pairs_mut()
                 .append_pair("repo", repo_url)
@@ -223,7 +222,6 @@ pub async fn resolve_remote_skill(
                 return Ok(item);
             }
         }
-    }
 
     let queries = collect_skill_queries(&lookup);
     let mut seen = HashSet::new();

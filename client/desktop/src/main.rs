@@ -487,7 +487,7 @@ fn Sidebar() -> Element {
                 let gap = if is_collapsed { "0" } else { "12px" };
                 let padding = if is_collapsed { "12px 0" } else { "12px 20px" };
                 let icon_size: u32 = if is_collapsed { 24 } else { 22 };
-                let icon_width = if is_collapsed { "32px" } else { "32px" };
+                let icon_width = "32px";
                 rsx! {
                     button {
                         title: "{docs_label}",
@@ -562,7 +562,7 @@ fn NavItem(
     let gap = if collapsed { "0" } else { "12px" };
     let padding = if collapsed { "12px 0" } else { "12px 20px" };
     let icon_size = if collapsed { 24 } else { 22 };
-    let icon_width = if collapsed { "32px" } else { "32px" };
+    let icon_width = "32px";
 
     rsx! {
         Link {

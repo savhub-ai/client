@@ -472,7 +472,7 @@ fn persist_flock_import(
                 let skill_runtime = skill
                     .runtime
                     .clone()
-                    .map(|runtime| serde_json::to_value(runtime))
+                    .map(serde_json::to_value)
                     .transpose()
                     .map_err(|error| AppError::Internal(error.to_string()))?;
 
@@ -572,7 +572,7 @@ fn persist_flock_import(
                     runtime_data: skill
                         .runtime
                         .clone()
-                        .map(|runtime| serde_json::to_value(runtime))
+                        .map(serde_json::to_value)
                         .transpose()
                         .map_err(|error| AppError::Internal(error.to_string()))?,
                     scan_commit_hash: String::new(),

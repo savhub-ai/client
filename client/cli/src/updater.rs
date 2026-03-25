@@ -113,8 +113,8 @@ pub async fn run_self_update() -> anyhow::Result<()> {
 }
 
 pub fn cleanup_old_binary() {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(parent) = exe.parent() {
             let old_name = if cfg!(windows) {
                 "savhub.old.exe"
             } else {
@@ -122,7 +122,6 @@ pub fn cleanup_old_binary() {
             };
             let _ = std::fs::remove_file(parent.join(old_name));
         }
-    }
 }
 
 // --- Internal helpers ---

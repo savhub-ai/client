@@ -57,9 +57,9 @@ pub fn normalize_git_url(raw: &str) -> String {
         } else {
             url.to_string()
         }
-    } else if url.starts_with("http://") {
+    } else if let Some(rest) = url.strip_prefix("http://") {
         // Upgrade http → https
-        format!("https://{}", &url["http://".len()..])
+        format!("https://{rest}")
     } else if !url.starts_with("https://") {
         // Bare host/path — assume https
         format!("https://{url}")
@@ -103,12 +103,11 @@ pub fn parse_git_url_parts(git_url: &str) -> (String, String) {
     }
 
     // git@host:path (shouldn't happen after normalize, but handle anyway)
-    if let Some(rest) = url.strip_prefix("git@") {
-        if let Some((host, path)) = rest.split_once(':') {
+    if let Some(rest) = url.strip_prefix("git@")
+        && let Some((host, path)) = rest.split_once(':') {
             let domain = host.replace(':', "-");
             return (domain, path.to_string());
         }
-    }
 
     ("unknown".to_string(), url.to_string())
 }
@@ -396,12 +395,11 @@ pub fn parse_tag_map(value: &Value) -> indexmap::IndexMap<String, String> {
 
 pub fn parse_frontmatter(markdown: &str) -> Value {
     let markdown = markdown.trim_start_matches('\u{feff}');
-    if markdown.starts_with("---") {
-        let remainder = &markdown[3..];
-        if let Some((yaml, _body)) = remainder.split_once("\n---") {
-            return serde_saphyr::from_str::<Value>(yaml.trim())
-                .unwrap_or_else(|_| Value::Object(Map::new()));
-        }
+    if let Some(remainder) = markdown.strip_prefix("---")
+        && let Some((yaml, _body)) = remainder.split_once("\n---")
+    {
+        return serde_saphyr::from_str::<Value>(yaml.trim())
+            .unwrap_or_else(|_| Value::Object(Map::new()));
     }
     // Fall back: try parsing the entire content as YAML (e.g. plain YAML without
     // frontmatter delimiters). Only accept it when the result is a JSON object so
@@ -521,14 +519,13 @@ pub fn ensure_skill_visible(row: &SkillRow, viewer: Option<&RequestUser>) -> Res
     let can_view_hidden = viewer
         .map(|viewer| matches!(viewer.role, UserRole::Admin | UserRole::Moderator))
         .unwrap_or(false);
-    if row.soft_deleted_at.is_some() || row.moderation_status == "removed" {
-        if !can_view_hidden {
+    if (row.soft_deleted_at.is_some() || row.moderation_status == "removed")
+        && !can_view_hidden {
             return Err(AppError::NotFound(format!(
                 "skill `{}` does not exist",
                 row.slug
             )));
         }
-    }
     if row.moderation_status == "hidden" && !can_view_hidden {
         return Err(AppError::NotFound(format!(
             "skill `{}` does not exist",

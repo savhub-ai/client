@@ -44,12 +44,12 @@ impl AppState {
     /// Returns a per-repo async lock so that only one clone/pull can run at a
     /// time for a given checkout directory.  Callers should hold the returned
     /// guard until the checkout is fully ready (clone finished, HEAD resolved).
-    pub fn repo_checkout_lock(&self, repo_dir: &PathBuf) -> Arc<tokio::sync::Mutex<()>> {
+    pub fn repo_checkout_lock(&self, repo_dir: &std::path::Path) -> Arc<tokio::sync::Mutex<()>> {
         let mut map = self
             .repo_checkout_locks
             .lock()
             .expect("repo_checkout_locks poisoned");
-        map.entry(repo_dir.clone())
+        map.entry(repo_dir.to_path_buf())
             .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
             .clone()
     }

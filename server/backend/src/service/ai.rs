@@ -196,8 +196,8 @@ Respond with ONLY the JSON object, no markdown fences."#
     let chat_resp: ChatResponse = response.json().await.ok()?;
 
     // Log AI usage
-    if let Some(usage) = &chat_resp.usage {
-        if let Ok(mut conn) = db_conn() {
+    if let Some(usage) = &chat_resp.usage
+        && let Ok(mut conn) = db_conn() {
             let _ = diesel::insert_into(ai_usage_logs::table)
                 .values(NewAiUsageLogRow {
                     id: Uuid::now_v7(),
@@ -213,7 +213,6 @@ Respond with ONLY the JSON object, no markdown fences."#
                 })
                 .execute(&mut conn);
         }
-    }
 
     let content = chat_resp.choices.first()?.message.content.clone();
 
@@ -312,8 +311,8 @@ Respond with ONLY the JSON object, no markdown fences."#
 
     let chat_resp: ChatResponse = response.json().await.ok()?;
 
-    if let Some(usage) = &chat_resp.usage {
-        if let Ok(mut conn) = db_conn() {
+    if let Some(usage) = &chat_resp.usage
+        && let Ok(mut conn) = db_conn() {
             let _ = diesel::insert_into(ai_usage_logs::table)
                 .values(NewAiUsageLogRow {
                     id: Uuid::now_v7(),
@@ -329,7 +328,6 @@ Respond with ONLY the JSON object, no markdown fences."#
                 })
                 .execute(&mut conn);
         }
-    }
 
     let content = chat_resp.choices.first()?.message.content.clone();
     let json_str = content

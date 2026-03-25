@@ -190,8 +190,8 @@ pub async fn submit_index(
     let mut conn = db_conn()?;
 
     // Check for an existing completed scan with the same url + sha
-    if !force {
-        if let Some(existing) = find_existing_index(
+    if !force
+        && let Some(existing) = find_existing_index(
             &mut conn,
             &git_url,
             &request.git_ref,
@@ -210,11 +210,10 @@ pub async fn submit_index(
                 existing_job_id: Some(existing.id),
             });
         }
-    }
 
     // Smart dedup: check for active (pending/running) job with same url_hash
-    if !force {
-        if let Some(active) = find_active_index_by_url_hash(&mut conn, &url_hash)? {
+    if !force
+        && let Some(active) = find_active_index_by_url_hash(&mut conn, &url_hash)? {
             if active.git_sha == commit_sha {
                 // Same commit — return existing job
                 println!(
@@ -236,7 +235,6 @@ pub async fn submit_index(
                 supersede_index_job(&mut conn, active.id)?;
             }
         }
-    }
 
     let now = Utc::now();
     let job_id = Uuid::now_v7();
@@ -672,7 +670,13 @@ async fn do_auto_import(
     // so the pool is not held during the (potentially long) per-flock loop.
     let repo = {
         let mut conn = db_conn()?;
-        let repo = if let Some(existing) = repos::table
+        
+
+        // NOTE: previous flocks/skills are preserved and updated via upsert
+        // in persist_auto_import_flock. Stale skills (no longer in the repo)
+        // are soft-deleted there. No bulk delete here.
+
+        if let Some(existing) = repos::table
             .filter(repos::git_url.eq(&effective_git_url))
             .select(RepoRow::as_select())
             .first::<RepoRow>(&mut conn)
@@ -719,13 +723,7 @@ async fn do_auto_import(
                 .filter(repos::git_url.eq(&effective_git_url))
                 .select(RepoRow::as_select())
                 .first::<RepoRow>(&mut conn)?
-        };
-
-        // NOTE: previous flocks/skills are preserved and updated via upsert
-        // in persist_auto_import_flock. Stale skills (no longer in the repo)
-        // are soft-deleted there. No bulk delete here.
-
-        repo
+        }
     }; // conn is dropped here — returned to the pool
 
     let mut flock_slugs = Vec::new();
@@ -801,7 +799,7 @@ async fn do_auto_import(
                 .select(FlockRow::as_select())
                 .first::<FlockRow>(&mut conn)
                 .optional()?;
-            let cached = existing.as_ref().map_or(false, |f| {
+            let cached = existing.as_ref().is_some_and(|f| {
                 has_cached_ai_request(&mut conn, "flock_metadata", f.id, &checkout.head_sha)
             });
             (existing, cached)
@@ -910,8 +908,8 @@ async fn do_auto_import(
 
             // Record successful flock metadata in ai_request_cache so future
             // re-indexes with the same commit can skip the AI call.
-            if !flock_meta_cached {
-                if let Ok(flock_row) = flocks::table
+            if !flock_meta_cached
+                && let Ok(flock_row) = flocks::table
                     .filter(flocks::repo_id.eq(repo.id))
                     .filter(flocks::slug.eq(&flock_slug))
                     .select(FlockRow::as_select())
@@ -927,7 +925,6 @@ async fn do_auto_import(
                         None,
                     );
                 }
-            }
         }
 
         flock_slugs.push(flock_slug);
@@ -1582,8 +1579,8 @@ fn extract_repo_description(checkout_path: &std::path::Path, repo_name: &str) ->
     let default = format!("Auto-created repo for {repo_name}");
     for candidate in &["README.md", "readme.md", "Readme.md", "README"] {
         let path = checkout_path.join(candidate);
-        if let Ok(content) = fs::read_to_string(&path) {
-            if let Some(heading) = content.lines().find_map(|line| {
+        if let Ok(content) = fs::read_to_string(&path)
+            && let Some(heading) = content.lines().find_map(|line| {
                 let trimmed = line.trim();
                 // Match `# Title` but not `##` or deeper
                 if trimmed.starts_with("# ") {
@@ -1596,7 +1593,6 @@ fn extract_repo_description(checkout_path: &std::path::Path, repo_name: &str) ->
             }) {
                 return heading;
             }
-        }
     }
     default
 }

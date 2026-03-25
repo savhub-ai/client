@@ -9,19 +9,16 @@ pub const BUNDLE_META_FILE: &str = "skill.toml";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum BundleSourceKind {
     Prompt,
     Script,
     Tool,
+    #[default]
     Bundle,
     Git,
 }
 
-impl Default for BundleSourceKind {
-    fn default() -> Self {
-        Self::Bundle
-    }
-}
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct BundleMetadata {

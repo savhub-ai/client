@@ -579,10 +579,10 @@ fn AppShell() -> Element {
                                         .and_then(|w| w.location().pathname().ok())
                                         .unwrap_or_default();
                                     let new_lang = evt.value();
-                                    let new_path = if current_path.starts_with("/en") {
-                                        format!("/{new_lang}{}", &current_path[3..])
-                                    } else if current_path.starts_with("/zh") {
-                                        format!("/{new_lang}{}", &current_path[3..])
+                                    let new_path = if let Some(rest) = current_path.strip_prefix("/en") {
+                                        format!("/{new_lang}{rest}")
+                                    } else if let Some(rest) = current_path.strip_prefix("/zh") {
+                                        format!("/{new_lang}{rest}")
                                     } else {
                                         format!("/{new_lang}{current_path}")
                                     };
@@ -870,7 +870,7 @@ fn SkillFlockList(
     let mut debounce_gen = use_signal(|| 0u32);
     let mut sort = use_signal(move || init_sort.clone());
     let no_grouped = hide_grouped;
-    let mut grouped = use_signal(move || if no_grouped { false } else { true });
+    let mut grouped = use_signal(move || !no_grouped);
 
     // Infinite scroll state
     let mut skill_items = use_signal(Vec::<SkillListItem>::new);
@@ -1269,7 +1269,7 @@ fn ReposPage(lang: String) -> Element {
         Some(Ok(resp)) => resp
             .user
             .as_ref()
-            .map_or(false, |u| matches!(u.role, UserRole::Admin)),
+            .is_some_and(|u| matches!(u.role, UserRole::Admin)),
         _ => false,
     };
 
@@ -1510,7 +1510,7 @@ fn InstallBlock(label: &'static str, command: String) -> Element {
                         );
                         document::eval(&js);
                         copied.set(true);
-                        let mut copied = copied.clone();
+                        let mut copied = copied;
                         spawn(async move {
                             gloo_timers::future::TimeoutFuture::new(2000).await;
                             copied.set(false);
@@ -2865,11 +2865,10 @@ fn query_param(key: &str) -> Option<String> {
     let qs = current_query();
     let qs = qs.strip_prefix('?').unwrap_or(&qs);
     for pair in qs.split('&') {
-        if let Some((k, v)) = pair.split_once('=') {
-            if k == key {
+        if let Some((k, v)) = pair.split_once('=')
+            && k == key {
                 return Some(v.to_string());
             }
-        }
     }
     None
 }
@@ -2937,7 +2936,7 @@ fn clear_location_hash() {
 fn clear_location_hash() {}
 
 fn parse_hash_params(hash: &str) -> std::collections::BTreeMap<String, String> {
-    hash.trim_start_matches(|c: char| c == '#' || c == '?')
+    hash.trim_start_matches(['#', '?'])
         .split('&')
         .filter(|segment| !segment.is_empty())
         .filter_map(|segment| {
@@ -3250,7 +3249,7 @@ fn IndexPage(lang: String) -> Element {
         Some(Ok(resp)) => resp
             .user
             .as_ref()
-            .map_or(false, |u| matches!(u.role, UserRole::Admin)),
+            .is_some_and(|u| matches!(u.role, UserRole::Admin)),
         _ => false,
     };
 
@@ -3332,16 +3331,14 @@ fn IndexPage(lang: String) -> Element {
     });
 
     // Refresh job list when a tracked job completes or fails
-    if let Some(ref evt) = ws_event {
-        if let Some(id) = sel_id {
-            if (evt.status == "completed" || evt.status == "failed")
+    if let Some(ref evt) = ws_event
+        && let Some(id) = sel_id
+            && (evt.status == "completed" || evt.status == "failed")
                 && *refreshed_for.read() != Some(id)
             {
                 refreshed_for.set(Some(id));
                 fetch_jobs(false);
             }
-        }
-    }
 
     rsx! {
         document::Title { "{t.index_title}" }
@@ -3865,7 +3862,7 @@ fn ManagementPage(lang: String, tab: String) -> Element {
         Some(Ok(resp)) => resp
             .user
             .as_ref()
-            .map_or(false, |u| matches!(u.role, UserRole::Admin)),
+            .is_some_and(|u| matches!(u.role, UserRole::Admin)),
         _ => false,
     };
     if !is_admin {
@@ -4259,7 +4256,7 @@ fn AdminIndexRulesPage(lang: String) -> Element {
                             for rule in items.iter() {
                                 {
                                     let rule_id = rule.id;
-                                    let is_editing = editing_id.read().map_or(false, |id| id == rule_id);
+                                    let is_editing = editing_id.read().is_some_and(|id| id == rule_id);
                                     if is_editing {
                                         rsx! {
                                             div { class: "admin-table-row",
