@@ -15,9 +15,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum SecurityLevel {
     /// Only fetch skills with "verified" or "checked" status.
-    #[default]
     Verified,
-    /// Also allow "suspicious" skills.
+    /// Allow all except "malicious" skills (default).
+    #[default]
     Suspicious,
     /// Allow all skills regardless of security status.
     Any,

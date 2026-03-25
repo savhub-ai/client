@@ -222,7 +222,7 @@ fn registry_skill_from_imported(item: ImportedSkillRecord) -> RegistrySkill {
         license: item.license,
         categories: Vec::new(),
         keywords: Vec::new(),
-        security: SecuritySummary::default(),
+        security: item.security,
     }
 }
 
@@ -637,6 +637,11 @@ pub fn fetch_skills_batch_with_progress(
     }
 
     let config_dir = get_config_dir()?;
+    let security_level = crate::config::read_global_config()
+        .ok()
+        .flatten()
+        .map(|c| c.security_level)
+        .unwrap_or_default();
     let mut results = Vec::new();
     let total = requested.len();
     let mut progress_idx = 0usize;
@@ -692,6 +697,18 @@ pub fn fetch_skills_batch_with_progress(
         // 3) For each skill: just resolve path from local checkout + copy
         for skill_path in skill_paths {
             let record = skill_lookup.get(skill_path.as_str());
+
+            // Enforce security level: skip skills that don't pass the check
+            if let Some(r) = record {
+                let status = r.security.status.as_deref();
+                let verdict = r.security.verdict.as_deref();
+                if !security_level.allows(status, verdict) {
+                    on_progress(progress_idx, total, Err(skill_path));
+                    progress_idx += 1;
+                    continue;
+                }
+            }
+
             let (resolved_path, skill_version) = match record {
                 Some(r) => (r.path.clone(), normalize_non_empty(r.version.clone())),
                 None => {

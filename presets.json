@@ -1,0 +1,769 @@
+{
+  "$schema": "presets-schema",
+  "version": 1,
+  "description": "Built-in selector presets that detect project types and recommend skill repos",
+  "presets": [
+    {
+      "sign": "preset:rust",
+      "name": "Rust Project",
+      "description": "Detects Rust projects by Cargo.toml presence",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "Cargo.toml" }
+      ],
+      "match_mode": "all_match",
+      "custom_expression": "",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/actionbook/rust-skills.git",
+          "description": "Rust Developer AI Assistance — meta-problem-driven knowledge indexing"
+        },
+        {
+          "git_url": "https://github.com/anthropics/skills.git",
+          "description": "Anthropic official public skills repository"
+        }
+      ],
+      "priority": 10,
+      "enabled": true,
+      "tags": ["rust", "cargo", "systems"]
+    },
+    {
+      "sign": "preset:rust-salvo",
+      "name": "Rust Salvo Web Framework",
+      "description": "Detects Rust projects using the Salvo web framework",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "Cargo.toml" },
+        { "kind": "file_contains", "path": "Cargo.toml", "contains": "salvo" }
+      ],
+      "match_mode": "all_match",
+      "custom_expression": "",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/salvo-rs/salvo-skills.git",
+          "description": "Official Salvo web framework skills"
+        },
+        {
+          "git_url": "https://github.com/actionbook/rust-skills.git",
+          "description": "Rust Developer AI Assistance"
+        }
+      ],
+      "priority": 20,
+      "enabled": true,
+      "tags": ["rust", "salvo", "web"]
+    },
+    {
+      "sign": "preset:python",
+      "name": "Python Project",
+      "description": "Detects Python projects by pyproject.toml, setup.py, or requirements.txt",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "pyproject.toml" },
+        { "kind": "file_exists", "path": "setup.py" },
+        { "kind": "file_exists", "path": "requirements.txt" },
+        { "kind": "glob_match", "pattern": "**/*.py" }
+      ],
+      "match_mode": "any_match",
+      "custom_expression": "",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/anthropics/skills.git",
+          "description": "Anthropic official public skills repository"
+        },
+        {
+          "git_url": "https://github.com/Jeffallan/claude-skills.git",
+          "description": "66 specialized skills for full-stack developers including Python"
+        }
+      ],
+      "priority": 10,
+      "enabled": true,
+      "tags": ["python", "pip"]
+    },
+    {
+      "sign": "preset:python-django",
+      "name": "Django Project",
+      "description": "Detects Django projects by manage.py and settings",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "manage.py" },
+        { "kind": "glob_match", "pattern": "**/settings.py" }
+      ],
+      "match_mode": "all_match",
+      "custom_expression": "",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/kjnez/claude-code-django.git",
+          "description": "Comprehensive Claude Code project config for Django with 15 specialized skills"
+        },
+        {
+          "git_url": "https://github.com/Jeffallan/claude-skills.git",
+          "description": "Full-stack skills including Django Expert"
+        }
+      ],
+      "priority": 20,
+      "enabled": true,
+      "tags": ["python", "django", "web"]
+    },
+    {
+      "sign": "preset:python-fastapi",
+      "name": "FastAPI Project",
+      "description": "Detects FastAPI projects by dependency references",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "glob_match", "pattern": "**/*.py" },
+        { "kind": "file_regex", "path": "requirements.txt", "pattern": "fastapi" },
+        { "kind": "file_contains", "path": "pyproject.toml", "contains": "fastapi" }
+      ],
+      "match_mode": "custom",
+      "custom_expression": "1 && (2 || 3)",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/Jeffallan/claude-skills.git",
+          "description": "Full-stack skills including FastAPI Expert"
+        }
+      ],
+      "priority": 20,
+      "enabled": true,
+      "tags": ["python", "fastapi", "web", "api"]
+    },
+    {
+      "sign": "preset:python-ml",
+      "name": "Python ML / Data Science",
+      "description": "Detects machine learning and data science Python projects",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "glob_match", "pattern": "**/*.py" },
+        { "kind": "glob_match", "pattern": "**/*.ipynb" },
+        { "kind": "file_regex", "path": "requirements.txt", "pattern": "(torch|tensorflow|scikit-learn|pandas|numpy)" },
+        { "kind": "file_regex", "path": "pyproject.toml", "pattern": "(torch|tensorflow|scikit-learn|pandas|numpy)" }
+      ],
+      "match_mode": "custom",
+      "custom_expression": "(1 || 2) && (3 || 4)",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/K-Dense-AI/claude-scientific-skills.git",
+          "description": "170+ scientific and research skills for ML, data science, and engineering"
+        },
+        {
+          "git_url": "https://github.com/Orchestra-Research/AI-Research-SKILLs.git",
+          "description": "AI research and engineering skills library"
+        }
+      ],
+      "priority": 20,
+      "enabled": true,
+      "tags": ["python", "ml", "data-science", "pytorch", "tensorflow"]
+    },
+    {
+      "sign": "preset:typescript-node",
+      "name": "TypeScript / Node.js Project",
+      "description": "Detects TypeScript and Node.js projects",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "package.json" },
+        { "kind": "file_exists", "path": "tsconfig.json" }
+      ],
+      "match_mode": "all_match",
+      "custom_expression": "",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/SpillwaveSolutions/mastering-typescript-skill.git",
+          "description": "Enterprise-grade TypeScript development with type-safe patterns, React and NestJS"
+        },
+        {
+          "git_url": "https://github.com/anthropics/skills.git",
+          "description": "Anthropic official public skills repository"
+        }
+      ],
+      "priority": 10,
+      "enabled": true,
+      "tags": ["typescript", "nodejs", "javascript"]
+    },
+    {
+      "sign": "preset:javascript-node",
+      "name": "JavaScript / Node.js Project",
+      "description": "Detects JavaScript Node.js projects without TypeScript",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "package.json" },
+        { "kind": "glob_match", "pattern": "**/*.js" }
+      ],
+      "match_mode": "all_match",
+      "custom_expression": "",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/anthropics/skills.git",
+          "description": "Anthropic official public skills repository"
+        },
+        {
+          "git_url": "https://github.com/Jeffallan/claude-skills.git",
+          "description": "66 specialized skills for full-stack developers"
+        }
+      ],
+      "priority": 5,
+      "enabled": true,
+      "tags": ["javascript", "nodejs"]
+    },
+    {
+      "sign": "preset:nextjs",
+      "name": "Next.js Project",
+      "description": "Detects Next.js projects by next.config file",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "package.json" },
+        { "kind": "file_contains", "path": "package.json", "contains": "next" },
+        { "kind": "glob_match", "pattern": "next.config.*" }
+      ],
+      "match_mode": "custom",
+      "custom_expression": "1 && (2 || 3)",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/wsimmonds/claude-nextjs-skills.git",
+          "description": "Claude Skills to improve Next.js eval pass rates"
+        },
+        {
+          "git_url": "https://github.com/laguagu/claude-code-nextjs-skills.git",
+          "description": "Claude Code skills for Next.js 16, AI SDK 6, pgvector, bun"
+        }
+      ],
+      "priority": 20,
+      "enabled": true,
+      "tags": ["nextjs", "react", "typescript", "web"]
+    },
+    {
+      "sign": "preset:react",
+      "name": "React Project",
+      "description": "Detects React projects by dependency in package.json",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "package.json" },
+        { "kind": "file_contains", "path": "package.json", "contains": "\"react\"" }
+      ],
+      "match_mode": "all_match",
+      "custom_expression": "",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/Koomook/claude-frontend-skills.git",
+          "description": "Claude Code skills for creating distinctive, non-generic frontend designs"
+        },
+        {
+          "git_url": "https://github.com/Jeffallan/claude-skills.git",
+          "description": "Full-stack skills including React/frontend specialists"
+        }
+      ],
+      "priority": 15,
+      "enabled": true,
+      "tags": ["react", "javascript", "typescript", "frontend"]
+    },
+    {
+      "sign": "preset:vue",
+      "name": "Vue.js Project",
+      "description": "Detects Vue.js projects",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "package.json" },
+        { "kind": "file_contains", "path": "package.json", "contains": "\"vue\"" }
+      ],
+      "match_mode": "all_match",
+      "custom_expression": "",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/Koomook/claude-frontend-skills.git",
+          "description": "Claude Code skills for frontend designs"
+        },
+        {
+          "git_url": "https://github.com/VoltAgent/awesome-agent-skills.git",
+          "description": "1000+ agent skills including Vue framework support"
+        }
+      ],
+      "priority": 15,
+      "enabled": true,
+      "tags": ["vue", "javascript", "typescript", "frontend"]
+    },
+    {
+      "sign": "preset:svelte",
+      "name": "Svelte / SvelteKit Project",
+      "description": "Detects Svelte/SvelteKit projects",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "package.json" },
+        { "kind": "file_exists", "path": "svelte.config.js" },
+        { "kind": "file_contains", "path": "package.json", "contains": "svelte" }
+      ],
+      "match_mode": "custom",
+      "custom_expression": "1 && (2 || 3)",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/spences10/svelte-skills-kit.git",
+          "description": "Svelte 5 and SvelteKit skills for Claude Code"
+        },
+        {
+          "git_url": "https://github.com/spences10/svelte-claude-skills.git",
+          "description": "Svelte/SvelteKit Claude skills"
+        }
+      ],
+      "priority": 20,
+      "enabled": true,
+      "tags": ["svelte", "sveltekit", "javascript", "frontend"]
+    },
+    {
+      "sign": "preset:go",
+      "name": "Go Project",
+      "description": "Detects Go projects by go.mod presence",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "go.mod" }
+      ],
+      "match_mode": "all_match",
+      "custom_expression": "",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/samber/cc-skills-golang.git",
+          "description": "Collection of Go agentic skills for language, testing, security, observability"
+        },
+        {
+          "git_url": "https://github.com/darrenoakey/claude-skill-golang.git",
+          "description": "Claude Code skill enforcing strict Go development standards"
+        }
+      ],
+      "priority": 10,
+      "enabled": true,
+      "tags": ["go", "golang"]
+    },
+    {
+      "sign": "preset:java-maven",
+      "name": "Java Maven Project",
+      "description": "Detects Java projects using Maven",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "pom.xml" }
+      ],
+      "match_mode": "all_match",
+      "custom_expression": "",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/claudioed/claude-skills.git",
+          "description": "Claude Code skills for Java: Spring Boot, Java 17-to-21 migration, dependency auditing"
+        },
+        {
+          "git_url": "https://github.com/giuseppe-trisciuoglio/developer-kit.git",
+          "description": "Modular plugin marketplace for Claude Code with Java support"
+        }
+      ],
+      "priority": 10,
+      "enabled": true,
+      "tags": ["java", "maven"]
+    },
+    {
+      "sign": "preset:java-gradle",
+      "name": "Java / Kotlin Gradle Project",
+      "description": "Detects Java or Kotlin projects using Gradle",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "build.gradle" },
+        { "kind": "file_exists", "path": "build.gradle.kts" }
+      ],
+      "match_mode": "any_match",
+      "custom_expression": "",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/claudioed/claude-skills.git",
+          "description": "Claude Code skills for Java/Spring Boot"
+        },
+        {
+          "git_url": "https://github.com/Jeffallan/claude-skills.git",
+          "description": "66 specialized skills including Kotlin Specialist and Java Architect"
+        }
+      ],
+      "priority": 10,
+      "enabled": true,
+      "tags": ["java", "kotlin", "gradle"]
+    },
+    {
+      "sign": "preset:spring-boot",
+      "name": "Spring Boot Project",
+      "description": "Detects Spring Boot projects",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "pom.xml" },
+        { "kind": "file_exists", "path": "build.gradle" },
+        { "kind": "file_exists", "path": "build.gradle.kts" },
+        { "kind": "glob_match", "pattern": "**/application.yml" },
+        { "kind": "glob_match", "pattern": "**/application.properties" }
+      ],
+      "match_mode": "custom",
+      "custom_expression": "(1 || 2 || 3) && (4 || 5)",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/claudioed/claude-skills.git",
+          "description": "Spring Boot optimization, Java migration, dependency auditing"
+        },
+        {
+          "git_url": "https://github.com/giuseppe-trisciuoglio/developer-kit.git",
+          "description": "Developer kit with Java and Spring Boot support"
+        }
+      ],
+      "priority": 20,
+      "enabled": true,
+      "tags": ["java", "spring-boot", "web"]
+    },
+    {
+      "sign": "preset:swift-ios",
+      "name": "Swift / iOS Project",
+      "description": "Detects Swift and iOS projects",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "glob_match", "pattern": "**/*.xcodeproj" },
+        { "kind": "glob_match", "pattern": "**/*.xcworkspace" },
+        { "kind": "file_exists", "path": "Package.swift" },
+        { "kind": "glob_match", "pattern": "**/*.swift" }
+      ],
+      "match_mode": "any_match",
+      "custom_expression": "",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/twostraws/swift-agent-skills.git",
+          "description": "AI agent skills for Swift and Apple platform development"
+        },
+        {
+          "git_url": "https://github.com/rshankras/claude-code-apple-skills.git",
+          "description": "Skills for iOS, macOS, watchOS, visionOS and Apple platforms"
+        }
+      ],
+      "priority": 10,
+      "enabled": true,
+      "tags": ["swift", "ios", "macos", "apple", "xcode"]
+    },
+    {
+      "sign": "preset:flutter",
+      "name": "Flutter / Dart Project",
+      "description": "Detects Flutter and Dart projects",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "pubspec.yaml" },
+        { "kind": "glob_match", "pattern": "**/*.dart" }
+      ],
+      "match_mode": "all_match",
+      "custom_expression": "",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/VoltAgent/awesome-agent-skills.git",
+          "description": "1000+ agent skills including Flutter expert"
+        },
+        {
+          "git_url": "https://github.com/anthropics/skills.git",
+          "description": "Anthropic official public skills repository"
+        }
+      ],
+      "priority": 10,
+      "enabled": true,
+      "tags": ["flutter", "dart", "mobile", "cross-platform"]
+    },
+    {
+      "sign": "preset:cpp",
+      "name": "C++ Project",
+      "description": "Detects C++ projects using CMake or Makefile",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "CMakeLists.txt" },
+        { "kind": "file_exists", "path": "Makefile" },
+        { "kind": "glob_match", "pattern": "**/*.cpp" },
+        { "kind": "glob_match", "pattern": "**/*.hpp" }
+      ],
+      "match_mode": "custom",
+      "custom_expression": "(1 || 2) && (3 || 4)",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/Jeffallan/claude-skills.git",
+          "description": "66 specialized skills including C++ Pro"
+        },
+        {
+          "git_url": "https://github.com/affaan-m/everything-claude-code.git",
+          "description": "Agent harness with multi-language support including C++"
+        }
+      ],
+      "priority": 10,
+      "enabled": true,
+      "tags": ["cpp", "c++", "cmake", "systems"]
+    },
+    {
+      "sign": "preset:ruby-rails",
+      "name": "Ruby on Rails Project",
+      "description": "Detects Ruby on Rails projects",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "Gemfile" },
+        { "kind": "file_exists", "path": "config/routes.rb" },
+        { "kind": "file_contains", "path": "Gemfile", "contains": "rails" }
+      ],
+      "match_mode": "custom",
+      "custom_expression": "1 && (2 || 3)",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/obie/claude-on-rails.git",
+          "description": "Development framework for Ruby on Rails with Claude Code agent swarm"
+        },
+        {
+          "git_url": "https://github.com/lucianghinda/superpowers-ruby.git",
+          "description": "Claude Code superpowers: core skills library for Ruby and Rails"
+        },
+        {
+          "git_url": "https://github.com/palkan/skills.git",
+          "description": "Claude skills based on the Layered Rails book"
+        }
+      ],
+      "priority": 20,
+      "enabled": true,
+      "tags": ["ruby", "rails", "web"]
+    },
+    {
+      "sign": "preset:ruby",
+      "name": "Ruby Project",
+      "description": "Detects Ruby projects by Gemfile",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "Gemfile" }
+      ],
+      "match_mode": "all_match",
+      "custom_expression": "",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/lucianghinda/superpowers-ruby.git",
+          "description": "Claude Code superpowers for Ruby and Rails"
+        }
+      ],
+      "priority": 10,
+      "enabled": true,
+      "tags": ["ruby"]
+    },
+    {
+      "sign": "preset:php-laravel",
+      "name": "Laravel (PHP) Project",
+      "description": "Detects Laravel PHP projects",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "composer.json" },
+        { "kind": "file_exists", "path": "artisan" },
+        { "kind": "file_contains", "path": "composer.json", "contains": "laravel" }
+      ],
+      "match_mode": "custom",
+      "custom_expression": "1 && (2 || 3)",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/laravel/claude-code.git",
+          "description": "Official Laravel agent skills for Claude Code and Cursor"
+        },
+        {
+          "git_url": "https://github.com/jpcaparas/superpowers-laravel.git",
+          "description": "Laravel Superpowers plugin for Claude Code"
+        },
+        {
+          "git_url": "https://github.com/whoami15/claude-code-laravel-skills.git",
+          "description": "Collection of Laravel Skills for Claude Code"
+        }
+      ],
+      "priority": 20,
+      "enabled": true,
+      "tags": ["php", "laravel", "web"]
+    },
+    {
+      "sign": "preset:php",
+      "name": "PHP Project",
+      "description": "Detects PHP projects by composer.json",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "composer.json" }
+      ],
+      "match_mode": "all_match",
+      "custom_expression": "",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/giuseppe-trisciuoglio/developer-kit.git",
+          "description": "Developer kit with PHP support"
+        },
+        {
+          "git_url": "https://github.com/Interstellar-code/claud-skills.git",
+          "description": "Production-ready framework with PHP, Laravel, and more"
+        }
+      ],
+      "priority": 10,
+      "enabled": true,
+      "tags": ["php", "composer"]
+    },
+    {
+      "sign": "preset:devops-docker",
+      "name": "Docker / Containerized Project",
+      "description": "Detects projects with Docker configuration",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "Dockerfile" },
+        { "kind": "file_exists", "path": "docker-compose.yml" },
+        { "kind": "file_exists", "path": "docker-compose.yaml" },
+        { "kind": "glob_match", "pattern": "**/*.dockerfile" }
+      ],
+      "match_mode": "any_match",
+      "custom_expression": "",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/ahmedasmar/devops-claude-skills.git",
+          "description": "Claude Code Skills Marketplace for DevOps workflows"
+        },
+        {
+          "git_url": "https://github.com/Jeffallan/claude-skills.git",
+          "description": "Full-stack skills including DevOps Engineer"
+        }
+      ],
+      "priority": 5,
+      "enabled": true,
+      "tags": ["docker", "devops", "containers"]
+    },
+    {
+      "sign": "preset:devops-kubernetes",
+      "name": "Kubernetes Project",
+      "description": "Detects Kubernetes manifests and Helm charts",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "glob_match", "pattern": "**/k8s/**/*.yaml" },
+        { "kind": "glob_match", "pattern": "**/kubernetes/**/*.yaml" },
+        { "kind": "file_exists", "path": "Chart.yaml" },
+        { "kind": "glob_match", "pattern": "**/helm/**/*.yaml" }
+      ],
+      "match_mode": "any_match",
+      "custom_expression": "",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/ahmedasmar/devops-claude-skills.git",
+          "description": "DevOps skills for Docker, Kubernetes, Terraform, Helm, CI/CD"
+        }
+      ],
+      "priority": 15,
+      "enabled": true,
+      "tags": ["kubernetes", "k8s", "helm", "devops"]
+    },
+    {
+      "sign": "preset:devops-terraform",
+      "name": "Terraform / IaC Project",
+      "description": "Detects Terraform infrastructure-as-code projects",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "glob_match", "pattern": "**/*.tf" },
+        { "kind": "file_exists", "path": "main.tf" }
+      ],
+      "match_mode": "any_match",
+      "custom_expression": "",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/ahmedasmar/devops-claude-skills.git",
+          "description": "DevOps skills including Terraform and Terragrunt"
+        }
+      ],
+      "priority": 15,
+      "enabled": true,
+      "tags": ["terraform", "iac", "devops", "infrastructure"]
+    },
+    {
+      "sign": "preset:makepad",
+      "name": "Makepad UI Project",
+      "description": "Detects Makepad Rust UI framework projects",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "file_exists", "path": "Cargo.toml" },
+        { "kind": "file_contains", "path": "Cargo.toml", "contains": "makepad" }
+      ],
+      "match_mode": "all_match",
+      "custom_expression": "",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/phodal/makepad-skills.git",
+          "description": "Makepad UI framework skills for DSL, widgets, shaders, animations, layout"
+        },
+        {
+          "git_url": "https://github.com/actionbook/rust-skills.git",
+          "description": "Rust Developer AI Assistance"
+        }
+      ],
+      "priority": 25,
+      "enabled": true,
+      "tags": ["rust", "makepad", "ui", "cross-platform"]
+    },
+    {
+      "sign": "preset:general-fullstack",
+      "name": "General Full-Stack Skills",
+      "description": "Universal skills applicable to any software project",
+      "folder_scope": ".",
+      "rules": [
+        { "kind": "folder_exists", "path": ".git" }
+      ],
+      "match_mode": "all_match",
+      "custom_expression": "",
+      "skills": [],
+      "flocks": [],
+      "repos": [
+        {
+          "git_url": "https://github.com/anthropics/skills.git",
+          "description": "Anthropic official public skills repository"
+        },
+        {
+          "git_url": "https://github.com/affaan-m/everything-claude-code.git",
+          "description": "Agent harness with 119 skills, 28 agents across 12 language ecosystems"
+        }
+      ],
+      "priority": 1,
+      "enabled": true,
+      "tags": ["general", "fullstack"]
+    }
+  ]
+}
