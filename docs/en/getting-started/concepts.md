@@ -7,12 +7,12 @@ description: What Savhub is, key terminology, and how the pieces fit together
 
 ## What Is Savhub?
 
-Savhub is a package manager for AI coding skills. It scans public Git repositories for `SKILL.md` files, organizes them into installable collections called *flocks*, and lets you fetch them into any project with a single command. It works with Claude Code, Codex, Cursor, Windsurf, and other AI-powered editors.
+Savhub is a project-aware AI skill manager. Its core idea: **selectors analyze your project's characteristics (files, frameworks, languages) and automatically install the matching AI skills to your coding agents.**
 
 The platform has two parts:
 
 - **savhub.ai** — the web registry where skills are browsed, searched, starred, and commented on.
-- **Savhub Client** — a CLI (and desktop app) that detects your project type and syncs the right skills to your AI editors.
+- **Savhub Client** — a CLI (and desktop app) that uses built-in and custom selectors to detect your project type and sync the right skills to your AI editors (Claude Code, Codex, Cursor, Windsurf, etc.).
 
 ## Key Terms
 
@@ -30,7 +30,7 @@ A repo is a registered Git repository. Savhub clones it, scans for `SKILL.md` fi
 
 ### Selector
 
-A selector is a rule that detects what kind of project you are working in — e.g., "Cargo.toml exists" means it's a Rust project. The Savhub Client runs selectors during `savhub apply` to recommend the right flocks for your project.
+A selector is a rule that detects what kind of project you are working in by checking files, folders, glob patterns, or file content. For example, "Cargo.toml exists" → Rust project → recommend `rust-dev` flock. Savhub ships with built-in selectors for common languages and frameworks. You can also create custom selectors to match any project structure. The client runs selectors during `savhub apply` to recommend the right flocks for your project.
 
 ### Registry
 

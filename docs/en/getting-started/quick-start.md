@@ -5,7 +5,7 @@ description: Install the Savhub CLI and apply your first AI skills
 
 # Quick Start
 
-Savhub discovers, installs, and manages AI coding skills for your projects. It works with Claude Code, Codex, Cursor, Windsurf, and other AI agents.
+Savhub is a project-aware AI skill manager. It analyzes your project's characteristics through **selectors** — built-in rules that detect your languages, frameworks, and project structure — and automatically installs the matching AI skills to your coding agents (Claude Code, Codex, Cursor, Windsurf, etc.).
 
 ## Install
 
@@ -46,10 +46,12 @@ savhub apply
 ```
 
 This will:
-1. Run **selectors** to detect your project type (Rust, Python, Web, etc.)
-2. Show matched selectors and recommend **flocks** (skill collections)
+1. Run **selectors** to analyze your project (e.g., `Cargo.toml` → Rust, `package.json` with `react` → React)
+2. Show matched selectors and recommend matching **flocks** (skill collections)
 3. Let you interactively select which flocks to install
 4. Fetch skills and copy them to your AI agents (Claude Code, Codex, etc.)
+
+Savhub ships with built-in selectors for common languages and frameworks. You can also create **custom selectors** to match any project structure — see [Selectors](https://savhub.ai/en/docs/client/selectors).
 
 ## Browse and Search Skills
 

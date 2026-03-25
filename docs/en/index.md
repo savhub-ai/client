@@ -1,12 +1,12 @@
 ---
 title: Savhub Documentation
-description: Package manager for AI coding skills
+description: Project-aware AI skill manager — selectors detect your tech stack and install matching skills
 page_type: home
 ---
 
 # Savhub Documentation
 
-Savhub is a package manager for AI coding skills. It scans `SKILL.md` files from public Git repositories, organizes them into installable collections called *flocks*, and syncs them to your AI agents with a single command.
+Savhub is a project-aware AI skill manager. It uses built-in and custom **selectors** to analyze your project's characteristics (files, frameworks, languages), then automatically installs the matching AI skills from the registry to your coding agents (Claude Code, Codex, Cursor, etc.).
 
 ## Getting Started
 

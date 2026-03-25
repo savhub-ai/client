@@ -1,12 +1,12 @@
 ---
 title: Savhub 文档
-description: AI 编程技能的包管理器
+description: 基于项目特征的 AI Skill 管理器 — 选择器检测技术栈并安装匹配的技能
 page_type: home
 ---
 
 # Savhub 文档
 
-Savhub 是一个 AI 编程技能的包管理器。它扫描公开 Git 仓库中的 `SKILL.md` 文件，将它们组织为可安装的技能集（flock），通过一条命令即可同步到你的 AI 编程客户端。
+Savhub 是一个基于项目特征的 AI Skill 管理器。它通过预置和自定义的**选择器（Selectors）**分析你的项目特征（文件、框架、语言等），自动从注册表安装匹配的 AI 技能到你的编程客户端（Claude Code、Codex、Cursor 等）。
 
 ## 快速入门
 

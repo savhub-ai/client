@@ -5,7 +5,7 @@ description: 安装 Savhub CLI 并应用你的第一个 AI 技能
 
 # 快速开始
 
-Savhub 用于发现、安装和管理 AI 编程技能，支持 Claude Code、Codex、Cursor、Windsurf 等 AI 客户端。
+Savhub 是一个基于项目特征的 AI Skill 管理器。它通过**选择器（Selectors）**分析你的项目特征 — 检测项目中的文件、框架和语言 — 自动安装匹配的 AI 技能到你的编程客户端（Claude Code、Codex、Cursor、Windsurf 等）。
 
 ## 安装
 
@@ -46,10 +46,12 @@ savhub apply
 ```
 
 这将会：
-1. 运行**选择器**检测项目类型（Rust、Python、Web 等）
+1. 运行**选择器**分析项目特征（如 `Cargo.toml` → Rust、`package.json` 含 `react` → React）
 2. 显示匹配的选择器和推荐的**技能集**（flock）
 3. 让你交互式选择要安装的技能集
 4. 安装技能并复制到你的 AI 客户端（Claude Code、Codex 等）
+
+Savhub 预置了常见语言和框架的选择器。你也可以创建**自定义选择器**来匹配任意项目结构 — 详见[选择器](https://savhub.ai/zh/docs/client/selectors)。
 
 ## 浏览和搜索技能
 

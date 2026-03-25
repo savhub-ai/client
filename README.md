@@ -1,20 +1,22 @@
 # Savhub
 
-**Savhub is a package manager for AI coding skills.** It discovers `SKILL.md` files from public Git repositories, organizes them into installable collections called *flocks*, and syncs them to your AI coding agents with a single command.
+**Savhub is a project-aware AI skill manager.** It uses built-in and custom **selectors** to analyze your project's characteristics — what files exist, which frameworks and languages are used — and automatically installs the matching AI skills to your coding agents.
 
-Think of it as npm/pip for AI skills: you run `savhub apply` in your project, and it automatically detects your tech stack (Rust, Python, React, etc.) and installs the right skills for your AI editor.
+Run `savhub apply` in any project. Savhub identifies your tech stack (Rust, Python, React, Salvo, Dioxus, etc.) through selectors, resolves the right skill collections (flocks) from the registry, and syncs them to Claude Code, Codex, Cursor, and other AI editors.
 
 > **Status:** Under active development. Features may be incomplete or subject to change.
 
 ## How It Works
 
 ```
-1. Git repos with SKILL.md files get indexed on savhub.ai
-2. Skills are grouped into flocks (e.g. "rust-dev", "web-frontend")
-3. You run `savhub apply` in your project
-4. Savhub detects your project type via selectors
-5. Matching skills are fetched and synced to your AI agents
+1. You run `savhub apply` in your project
+2. Selectors analyze your project (Cargo.toml? → Rust, package.json + react? → React, ...)
+3. Matched selectors recommend flocks (skill collections) from the registry
+4. You choose which flocks to install
+5. Skills are fetched and synced to your AI agents
 ```
+
+Selectors are the core mechanism. Savhub ships with built-in selectors for common languages and frameworks. You can also create custom selectors to match any project structure.
 
 ## Supported AI Agents
 
@@ -52,7 +54,7 @@ cd your-project
 savhub apply
 ```
 
-This detects your project type via selectors, shows matching flocks, and lets you choose which to install. Skills are then synced to your AI agents.
+Selectors scan your project directory, detect your tech stack, and recommend matching flocks from the registry. You choose which flocks to install, and skills are synced to your AI agents.
 
 ### Login (Optional)
 
@@ -87,10 +89,10 @@ savhub whoami    # Verify login
 
 ### Selectors
 
-Selectors detect project types (e.g. "Cargo.toml exists" = Rust project). Built-in selectors cover Rust, Python, Go, Java, and frameworks like Salvo, Dioxus, Makepad, React, Vue, Angular, Next.js, and more.
+Selectors are rules that detect your project type by checking files, folders, and patterns. For example, "Cargo.toml exists" → Rust project → recommend `rust-dev` flock. Built-in selectors cover Rust, Python, Go, Java, and frameworks like Salvo, Dioxus, Makepad, React, Vue, Angular, Next.js, and more. You can also create custom selectors for any project structure.
 
 ```bash
-savhub selector list        # List all selectors
+savhub selector list        # List all built-in and custom selectors
 savhub selector test        # Test selectors against current directory
 savhub selector show <name> # Show selector details
 ```
