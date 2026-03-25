@@ -34,10 +34,7 @@ impl RemoteSkillLookup {
 #[derive(Debug, Clone)]
 pub struct FetchedRemoteSkill {
     pub local_slug: String,
-    pub remote_id: String,
     pub remote_slug: String,
-    pub repo_url: String,
-    pub path: String,
     pub version: String,
 }
 
@@ -317,10 +314,7 @@ pub async fn fetch_remote_skill_with_lookup(
 
     Ok(FetchedRemoteSkill {
         local_slug: install_slug,
-        remote_id: skill.id.to_string(),
         remote_slug: skill.slug,
-        repo_url: skill.repo_url,
-        path: skill.path,
         version,
     })
 }
