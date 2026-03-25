@@ -53,9 +53,9 @@ detect_platform() {
 get_latest_version() {
     local url="https://api.github.com/repos/${REPO}/releases/latest"
     if command -v curl >/dev/null 2>&1; then
-        curl -fsSL "$url" | grep '"tag_name"' | sed -E 's/.*"tag_name":\s*"([^"]+)".*/\1/'
+        curl -fsSL "$url" | grep '"tag_name"' | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/'
     elif command -v wget >/dev/null 2>&1; then
-        wget -qO- "$url" | grep '"tag_name"' | sed -E 's/.*"tag_name":\s*"([^"]+)".*/\1/'
+        wget -qO- "$url" | grep '"tag_name"' | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/'
     else
         echo "Error: curl or wget is required" >&2
         exit 1
