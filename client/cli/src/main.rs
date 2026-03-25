@@ -3156,9 +3156,8 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         .retain(|s| !to_remove.iter().any(|r| r == s.slug.as_str()));
 
     // Fetch with per-skill progress output (each skill appends a line)
-    let batch_results = registry::fetch_skills_batch_with_progress(
-        &to_add_pairs,
-        |_idx, _total, result| {
+    let batch_results =
+        registry::fetch_skills_batch_with_progress(&to_add_pairs, |_idx, _total, result| {
             match result {
                 Ok(slug) => {
                     eprintln!("  \x1b[32m\u{2713}\x1b[0m {slug}");
@@ -3167,8 +3166,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
                     eprintln!("  \x1b[31m\u{2717}\x1b[0m {label}");
                 }
             }
-        },
-    )?;
+        })?;
 
     // Copy fetched skills to AI client directories
     {

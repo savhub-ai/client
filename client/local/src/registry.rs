@@ -693,10 +693,7 @@ pub fn fetch_skills_batch_with_progress(
         for skill_path in skill_paths {
             let record = skill_lookup.get(skill_path.as_str());
             let (resolved_path, skill_version) = match record {
-                Some(r) => (
-                    r.path.clone(),
-                    normalize_non_empty(r.version.clone()),
-                ),
+                Some(r) => (r.path.clone(), normalize_non_empty(r.version.clone())),
                 None => {
                     // Skill not found in repo's skill list — try using skill_path directly
                     (skill_path.clone(), None)
@@ -754,5 +751,3 @@ pub fn fetch_skills_batch_with_progress(
 
     Ok(results)
 }
-
-
