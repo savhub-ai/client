@@ -181,24 +181,6 @@ pub struct EnableProjectRepoSkillResult {
     pub git_sha: Option<String>,
 }
 
-/// Find a unique folder name under `skills_dir` for the given slug.
-/// If `skills_dir/{slug}/` doesn't exist, returns `slug` as-is.
-/// Otherwise appends `-2`, `-3`, ... until a free name is found.
-fn unique_skill_folder_name(skills_dir: &Path, slug: &str) -> String {
-    let candidate = skills_dir.join(slug);
-    if !candidate.exists() {
-        return slug.to_string();
-    }
-    let mut counter = 2u32;
-    loop {
-        let name = format!("{slug}-{counter}");
-        if !skills_dir.join(&name).exists() {
-            return name;
-        }
-        counter += 1;
-    }
-}
-
 // ---------------------------------------------------------------------------
 // ProjectConfig I/O
 // ---------------------------------------------------------------------------
@@ -211,8 +193,15 @@ fn project_lock_path(workdir: &Path) -> PathBuf {
     workdir.join("savhub.lock")
 }
 
-pub fn project_skills_dir(workdir: &Path) -> PathBuf {
-    workdir.join("skills")
+/// Return the project-level skills directories for all installed AI clients
+/// (e.g. `.claude/skills`, `.agents/skills`).
+fn installed_client_skills_dirs(workdir: &Path) -> Vec<PathBuf> {
+    crate::clients::detect_clients()
+        .iter()
+        .filter(|c| c.installed)
+        .filter_map(|c| c.kind.project_skills_dir())
+        .map(|rel| workdir.join(rel))
+        .collect()
 }
 
 /// Compute the local directory name for a skill given the layout.
@@ -579,57 +568,59 @@ pub fn enable_repo_skill_in_project(
 ) -> Result<EnableProjectRepoSkillResult> {
     let repo_skill = find_repo_skill(repo_name, slug)?;
     let slug = repo_skill.skill.slug.clone();
-    let skills_dir = project_skills_dir(workdir);
-    let local_name = unique_skill_folder_name(&skills_dir, &slug);
-    let target = skills_dir.join(&local_name);
 
-    if let Some(parent) = target.parent() {
-        fs::create_dir_all(parent)?;
+    // Copy to each installed AI client's project skills directory
+    for dir in installed_client_skills_dirs(workdir) {
+        let target = dir.join(&slug);
+        fs::create_dir_all(&dir)?;
+        copy_skill_folder(&repo_skill.skill.folder, &target)?;
+
+        let mut version_info =
+            read_skill_version_info(&repo_skill.skill.folder).unwrap_or_default();
+        if version_info.git_sha.is_none() {
+            version_info.git_sha = repo_git_sha(&repo_skill.repo_root);
+        }
+        let fetched_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let _ = write_repo_skill_origin(
+            &target,
+            &RepoSkillOrigin {
+                version: 1,
+                repo: repo_skill.repo_name.clone(),
+                repo_sign: repo_skill.repo_root.display().to_string(),
+                repo_commit: version_info.git_sha.clone(),
+                slug: slug.clone(),
+                skill_version: version_info.version.clone(),
+                fetched_at,
+            },
+        );
     }
-    copy_skill_folder(&repo_skill.skill.folder, &target)?;
 
     let mut version_info = read_skill_version_info(&repo_skill.skill.folder).unwrap_or_default();
     if version_info.git_sha.is_none() {
         version_info.git_sha = repo_git_sha(&repo_skill.repo_root);
     }
-
     let fetched_at = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_secs() as i64)
+        .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    write_repo_skill_origin(
-        &target,
-        &RepoSkillOrigin {
-            version: 1,
-            repo: repo_skill.repo_name.clone(),
-            repo_sign: repo_skill.repo_root.display().to_string(),
-            repo_commit: version_info.git_sha.clone(),
-            slug: slug.clone(),
-            skill_version: version_info.version.clone(),
-            fetched_at,
-        },
-    )?;
-
-    let local_field = if local_name != slug {
-        Some(local_name.clone())
-    } else {
-        None
-    };
     upsert_project_added_skill(
         workdir,
         ProjectAddedSkill {
             path: slug.clone(),
             slug: slug.clone(),
             repo: None,
-            local: local_field,
+            local: None,
             version: version_info.version.clone(),
             fetched_at,
         },
     )?;
 
     Ok(EnableProjectRepoSkillResult {
-        slug,
-        local_name,
+        slug: slug.clone(),
+        local_name: slug,
         version: version_info.version,
         git_sha: version_info.git_sha,
     })
@@ -666,53 +657,46 @@ pub fn enable_fetched_skill_in_project(
         bail!("fetched skill not found at {}", skill_folder.display());
     }
 
-    let skills_dir = project_skills_dir(workdir);
-    let local_name = unique_skill_folder_name(&skills_dir, &slug);
-    let target = skills_dir.join(&local_name);
-
-    if let Some(parent) = target.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    copy_skill_folder(&skill_folder, &target)?;
-
+    // Copy to each installed AI client's project skills directory
     let version_info = read_skill_version_info(&skill_folder).unwrap_or_default();
     let fetched_at = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    write_repo_skill_origin(
-        &target,
-        &RepoSkillOrigin {
-            version: 1,
-            repo: repo_url.to_string(),
-            repo_sign: repo_url.to_string(),
-            repo_commit: version_info.git_sha.clone(),
-            slug: slug.clone(),
-            skill_version: version_info.version.clone(),
-            fetched_at,
-        },
-    )?;
 
-    let local_field = if local_name != slug {
-        Some(local_name.clone())
-    } else {
-        None
-    };
+    for dir in installed_client_skills_dirs(workdir) {
+        let target = dir.join(&slug);
+        fs::create_dir_all(&dir)?;
+        copy_skill_folder(&skill_folder, &target)?;
+        let _ = write_repo_skill_origin(
+            &target,
+            &RepoSkillOrigin {
+                version: 1,
+                repo: repo_url.to_string(),
+                repo_sign: repo_url.to_string(),
+                repo_commit: version_info.git_sha.clone(),
+                slug: slug.clone(),
+                skill_version: version_info.version.clone(),
+                fetched_at,
+            },
+        );
+    }
+
     upsert_project_added_skill(
         workdir,
         ProjectAddedSkill {
             path: slug.clone(),
             slug: slug.clone(),
             repo: Some(repo_url.to_string()),
-            local: local_field,
+            local: None,
             version: version_info.version.clone(),
             fetched_at,
         },
     )?;
 
     Ok(EnableProjectRepoSkillResult {
-        slug,
-        local_name,
+        slug: slug.clone(),
+        local_name: slug,
         version: version_info.version,
         git_sha: version_info.git_sha,
     })
@@ -725,8 +709,8 @@ pub fn disable_project_skill(workdir: &Path, slug: &str) -> Result<bool> {
     }
 
     let mut removed_any = false;
-    for skills_dir in project_skill_search_dirs(workdir) {
-        let target = skills_dir.join(&slug);
+    for dir in installed_client_skills_dirs(workdir) {
+        let target = dir.join(&slug);
         if target.exists() {
             fs::remove_dir_all(&target)
                 .with_context(|| format!("failed to remove {}", target.display()))?;
@@ -790,17 +774,17 @@ pub fn list_repo_skills() -> Result<Vec<RepoSkillFolder>> {
     find_repo_skill_folders(&repo_checkout_root())
 }
 
-fn project_skill_search_dirs(workdir: &Path) -> Vec<PathBuf> {
-    let primary = project_skills_dir(workdir);
-    vec![primary]
-}
-
 fn collect_skill_folders(workdir: &Path) -> Vec<SkillFolder> {
     let mut all_folders: Vec<SkillFolder> = Vec::new();
 
-    for project_dir in project_skill_search_dirs(workdir) {
-        if project_dir.is_dir() {
-            all_folders.extend(find_skill_folders(&project_dir).unwrap_or_default());
+    // Search installed AI client project-level skill directories
+    for dir in installed_client_skills_dirs(workdir) {
+        if dir.is_dir() {
+            for folder in find_skill_folders(&dir).unwrap_or_default() {
+                if !all_folders.iter().any(|existing| existing.slug == folder.slug) {
+                    all_folders.push(folder);
+                }
+            }
         }
     }
 
