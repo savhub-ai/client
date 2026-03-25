@@ -13,23 +13,29 @@ cargo build --release --package savhub
 
 | Flag | Description |
 |---|---|
+| `--profile <path>` | Config/data directory (overrides `SAVHUB_CONFIG_DIR` and `~/.savhub`) |
 | `--workdir <path>` | Project directory (default: current directory) |
-| `--dir <path>` | Skills sub-directory within workdir (default: `skills`) |
+| `--dir <path>` | Skills sub-directory within workdir |
 | `--site <url>` | API site URL |
 | `--registry <url>` | Registry URL |
 | `--no-input` | Disable interactive prompts |
 
 ## Commands
 
-### `savhub auto` — Auto-configure project
+### `savhub apply` — Auto-configure project
 
-Run all selectors against the current directory. Matched selectors contribute presets and skills which are applied to the project. Manually added skills are never removed.
+Run all selectors against the current directory. Matched selectors contribute flocks and skills which are applied to the project.
 
 ```bash
-savhub auto              # Detect and apply (with confirmation)
-savhub auto --dry-run    # Preview changes without applying
-savhub auto --yes        # Skip confirmation prompt
+savhub apply              # Detect and apply (with confirmation)
+savhub apply --dry-run    # Preview changes without applying
+savhub apply --yes        # Skip confirmation prompt
+savhub apply --agents claude-code,codex  # Only sync to specific agents
+savhub apply --flocks rust-dev           # Manually add a flock
+savhub apply --skip-skills unwanted      # Skip a specific skill
 ```
+
+Running `savhub` with no arguments is equivalent to `savhub apply`.
 
 ### `savhub selector` — Manage selectors
 
@@ -39,9 +45,16 @@ savhub selector show "Rust"      # Show details of a selector (partial name matc
 savhub selector test             # Run selectors against current dir (no changes)
 ```
 
-### `savhub registry` — Registry cache
+### `savhub flock` — Manage flocks
 
-Registry metadata is fetched live from the configured Savhub REST API.
+```bash
+savhub flock list                # List all flocks
+savhub flock show rust-dev       # Show flock details and skills
+savhub flock fetch rust-dev      # Fetch all skills from a flock
+savhub flock fetch rust-dev --yes  # Skip confirmation
+```
+
+### `savhub registry` — Registry operations
 
 ```bash
 savhub registry search "rust web"            # Search skills
@@ -59,8 +72,6 @@ savhub login --no-browser   # Print URL instead
 savhub whoami               # Show current user
 savhub logout               # Clear token
 ```
-
-These are also available as `savhub auth login`, `savhub auth logout`, `savhub auth whoami`.
 
 ### `savhub search` — Search registry skills
 
@@ -99,16 +110,16 @@ savhub fetch my-skill --force
 
 ### `savhub update` — Update project skills
 
-Compares `savhub.lock` against `~/.savhub/fetched.json` and copies updated skill folders from the local repo cache. No network calls — run `savhub fetched --update` first to pull the latest from the registry.
+Compares `savhub.lock` against the local repo cache and copies updated skill folders. No network calls — run `savhub fetched --update` first to pull the latest from the registry.
 
 ```bash
 savhub update
 ```
 
-### `savhub fetched` — Manage fetched skills
+### `savhub fetched` — Manage fetched skills cache
 
 ```bash
-savhub fetched               # List all fetched skills (from ~/.savhub/fetched.json)
+savhub fetched               # List all fetched skills
 savhub fetched --update      # Update all fetched repos/skills to latest
 savhub fetched --update --force  # Force update even if already at latest
 savhub fetched --prune       # Remove skills/repos not used by any project
@@ -134,6 +145,15 @@ savhub enable my-skill --repo /path/to/repo
 savhub disable my-skill
 ```
 
+### `savhub pilot` — Bundled skills management
+
+```bash
+savhub pilot install              # Install bundled skills into AI agents
+savhub pilot uninstall            # Remove bundled skills
+savhub pilot status               # Show installation status per agent
+savhub pilot notify               # Touch config-changed signal file
+```
+
 ### `savhub self-update` — Update the CLI
 
 Checks GitHub Releases for a newer version, downloads the matching binary for your platform, and replaces the current executable in place.
@@ -142,25 +162,20 @@ Checks GitHub Releases for a newer version, downloads the matching binary for yo
 savhub self-update
 ```
 
-### `savhub mcp` — MCP server
+### `savhub docs` — Open documentation
 
 ```bash
-savhub mcp register              # Register with AI clients
-savhub mcp register --client "Claude Code"
-savhub mcp unregister
-savhub mcp status
-savhub mcp serve                 # Start MCP server
+savhub docs
 ```
 
 ## Configuration
 
 | File | Location | Purpose |
 |---|---|---|
+| `config.json` | `~/.config/savhub/` | Global settings (token, language, registry URL) |
 | `config.toml` | `~/.savhub/` | User overrides (`[rest_api] base_url`) |
-| `config.json` | `~/.savhub/` | Global settings (token, language) |
-| `projects.json` | `~/.savhub/` | Known project directories |
-| `profiles.json` | `~/.savhub/` | Preset definitions |
-| `selectors.json` | `~/.savhub/` | Selector rules |
-| `fetched.json` | `~/.savhub/` | Fetched skill tracking (lockfile) |
-| `savhub.toml` | `<project>/` | Project presets and skills |
+| `projects.json` | `~/.config/savhub/` | Known project directories |
+| `selectors.json` | `~/.config/savhub/` | Selector rules |
+| `fetched_skills.json` | `~/.config/savhub/` | Fetched skill tracking |
+| `savhub.toml` | `<project>/` | Project configuration (selectors, flocks, skills) |
 | `savhub.lock` | `<project>/` | Locked skill versions |

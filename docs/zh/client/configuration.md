@@ -7,7 +7,7 @@ description: Savhub 客户端的配置文件和设置项
 
 ## 全局配置文件
 
-所有全局配置存储在 `~/.config/savhub/`（或平台特定的配置目录）中。
+所有全局配置存储在 `~/.config/savhub/`（或平台特定的配置目录）中。可以通过 `--profile` 参数或 `SAVHUB_CONFIG_DIR` 环境变量覆盖此路径。
 
 | 文件 | 说明 |
 |------|------|

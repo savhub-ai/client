@@ -1,12 +1,12 @@
 ---
 title: Savhub 文档
-description: 公开 Git 仓库的技能索引
+description: AI 编程技能的包管理器
 page_type: home
 ---
 
 # Savhub 文档
 
-Savhub 是公开 Git 仓库的技能索引平台。它扫描仓库中的 `SKILL.md` 文件，将它们组织为 flock（技能集），并提供发现和浏览功能。
+Savhub 是一个 AI 编程技能的包管理器。它扫描公开 Git 仓库中的 `SKILL.md` 文件，将它们组织为可安装的技能集（flock），通过一条命令即可同步到你的 AI 编程客户端。
 
 ## 快速入门
 

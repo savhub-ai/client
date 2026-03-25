@@ -7,7 +7,7 @@ description: Configuration files and settings for the Savhub client
 
 ## Global Configuration Files
 
-All global configuration is stored in `~/.config/savhub/` (or the platform-specific config directory).
+All global configuration is stored in `~/.config/savhub/` (or the platform-specific config directory). You can override this path with the `--profile` flag or the `SAVHUB_CONFIG_DIR` environment variable.
 
 | File | Description |
 |------|-------------|

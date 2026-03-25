@@ -11,6 +11,7 @@ All commands accept these global options:
 
 | Option | Description |
 |--------|-------------|
+| `--profile <path>` | Config/data directory (overrides `SAVHUB_CONFIG_DIR` and `~/.savhub`) |
 | `--workdir <path>` | Project directory (default: current directory) |
 | `--dir <path>` | Skills directory within workdir |
 | `--site <url>` | API site URL |
@@ -23,7 +24,6 @@ All commands accept these global options:
 savhub login [--no-browser]       # Login via GitHub OAuth
 savhub logout                      # Clear local auth token
 savhub whoami                      # Show current user
-savhub auth login|logout|whoami    # Auth subcommands
 ```
 
 ## Apply (Auto-Configuration)
@@ -38,20 +38,20 @@ savhub apply [options]
 | `--yes` | Skip all prompts |
 | `--agents <list>` | Only sync to these AI agents |
 | `--skip-agents <list>` | Skip these AI agents |
-| `--skills <list>` | Manually add skills |
-| `--skip-skills <list>` | Manually skip skills |
-| `--flocks <list>` | Manually add flocks |
-| `--skip-flocks <list>` | Manually skip flocks |
+| `--skills <list>` | Manually add skills (persistent) |
+| `--skip-skills <list>` | Manually skip skills (persistent) |
+| `--flocks <list>` | Manually add flocks (persistent) |
+| `--skip-flocks <list>` | Manually skip flocks (persistent) |
 
-Alias: `savhub auto`
+Running `savhub` with no arguments is equivalent to `savhub apply`.
 
 ## Skills
 
 ```bash
 savhub search <query...> [--limit N]            # Search registry
 savhub fetch <slug> [--version V] [--force]      # Fetch a skill
-savhub update [slug] [--all] [--global] [--force] # Update skill(s)
-savhub prune <slug> [--yes]                      # Prune a skill
+savhub update                                     # Update project skills from cache
+savhub prune <slug> [--yes]                      # Remove a skill
 savhub list                                       # List fetched skills
 savhub explore [--limit N] [--sort S] [--json]   # Browse skills
 savhub inspect <slug> [options]                  # View skill details
@@ -92,14 +92,30 @@ savhub selector show <name>       # Show selector details
 savhub selector test              # Run selectors against current dir
 ```
 
-Alias: `savhub detector`
-
 ## Flocks
 
 ```bash
 savhub flock list                     # List all flocks
 savhub flock show <slug>              # Show flock details
 savhub flock fetch <slug> [--yes]     # Fetch flock skills
+```
+
+## Fetched Skills Cache
+
+```bash
+savhub fetched                        # List globally fetched skills
+savhub fetched --update               # Update all fetched repos/skills to latest
+savhub fetched --update --force       # Force update even if at latest
+savhub fetched --prune                # Remove skills not used by any project
+```
+
+## Pilot (Bundled Skills)
+
+```bash
+savhub pilot install [--agents <list>]     # Install bundled skills into AI agents
+savhub pilot uninstall [--agents <list>]   # Remove bundled skills from AI agents
+savhub pilot status [--agents <list>]      # Show installation status per agent
+savhub pilot notify                        # Touch config-changed signal file
 ```
 
 ## Registry

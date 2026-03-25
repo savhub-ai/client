@@ -1,71 +1,44 @@
 ---
 title: Quick Start
-description: Install and set up the Savhub CLI and desktop app
+description: Install the Savhub CLI and apply your first AI skills
 ---
 
 # Quick Start
 
-Savhub Client is a tool for discovering, fetching, and managing AI coding skills across your projects. It works with Claude Code, Codex, Cursor, Windsurf, and other AI agents.
+Savhub discovers, installs, and manages AI coding skills for your projects. It works with Claude Code, Codex, Cursor, Windsurf, and other AI agents.
 
-## Installation
+## Install
 
-### CLI
+### One-Line Install (Recommended)
 
-Download the latest release from [GitHub Releases](https://github.com/savhub-ai/savhub/releases) or build from source:
+**Linux / macOS:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/savhub-ai/savhub/main/scripts/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/savhub-ai/savhub/main/scripts/install.ps1 | iex
+```
+
+The installer downloads the latest release, adds `savhub` to your PATH, and installs bundled skills into your AI agents.
+
+### Manual Download
+
+Download binaries from [GitHub Releases](https://github.com/savhub-ai/savhub/releases) and place them in your PATH.
+
+### Build from Source
 
 ```bash
-# Clone and build
 git clone https://github.com/savhub-ai/savhub.git
 cd savhub
 cargo build --release
-
-# The binary is at target/release/savhub
+# Binary: target/release/savhub (or savhub.exe on Windows)
 ```
 
-### Desktop App
+## Apply Skills to Your Project
 
-Download the desktop installer from the same release page, or build from source:
-
-```bash
-cargo build --release -p savhub-desktop
-```
-
-## Authentication
-
-Login with your GitHub account to publish and manage skills:
-
-```bash
-savhub login
-```
-
-This opens a browser for GitHub OAuth. After authorization, your token is stored locally.
-
-```bash
-# Verify your login
-savhub whoami
-
-# Logout when needed
-savhub logout
-```
-
-## Quick Start
-
-### 1. Browse available skills
-
-```bash
-# Search for skills
-savhub search rust
-
-# Browse all skills
-savhub explore
-
-# List available flocks (skill collections)
-savhub flock list
-```
-
-### 2. Apply skills to your project
-
-Navigate to your project directory and run:
+Navigate to your project and run:
 
 ```bash
 cd /path/to/my-project
@@ -73,22 +46,53 @@ savhub apply
 ```
 
 This will:
-1. Run selectors to detect your project type (e.g., Rust, Python, Web)
-2. Show matched selectors and recommended flocks
-3. Let you interactively select which flocks to fetch
-4. Fetch skills and sync them to your AI clients (Claude Code, Codex, etc.)
+1. Run **selectors** to detect your project type (Rust, Python, Web, etc.)
+2. Show matched selectors and recommend **flocks** (skill collections)
+3. Let you interactively select which flocks to install
+4. Fetch skills and copy them to your AI agents (Claude Code, Codex, etc.)
 
-### 3. Verify
+## Browse and Search Skills
 
 ```bash
-# List fetched skills in the project
+# Search for skills by keyword
+savhub search rust
+
+# Browse all skills from the registry
+savhub explore
+
+# List available flocks (skill collections)
+savhub flock list
+
+# View a specific flock and its skills
+savhub flock show rust-dev
+```
+
+## Login (Optional)
+
+Login with GitHub to star skills and publish your own:
+
+```bash
+savhub login       # Opens browser for GitHub OAuth
+savhub whoami      # Verify your login
+savhub logout      # Clear local token
+```
+
+## Verify
+
+```bash
+# List skills installed in the current project
 savhub list
 
-# Check selector results without making changes
+# Test selectors without making changes
 savhub selector test
+
+# Preview what apply would do
+savhub apply --dry-run
 ```
 
 ## What's Next
 
+- [Core Concepts](https://savhub.ai/en/docs/getting-started/concepts) - Key terminology and how the pieces fit together
 - [Apply Command](https://savhub.ai/en/docs/client/apply) - Detailed usage of the apply workflow
 - [Selectors](https://savhub.ai/en/docs/client/selectors) - Create custom project detection rules
+- [CLI Reference](https://savhub.ai/en/docs/client/cli-reference) - Full command list

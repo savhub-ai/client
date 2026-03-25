@@ -1,17 +1,17 @@
 ---
 title: Savhub Documentation
-description: Skill index for public Git repositories
+description: Package manager for AI coding skills
 page_type: home
 ---
 
 # Savhub Documentation
 
-Savhub is a skill index for public Git repositories. It scans `SKILL.md` files from your repos, organizes them into flocks, and makes them discoverable.
+Savhub is a package manager for AI coding skills. It scans `SKILL.md` files from public Git repositories, organizes them into installable collections called *flocks*, and syncs them to your AI agents with a single command.
 
 ## Getting Started
 
 - [Core Concepts](https://savhub.ai/en/docs/getting-started/concepts) - What Savhub is, key terminology, and how the pieces fit together
-- [Quick Start](https://savhub.ai/en/docs/getting-started/quick-start) - Install the Savhub CLI and apply your first skills
+- [Quick Start](https://savhub.ai/en/docs/getting-started/quick-start) - Install the CLI and apply your first skills
 
 ## Client
 
