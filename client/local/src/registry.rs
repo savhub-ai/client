@@ -709,7 +709,16 @@ pub fn fetch_skills_batch_with_progress(
                 continue;
             }
 
-            let slug = skill_path.clone();
+            // Use the canonical slug from the registry record if available,
+            // otherwise extract the last path component (e.g. "skills/foo" → "foo").
+            let slug = match record {
+                Some(r) => r.slug.clone(),
+                None => skill_path
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or(skill_path)
+                    .to_string(),
+            };
             let _ = write_repo_skill_origin(
                 &local_path,
                 &RepoSkillOrigin {

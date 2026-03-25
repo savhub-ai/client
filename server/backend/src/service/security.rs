@@ -233,11 +233,11 @@ pub struct ScanContext {
 /// Returns the worst verdict as a string. Skills that pass static scan are set
 /// to "checked" and will be picked up by the AI scan worker separately.
 pub fn run_automated_scans(
-    conn: &mut PgConnection,
+    pool: &PgPool,
     flock_id: Uuid,
     skills: &[SkillRow],
 ) -> Result<String, AppError> {
-    run_automated_scans_with_files(conn, flock_id, skills, &[], None)
+    run_automated_scans_with_files(pool, flock_id, skills, &[], None)
 }
 
 /// Enhanced version of `run_automated_scans` that also accepts file contents
@@ -247,7 +247,7 @@ pub fn run_automated_scans(
 /// `SAVHUB_AI_SECURITY_SCAN=true`. Skills that pass static scan are set to
 /// "checked"; the AI scan queue processor will pick them up independently.
 pub fn run_automated_scans_with_files(
-    conn: &mut PgConnection,
+    pool: &PgPool,
     flock_id: Uuid,
     skills: &[SkillRow],
     skill_files: &[SkillScanInput],
@@ -258,12 +258,13 @@ pub fn run_automated_scans_with_files(
     // Skip if this commit_hash was already scanned for this flock.
     if let Some(ref hash) = commit_hash {
         if !hash.is_empty() {
+            let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
             let already_scanned = security_scans::table
                 .filter(security_scans::target_type.eq("flock"))
                 .filter(security_scans::target_id.eq(flock_id))
                 .filter(security_scans::commit_hash.eq(hash))
                 .select(security_scans::id)
-                .first::<Uuid>(conn)
+                .first::<Uuid>(&mut conn)
                 .optional()?
                 .is_some();
             if already_scanned {
@@ -311,21 +312,24 @@ pub fn run_automated_scans_with_files(
             .get(skill.slug.as_str())
             .and_then(|sf| sf.version_id);
 
-        diesel::insert_into(security_scans::table)
-            .values(NewSecurityScanRow {
-                id: Uuid::now_v7(),
-                target_type: "flock_skill".to_string(),
-                target_id: skill.id,
-                scan_module: "content_analysis".to_string(),
-                result: content_result,
-                severity: severity.map(ToString::to_string),
-                details: json!({}),
-                scanned_by_user_id: None,
-                created_at: Utc::now(),
-                version_id: skill_version_id,
-                commit_hash: commit_hash.clone().unwrap_or_default(),
-            })
-            .execute(conn)?;
+        {
+            let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
+            diesel::insert_into(security_scans::table)
+                .values(NewSecurityScanRow {
+                    id: Uuid::now_v7(),
+                    target_type: "flock_skill".to_string(),
+                    target_id: skill.id,
+                    scan_module: "content_analysis".to_string(),
+                    result: content_result,
+                    severity: severity.map(ToString::to_string),
+                    details: json!({}),
+                    scanned_by_user_id: None,
+                    created_at: Utc::now(),
+                    version_id: skill_version_id,
+                    commit_hash: commit_hash.clone().unwrap_or_default(),
+                })
+                .execute(&mut conn)?;
+        }
 
         // ----- License audit -----
         let license_result = license_audit_scan(skill.license.as_deref().unwrap_or(""));
@@ -334,21 +338,24 @@ pub fn run_automated_scans_with_files(
         } else {
             None
         };
-        diesel::insert_into(security_scans::table)
-            .values(NewSecurityScanRow {
-                id: Uuid::now_v7(),
-                target_type: "flock_skill".to_string(),
-                target_id: skill.id,
-                scan_module: "license_audit".to_string(),
-                result: license_result,
-                severity: license_severity.map(ToString::to_string),
-                details: json!({}),
-                scanned_by_user_id: None,
-                created_at: Utc::now(),
-                version_id: skill_version_id,
-                commit_hash: commit_hash.clone().unwrap_or_default(),
-            })
-            .execute(conn)?;
+        {
+            let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
+            diesel::insert_into(security_scans::table)
+                .values(NewSecurityScanRow {
+                    id: Uuid::now_v7(),
+                    target_type: "flock_skill".to_string(),
+                    target_id: skill.id,
+                    scan_module: "license_audit".to_string(),
+                    result: license_result,
+                    severity: license_severity.map(ToString::to_string),
+                    details: json!({}),
+                    scanned_by_user_id: None,
+                    created_at: Utc::now(),
+                    version_id: skill_version_id,
+                    commit_hash: commit_hash.clone().unwrap_or_default(),
+                })
+                .execute(&mut conn)?;
+        }
 
         // ----- Static scan (on actual file contents) -----
         if let Some(scan_input) = file_map.get(skill.slug.as_str()) {
@@ -369,26 +376,29 @@ pub fn run_automated_scans_with_files(
                 ModerationVerdict::Suspicious => Some("medium"),
                 ModerationVerdict::Clean => None,
             };
-            diesel::insert_into(security_scans::table)
-                .values(NewSecurityScanRow {
-                    id: Uuid::now_v7(),
-                    target_type: "flock_skill".to_string(),
-                    target_id: skill.id,
-                    scan_module: "static_moderation".to_string(),
-                    result: static_result.verdict.to_string(),
-                    severity: static_severity.map(ToString::to_string),
-                    details: json!({
-                        "reason_codes": static_result.reason_codes,
-                        "findings": static_result.findings,
-                        "summary": static_result.summary,
-                        "engine_version": static_result.engine_version,
-                    }),
-                    scanned_by_user_id: None,
-                    created_at: Utc::now(),
-                    version_id: scan_input.version_id,
-                    commit_hash: commit_hash.clone().unwrap_or_default(),
-                })
-                .execute(conn)?;
+            {
+                let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
+                diesel::insert_into(security_scans::table)
+                    .values(NewSecurityScanRow {
+                        id: Uuid::now_v7(),
+                        target_type: "flock_skill".to_string(),
+                        target_id: skill.id,
+                        scan_module: "static_moderation".to_string(),
+                        result: static_result.verdict.to_string(),
+                        severity: static_severity.map(ToString::to_string),
+                        details: json!({
+                            "reason_codes": static_result.reason_codes,
+                            "findings": static_result.findings,
+                            "summary": static_result.summary,
+                            "engine_version": static_result.engine_version,
+                        }),
+                        scanned_by_user_id: None,
+                        created_at: Utc::now(),
+                        version_id: scan_input.version_id,
+                        commit_hash: commit_hash.clone().unwrap_or_default(),
+                    })
+                    .execute(&mut conn)?;
+            }
 
             // Track worst verdict
             match static_result.verdict {
@@ -405,17 +415,22 @@ pub fn run_automated_scans_with_files(
                 ModerationVerdict::Suspicious => "suspicious",
                 ModerationVerdict::Clean => "checked",
             };
-            diesel::update(skills::table.find(skill.id))
-                .set(skills::security_status.eq(security_status))
-                .execute(conn)?;
+            {
+                let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
+                diesel::update(skills::table.find(skill.id))
+                    .set(skills::security_status.eq(security_status))
+                    .execute(&mut conn)?;
+            }
 
             // Write consolidated scan_summary to the skill_version row
             if let Some(vid) = scan_input.version_id {
                 let scan_summary = build_initial_scan_summary(&static_result);
                 if let Ok(val) = serde_json::to_value(&scan_summary) {
-                    let _ = diesel::update(skill_versions::table.find(vid))
-                        .set(skill_versions::scan_summary.eq(Some(val)))
-                        .execute(conn);
+                    if let Ok(mut conn) = pool.get() {
+                        let _ = diesel::update(skill_versions::table.find(vid))
+                            .set(skill_versions::scan_summary.eq(Some(val)))
+                            .execute(&mut conn);
+                    }
                 }
             }
 
@@ -441,24 +456,27 @@ pub fn run_automated_scans_with_files(
 
     // Record a flock-level scan summary
     let worst_str = worst_verdict.to_string();
-    diesel::insert_into(security_scans::table)
-        .values(NewSecurityScanRow {
-            id: Uuid::now_v7(),
-            target_type: "flock".to_string(),
-            target_id: flock_id,
-            scan_module: "aggregate".to_string(),
-            result: worst_str.clone(),
-            severity: None,
-            details: json!({
-                "skill_count": skills.len(),
-                "verdict": worst_str,
-            }),
-            scanned_by_user_id: None,
-            created_at: Utc::now(),
-            version_id: None,
-            commit_hash: commit_hash.clone().unwrap_or_default(),
-        })
-        .execute(conn)?;
+    {
+        let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
+        diesel::insert_into(security_scans::table)
+            .values(NewSecurityScanRow {
+                id: Uuid::now_v7(),
+                target_type: "flock".to_string(),
+                target_id: flock_id,
+                scan_module: "aggregate".to_string(),
+                result: worst_str.clone(),
+                severity: None,
+                details: json!({
+                    "skill_count": skills.len(),
+                    "verdict": worst_str,
+                }),
+                scanned_by_user_id: None,
+                created_at: Utc::now(),
+                version_id: None,
+                commit_hash: commit_hash.clone().unwrap_or_default(),
+            })
+            .execute(&mut conn)?;
+    }
 
     // Update flock security_status. Static clean → "checked".
     // AI eval will upgrade to "verified" later if enabled.
@@ -467,9 +485,12 @@ pub fn run_automated_scans_with_files(
         ModerationVerdict::Suspicious => "suspicious",
         ModerationVerdict::Clean => "checked",
     };
-    diesel::update(flocks::table.find(flock_id))
-        .set(flocks::security_status.eq(flock_status))
-        .execute(conn)?;
+    {
+        let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
+        diesel::update(flocks::table.find(flock_id))
+            .set(flocks::security_status.eq(flock_status))
+            .execute(&mut conn)?;
+    }
 
     Ok(worst_str)
 }
@@ -524,9 +545,8 @@ pub fn run_static_scan_for_skill(pool: &PgPool, skill: &SkillRow) -> Result<bool
         commit_hash: Some(skill.scan_commit_hash.clone()),
     };
 
-    let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
     run_automated_scans_with_files(
-        &mut conn,
+        pool,
         skill.flock_id,
         &[skill.clone()],
         &[scan_input],
