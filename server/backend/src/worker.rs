@@ -57,12 +57,11 @@ pub fn spawn_worker(pool: PgPool) -> JoinHandle<()> {
             config.auto_index_min_interval_secs,
         ));
 
-        // Static security scan: in-memory set tracks which skill IDs are
-        // currently being scanned to prevent duplicate pickup.
-        let mut scan_tick = tokio::time::interval(std::time::Duration::from_secs(2));
-        let mut scan_tasks: JoinSet<Uuid> = JoinSet::new();
-        let max_scan_concurrency = config.static_scan_concurrency;
-        let mut static_scanning_ids: HashSet<Uuid> = HashSet::new();
+        // Static security scan — one thread per concurrency slot.
+        for i in 0..config.static_scan_concurrency.max(1) {
+            let pool = pool.clone();
+            tokio::task::spawn_blocking(move || static_scan_loop(&pool, i));
+        }
 
         // AI security scan: same pattern.
         let mut ai_scan_tick = tokio::time::interval(std::time::Duration::from_secs(2));
@@ -106,38 +105,6 @@ pub fn spawn_worker(pool: PgPool) -> JoinHandle<()> {
                             tracing::warn!("repo check error: {error}");
                         }
                     });
-                }
-                _ = scan_tick.tick() => {
-                    // Drain completed static scan tasks
-                    while let Some(result) = scan_tasks.try_join_next() {
-                        match result {
-                            Ok(skill_id) => {
-                                static_scanning_ids.remove(&skill_id);
-                            }
-                            Err(e) => {
-                                tracing::warn!("static scan task panicked: {e}");
-                            }
-                        }
-                    }
-                    // Fill up to max concurrency
-                    while scan_tasks.len() < max_scan_concurrency {
-                        match pick_unscanned_skill(&pool, &static_scanning_ids) {
-                            Ok(Some(skill)) => {
-                                let skill_id = skill.id;
-                                static_scanning_ids.insert(skill_id);
-                                let pool = pool.clone();
-                                scan_tasks.spawn_blocking(move || {
-                                    run_static_scan_for_skill(&pool, skill);
-                                    skill_id
-                                });
-                            }
-                            Ok(None) => break,
-                            Err(e) => {
-                                tracing::warn!("static scan pick error: {e}");
-                                break;
-                            }
-                        }
-                    }
                 }
                 _ = ai_scan_tick.tick() => {
                     // Drain completed AI scan tasks
@@ -577,70 +544,112 @@ async fn process_pending_index_repos(pool: &PgPool) -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------------------
-// Static security scan: pick unscanned skills from DB
+// Static security scan — single-threaded loop
 // ---------------------------------------------------------------------------
 
-/// Pick one skill with `security_status = 'unscanned'` that is not currently
-/// being scanned (not in the in-memory exclusion set).
-fn pick_unscanned_skill(
+/// Continuously pick unscanned skills by ID ascending and run static scans.
+///
+/// After scanning a skill, the next pick uses `id > last_id`. When no larger
+/// ID exists, it wraps around to the smallest unscanned ID. If nothing is
+/// unscanned at all, it sleeps for 1 minute before retrying.
+fn static_scan_loop(pool: &PgPool, thread_idx: usize) {
+    tracing::info!("[static-scan-{thread_idx}] loop started");
+    let mut last_id: Option<Uuid> = None;
+
+    loop {
+        // 1. Try to pick the next unscanned skill with id > last_id
+        let skill = pick_next_unscanned_skill(pool, last_id.as_ref());
+
+        // 2. If none found and we had a cursor, wrap around to the beginning
+        let skill = match skill {
+            Ok(Some(s)) => Some(s),
+            Ok(None) if last_id.is_some() => {
+                last_id = None;
+                match pick_next_unscanned_skill(pool, None) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::warn!("[static-scan] pick error (wrap-around): {e}");
+                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        continue;
+                    }
+                }
+            }
+            Ok(None) => None,
+            Err(e) => {
+                tracing::warn!("[static-scan] pick error: {e}");
+                std::thread::sleep(std::time::Duration::from_secs(60));
+                continue;
+            }
+        };
+
+        // 3. Nothing unscanned at all → sleep 1 minute
+        let Some(skill) = skill else {
+            std::thread::sleep(std::time::Duration::from_secs(60));
+            continue;
+        };
+
+        let skill_id = skill.id;
+        let slug = skill.slug.clone();
+
+        // 4. Run the scan
+        match crate::service::security::run_static_scan_for_skill(pool, &skill) {
+            Ok(true) => {
+                tracing::debug!("[static-scan] completed: skill={} ({})", slug, skill_id);
+            }
+            Ok(false) => {
+                // No files found — mark as "checked" so it won't be picked again.
+                tracing::info!(
+                    "[static-scan] no files for skill {} ({}) — marking checked",
+                    slug,
+                    skill_id,
+                );
+                if let Ok(mut conn) = pool.get() {
+                    let _ = diesel::update(skills::table.find(skill_id))
+                        .set(skills::security_status.eq("checked"))
+                        .execute(&mut conn);
+                }
+            }
+            Err(e) => {
+                // Error — log it but do NOT mark as checked; it will be
+                // retried on the next full pass.
+                tracing::error!(
+                    "[static-scan] failed for skill {} ({}): {}",
+                    slug,
+                    skill_id,
+                    e,
+                );
+            }
+        }
+
+        // 5. Advance cursor
+        last_id = Some(skill_id);
+    }
+}
+
+/// Pick one unscanned skill with `id > after_id` (or the smallest if `None`),
+/// ordered by id ascending.
+fn pick_next_unscanned_skill(
     pool: &PgPool,
-    exclude_ids: &HashSet<Uuid>,
+    after_id: Option<&Uuid>,
 ) -> Result<Option<SkillRow>, String> {
     let mut conn = pool.get().map_err(|e| e.to_string())?;
-    let exclude: Vec<Uuid> = exclude_ids.iter().copied().collect();
 
-    let skill = skills::table
+    let mut query = skills::table
         .filter(skills::security_status.eq("unscanned"))
         .filter(skills::soft_deleted_at.is_null())
-        .filter(diesel::dsl::not(skills::id.eq_any(&exclude)))
-        .order(skills::updated_at.asc())
+        .order(skills::id.asc())
+        .limit(1)
+        .into_boxed();
+
+    if let Some(id) = after_id {
+        query = query.filter(skills::id.gt(*id));
+    }
+
+    query
         .select(SkillRow::as_select())
         .first::<SkillRow>(&mut conn)
         .optional()
-        .map_err(|e| e.to_string())?;
-
-    Ok(skill)
-}
-
-/// Run a static scan on a single skill (called from spawn_blocking).
-fn run_static_scan_for_skill(pool: &PgPool, skill: SkillRow) {
-    let skill_id = skill.id;
-    let slug = skill.slug.clone();
-
-    match crate::service::security::run_static_scan_for_skill(pool, &skill) {
-        Ok(true) => {
-            tracing::debug!("[static-scan] completed: skill={} ({})", slug, skill_id);
-        }
-        Ok(false) => {
-            // No files found (repo checkout missing or skill dir empty).
-            // Mark as "checked" so this skill is not picked up again forever.
-            tracing::info!(
-                "[static-scan] no files for skill {} ({}) — marking checked",
-                slug,
-                skill_id,
-            );
-            if let Ok(mut conn) = pool.get() {
-                let _ = diesel::update(skills::table.find(skill_id))
-                    .set(skills::security_status.eq("checked"))
-                    .execute(&mut conn);
-            }
-        }
-        Err(e) => {
-            // Scan errored out. Mark as "checked" to avoid infinite retry.
-            // The error is logged; manual re-scan can be triggered if needed.
-            tracing::error!(
-                "[static-scan] failed for skill {} ({}): {} — marking checked",
-                slug,
-                skill_id,
-                e,
-            );
-            if let Ok(mut conn) = pool.get() {
-                let _ = diesel::update(skills::table.find(skill_id))
-                    .set(skills::security_status.eq("checked"))
-                    .execute(&mut conn);
-            }
-        }
-    }
+        .map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------------

@@ -50,7 +50,6 @@ async fn main() -> Result<()> {
         "  static_scan_concurrency = {}",
         config.static_scan_concurrency
     );
-
     // Security & AI diagnostics
     if config.ai_security_scan_enabled {
         tracing::info!("  ai_security_scan = enabled");
