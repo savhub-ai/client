@@ -154,18 +154,15 @@ pub fn build_skill_scan_inputs_from_repo_checkout(
     repo_id: Uuid,
     skills_in_flock: &[SkillRow],
 ) -> Vec<SkillScanInput> {
-    let repo = pool
-        .get()
-        .ok()
-        .and_then(|mut conn| {
-            repos::table
-                .find(repo_id)
-                .select(RepoRow::as_select())
-                .first::<RepoRow>(&mut conn)
-                .optional()
-                .ok()
-                .flatten()
-        });
+    let repo = pool.get().ok().and_then(|mut conn| {
+        repos::table
+            .find(repo_id)
+            .select(RepoRow::as_select())
+            .first::<RepoRow>(&mut conn)
+            .optional()
+            .ok()
+            .flatten()
+    });
 
     let Some(repo) = repo else {
         return vec![];
