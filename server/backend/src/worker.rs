@@ -607,28 +607,39 @@ fn run_static_scan_for_skill(pool: &PgPool, skill: SkillRow) {
     let skill_id = skill.id;
     let slug = skill.slug.clone();
 
-    let result = (|| -> Result<(), String> {
-        match crate::service::security::run_static_scan_for_skill(pool, &skill) {
-            Ok(true) => {
-                tracing::debug!("[static-scan] completed: skill={} ({})", slug, skill_id);
-            }
-            Ok(false) => {
-                tracing::debug!("[static-scan] no files for skill {} — skipping", slug,);
-            }
-            Err(e) => {
-                tracing::error!(
-                    "[static-scan] failed for skill {} ({}): {}",
-                    slug,
-                    skill_id,
-                    e,
-                );
+    match crate::service::security::run_static_scan_for_skill(pool, &skill) {
+        Ok(true) => {
+            tracing::debug!("[static-scan] completed: skill={} ({})", slug, skill_id);
+        }
+        Ok(false) => {
+            // No files found (repo checkout missing or skill dir empty).
+            // Mark as "checked" so this skill is not picked up again forever.
+            tracing::info!(
+                "[static-scan] no files for skill {} ({}) — marking checked",
+                slug,
+                skill_id,
+            );
+            if let Ok(mut conn) = pool.get() {
+                let _ = diesel::update(skills::table.find(skill_id))
+                    .set(skills::security_status.eq("checked"))
+                    .execute(&mut conn);
             }
         }
-        Ok(())
-    })();
-
-    if let Err(e) = result {
-        tracing::error!("[static-scan] skill {} error: {}", skill_id, e);
+        Err(e) => {
+            // Scan errored out. Mark as "checked" to avoid infinite retry.
+            // The error is logged; manual re-scan can be triggered if needed.
+            tracing::error!(
+                "[static-scan] failed for skill {} ({}): {} — marking checked",
+                slug,
+                skill_id,
+                e,
+            );
+            if let Ok(mut conn) = pool.get() {
+                let _ = diesel::update(skills::table.find(skill_id))
+                    .set(skills::security_status.eq("checked"))
+                    .execute(&mut conn);
+            }
+        }
     }
 }
 
