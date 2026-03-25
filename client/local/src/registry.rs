@@ -258,13 +258,6 @@ fn registry_flock_from_detail(detail: FlockDetailResponse) -> RegistryFlock {
     }
 }
 
-#[derive(Debug, Clone)]
-struct RemoteSkillDescriptor {
-    repo_sign: String,
-    skill_path: String,
-    skill_version: Option<String>,
-}
-
 fn normalize_non_empty(value: Option<String>) -> Option<String> {
     value.and_then(|value| {
         let trimmed = value.trim();
@@ -610,12 +603,16 @@ pub fn fetch_skills_batch(repo_paths: &[(String, String)]) -> Result<Vec<Fetched
 
 /// Fetch skills in batch with a per-skill progress callback.
 ///
+/// Groups skills by repo so each repo is fetched from the API and cloned only
+/// once, then all skills in that repo are resolved from the local checkout.
+///
 /// `on_progress(index, total, result)` is called after each skill is processed.
 /// `result` is `Ok(slug)` on success or `Err(message)` on failure.
 pub fn fetch_skills_batch_with_progress(
     repo_paths: &[(String, String)],
     mut on_progress: impl FnMut(usize, usize, Result<&str, &str>),
 ) -> Result<Vec<FetchedSkillInfo>> {
+    // Deduplicate
     let mut seen = BTreeSet::new();
     let mut requested: Vec<(String, String)> = Vec::new();
     for (repo_url, skill_path) in repo_paths {
@@ -627,103 +624,135 @@ pub fn fetch_skills_batch_with_progress(
         }
     }
 
+    // Group by repo_url, preserving insertion order
+    let mut repo_groups: Vec<(String, Vec<String>)> = Vec::new();
+    let mut repo_index: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for (repo_url, skill_path) in &requested {
+        if let Some(&idx) = repo_index.get(repo_url) {
+            repo_groups[idx].1.push(skill_path.clone());
+        } else {
+            repo_index.insert(repo_url.clone(), repo_groups.len());
+            repo_groups.push((repo_url.clone(), vec![skill_path.clone()]));
+        }
+    }
+
     let config_dir = get_config_dir()?;
     let mut results = Vec::new();
     let total = requested.len();
+    let mut progress_idx = 0usize;
 
-    for (idx, (repo_url, skill_path)) in requested.iter().enumerate() {
-        let label = format!("{repo_url}/{skill_path}");
+    for (repo_url, skill_paths) in &repo_groups {
+        // 1) Fetch repo detail from API — ONCE per repo
         let repo = match remote_repo_detail(repo_url)? {
             Some(value) => value,
             None => {
-                on_progress(idx, total, Err(&label));
-                continue;
-            }
-        };
-        // Find the skill across all flocks in this repo
-        let descriptor = find_skill_descriptor_in_repo(&repo, skill_path);
-        let Some(descriptor) = descriptor else {
-            on_progress(idx, total, Err(&label));
-            continue;
-        };
-        let Some(git_sha) = normalize_non_empty(repo.document.git_sha.clone()) else {
-            on_progress(idx, total, Err(&label));
-            continue;
-        };
-        let spec = RemoteSkillFetchSpec {
-            repo_sign: descriptor.repo_sign.clone(),
-            skill_path: descriptor.skill_path.clone(),
-            git_url: repo.document.git_url.clone(),
-            git_sha: git_sha.clone(),
-            skill_version: descriptor.skill_version.clone(),
-        };
-        let local_path = match cache_remote_skill_from_repo(&spec) {
-            Ok(path) => path,
-            Err(_error) => {
-                on_progress(idx, total, Err(&label));
+                for sp in skill_paths {
+                    on_progress(progress_idx, total, Err(sp));
+                    progress_idx += 1;
+                }
                 continue;
             }
         };
 
-        let slug = skill_path.clone();
-        let _ = write_repo_skill_origin(
-            &local_path,
-            &RepoSkillOrigin {
-                version: 1,
-                repo: registry_api_base(),
-                repo_sign: descriptor.repo_sign.clone(),
-                repo_commit: Some(git_sha.clone()),
-                slug: slug.clone(),
-                skill_version: descriptor.skill_version.clone(),
-                fetched_at: Utc::now().timestamp_millis(),
-            },
-        );
+        let repo_sign = git_url_to_route_path(&repo.document.git_url);
+        let git_sha = match normalize_non_empty(repo.document.git_sha.clone()) {
+            Some(sha) => sha,
+            None => {
+                for sp in skill_paths {
+                    on_progress(progress_idx, total, Err(sp));
+                    progress_idx += 1;
+                }
+                continue;
+            }
+        };
 
-        let version = descriptor.skill_version.as_deref().unwrap_or(&git_sha);
-        update_lockfile_with_metadata(
-            &config_dir,
-            &slug,
-            version,
-            &FetchedSkillMetadata {
-                remote_slug: Some(slug.clone()),
-                repo_url: Some(descriptor.repo_sign.clone()),
-                path: Some(normalize_skill_repo_path(&descriptor.skill_path)),
-                flock_slug: None,
-                git_sha: Some(git_sha.clone()),
-            },
-        );
+        // 2) Ensure repo checkout — ONCE per repo (clone or fetch+checkout)
+        let repo_root = match ensure_repo_checkout(&repo_sign, &repo.document.git_url, &git_sha) {
+            Ok(root) => root,
+            Err(_) => {
+                for sp in skill_paths {
+                    on_progress(progress_idx, total, Err(sp));
+                    progress_idx += 1;
+                }
+                continue;
+            }
+        };
 
-        on_progress(idx, total, Ok(&slug));
+        // Build a lookup from the repo detail skills list (no extra API calls)
+        let skill_lookup: std::collections::HashMap<&str, &savhub_shared::ImportedSkillRecord> =
+            repo.skills
+                .iter()
+                .flat_map(|s| {
+                    let mut entries = vec![(s.slug.as_str(), s)];
+                    entries.push((s.path.as_str(), s));
+                    entries
+                })
+                .collect();
 
-        results.push(FetchedSkillInfo {
-            slug,
-            repo_sign: descriptor.repo_sign,
-            skill_path: descriptor.skill_path,
-            local_path,
-        });
+        // 3) For each skill: just resolve path from local checkout + copy
+        for skill_path in skill_paths {
+            let record = skill_lookup.get(skill_path.as_str());
+            let (resolved_path, skill_version) = match record {
+                Some(r) => (
+                    r.path.clone(),
+                    normalize_non_empty(r.version.clone()),
+                ),
+                None => {
+                    // Skill not found in repo's skill list — try using skill_path directly
+                    (skill_path.clone(), None)
+                }
+            };
+
+            let normalized = normalize_skill_repo_path(&resolved_path);
+            let local_path = repo_root.join(Path::new(&normalized));
+
+            if !local_path.is_dir() {
+                on_progress(progress_idx, total, Err(skill_path));
+                progress_idx += 1;
+                continue;
+            }
+
+            let slug = skill_path.clone();
+            let _ = write_repo_skill_origin(
+                &local_path,
+                &RepoSkillOrigin {
+                    version: 1,
+                    repo: registry_api_base(),
+                    repo_sign: repo_sign.clone(),
+                    repo_commit: Some(git_sha.clone()),
+                    slug: slug.clone(),
+                    skill_version: skill_version.clone(),
+                    fetched_at: Utc::now().timestamp_millis(),
+                },
+            );
+
+            let version = skill_version.as_deref().unwrap_or(&git_sha);
+            update_lockfile_with_metadata(
+                &config_dir,
+                &slug,
+                version,
+                &FetchedSkillMetadata {
+                    remote_slug: Some(slug.clone()),
+                    repo_url: Some(repo_sign.clone()),
+                    path: Some(normalized.clone()),
+                    flock_slug: None,
+                    git_sha: Some(git_sha.clone()),
+                },
+            );
+
+            on_progress(progress_idx, total, Ok(&slug));
+            progress_idx += 1;
+
+            results.push(FetchedSkillInfo {
+                slug,
+                repo_sign: repo_sign.clone(),
+                skill_path: resolved_path,
+                local_path,
+            });
+        }
     }
 
     Ok(results)
 }
 
-/// Find a skill's descriptor by looking through all flocks in a repo detail response.
-fn find_skill_descriptor_in_repo(
-    repo: &RepoDetailResponse,
-    skill_path: &str,
-) -> Option<RemoteSkillDescriptor> {
-    let repo_sign = git_url_to_route_path(&repo.document.git_url);
-    for flock in &repo.flocks {
-        let detail = remote_flock_detail_by_id(&flock.id.to_string()).ok()??;
-        for skill in &detail.skills {
-            if skill.path == skill_path || skill.slug == skill_path {
-                let skill_version = normalize_non_empty(skill.version.clone());
-                return Some(RemoteSkillDescriptor {
-                    repo_sign: repo_sign.clone(),
-                    skill_path: skill.path.clone(),
-                    skill_version,
-                });
-            }
-        }
-    }
-    None
-}
+

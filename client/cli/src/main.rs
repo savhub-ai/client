@@ -3155,46 +3155,20 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     lock.skills
         .retain(|s| !to_remove.iter().any(|r| r == s.slug.as_str()));
 
-    // Fetch with per-skill progress output
-    if !to_add.is_empty() {
-        eprintln!();
-    }
+    // Fetch with per-skill progress output (each skill appends a line)
     let batch_results = registry::fetch_skills_batch_with_progress(
         &to_add_pairs,
-        |idx, total, result| {
-            use std::io::Write as _;
+        |_idx, _total, result| {
             match result {
                 Ok(slug) => {
-                    eprint!(
-                        "\r\x1b[2K  \x1b[32m\u{2713}\x1b[0m [{}/{}] {slug}",
-                        idx + 1,
-                        total
-                    );
+                    eprintln!("  \x1b[32m\u{2713}\x1b[0m {slug}");
                 }
                 Err(label) => {
-                    eprint!(
-                        "\r\x1b[2K  \x1b[31m\u{2717}\x1b[0m [{}/{}] {label}",
-                        idx + 1,
-                        total
-                    );
+                    eprintln!("  \x1b[31m\u{2717}\x1b[0m {label}");
                 }
             }
-            let _ = std::io::stderr().flush();
         },
     )?;
-    if !to_add.is_empty() {
-        // Clear the progress line and show fetch summary
-        let ok_count = batch_results.len();
-        let fail_count = to_add.len() - ok_count;
-        if fail_count > 0 {
-            eprintln!(
-                "\r\x1b[2K  Fetched {ok_count}/{}, {fail_count} failed",
-                to_add.len()
-            );
-        } else {
-            eprintln!("\r\x1b[2K  Fetched {ok_count} skill(s)");
-        }
-    }
 
     // Copy fetched skills to AI client directories
     {
