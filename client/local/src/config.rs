@@ -101,9 +101,7 @@ pub fn get_config_dir() -> Result<PathBuf> {
     if let Some(path) = std::env::var_os("SAVHUB_CONFIG_DIR") {
         return Ok(PathBuf::from(path));
     }
-    let home = directories::UserDirs::new()
-        .map(|u| u.home_dir().to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("."));
+    let home = crate::clients::home_dir();
     Ok(home.join(".savhub"))
 }
 

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-use crate::clients::{global_skills_dir, home_dir};
+use crate::clients::home_dir;
 use crate::skills::{
     LockSkill, Lockfile, RepoSkillFolder, RepoSkillOrigin, SkillFolder, copy_skill_folder,
     find_repo_skill_folders, find_skill_folders, read_skill_version_info, repo_git_sha,
@@ -804,20 +804,7 @@ fn collect_skill_folders(workdir: &Path) -> Vec<SkillFolder> {
         }
     }
 
-    let global_dir = global_skills_dir();
-    if global_dir.is_dir() {
-        for folder in find_skill_folders(&global_dir).unwrap_or_default() {
-            if all_folders
-                .iter()
-                .any(|existing| existing.slug == folder.slug)
-            {
-                continue;
-            }
-            all_folders.push(folder);
-        }
-    }
-
-    // 3. Repo-fetched skills (from fetched.json)
+    // Repo-fetched skills (from fetched.json)
     let config_dir = crate::config::get_config_dir().unwrap_or_default();
     let lock = crate::skills::read_lockfile(&config_dir).unwrap_or_default();
     for flat in crate::skills::flatten_lockfile(&lock) {

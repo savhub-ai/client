@@ -11,9 +11,7 @@ use crate::i18n::Language;
 const DEFAULT_API_BASE: &str = "https://savhub.ai/api/v1";
 
 fn default_workdir() -> PathBuf {
-    directories::UserDirs::new()
-        .map(|u| u.home_dir().join(".savhub"))
-        .unwrap_or_else(|| PathBuf::from(".savhub"))
+    savhub_local::clients::home_dir().join(".savhub")
 }
 
 /// Read global config.

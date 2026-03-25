@@ -231,13 +231,6 @@ pub fn sync_skills_to_project_for_clients(
     Ok(results)
 }
 
-/// Returns the global skills directory for savhub.
-pub fn global_skills_dir() -> PathBuf {
-    directories::ProjectDirs::from("", "", "savhub")
-        .map(|d| d.data_dir().join("skills"))
-        .unwrap_or_else(|| PathBuf::from(".savhub").join("skills"))
-}
-
 /// Sync skills from a source directory to a detected AI client.
 pub fn sync_skills_to_client(
     client: &DetectedClient,

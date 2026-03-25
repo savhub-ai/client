@@ -121,7 +121,6 @@ fn GeneralPane() -> Element {
     let t = i18n::texts(*state.lang.read());
     let mut api_input = use_signal(|| state.api_base.read().clone());
     let mut token_input = use_signal(|| state.token.read().clone().unwrap_or_default());
-    let mut workdir_input = use_signal(|| state.workdir.read().display().to_string());
     let mut agents_mode = use_signal(|| {
         if state.agents.read().is_empty() {
             0u8
@@ -131,13 +130,11 @@ fn GeneralPane() -> Element {
     });
     let mut agents_input = use_signal(|| state.agents.read().join(", "));
     let mut save_status = use_signal(|| Option::<String>::None);
-    let mut browsing_workdir = use_signal(|| false);
 
     let save = move |_| {
         let t = i18n::texts(*state.lang.read());
         let base = api_input.read().clone();
         let token = token_input.read().clone();
-        let dir = workdir_input.read().clone();
 
         state.api_base.set(base.clone());
         if token.trim().is_empty() {
@@ -145,13 +142,6 @@ fn GeneralPane() -> Element {
         } else {
             state.token.set(Some(token.clone()));
         }
-        let path = std::path::PathBuf::from(&dir);
-        let saved_workdir = if path.is_dir() {
-            state.workdir.set(path.clone());
-            path
-        } else {
-            state.workdir.read().clone()
-        };
 
         let agents: Vec<String> = if *agents_mode.read() == 0 {
             Vec::new()
@@ -167,7 +157,8 @@ fn GeneralPane() -> Element {
 
         let lang_code = state.lang.read().code();
         let sec_level = *state.security_level.read();
-        save_config(&base, &token, lang_code, &saved_workdir, &agents, sec_level);
+        let workdir = state.workdir.read().clone();
+        save_config(&base, &token, lang_code, &workdir, &agents, sec_level);
         save_status.set(Some(t.settings_saved.to_string()));
     };
 
@@ -188,46 +179,7 @@ fn GeneralPane() -> Element {
     let registry_label = t.registry_url;
     let token_label = t.bearer_token;
     let token_hint = t.token_hint;
-    let workdir_label = t.data_directory;
-    let browse_label = t.browse;
-    let workdir_hint = t.workdir_hint;
     let save_label = t.save_settings;
-
-    let browse_for_workdir = move |_| {
-        if *browsing_workdir.read() {
-            return;
-        }
-
-        browsing_workdir.set(true);
-        let current_dir = std::path::PathBuf::from(workdir_input.read().as_str());
-        let dialog_title = browse_label.to_string();
-        let mut workdir_input_signal = workdir_input;
-        let mut browsing_workdir_signal = browsing_workdir;
-
-        spawn(async move {
-            let mut dialog = rfd::AsyncFileDialog::new().set_title(&dialog_title);
-
-            if current_dir.is_dir() {
-                dialog = dialog.set_directory(&current_dir);
-            } else if let Some(parent) = current_dir.parent().filter(|path| path.is_dir()) {
-                dialog = dialog.set_directory(parent);
-            }
-
-            if let Some(dir) = dialog.pick_folder().await {
-                workdir_input_signal.set(dir.path().display().to_string());
-            }
-
-            browsing_workdir_signal.set(false);
-        });
-    };
-
-    let is_browsing_workdir = *browsing_workdir.read();
-    let browse_button_cursor = if is_browsing_workdir {
-        "default"
-    } else {
-        "pointer"
-    };
-    let browse_button_opacity = if is_browsing_workdir { "0.7" } else { "1" };
 
     rsx! {
         div { style: "display: flex; flex-direction: column; gap: 20px; max-width: 520px;",
@@ -287,29 +239,6 @@ fn GeneralPane() -> Element {
                 }
                 p { style: "font-size: 11px; color: {Theme::MUTED}; margin-top: 4px;",
                     "{token_hint}"
-                }
-            }
-
-            // Workdir
-            div {
-                label { style: "display: block; font-size: 13px; font-weight: 600; color: {Theme::TEXT}; margin-bottom: 6px;",
-                    "{workdir_label}"
-                }
-                div { style: "display: flex; gap: 8px; align-items: stretch;",
-                    input {
-                        style: "flex: 1; min-width: 0; padding: 10px 14px; border: 1px solid {Theme::LINE}; border-radius: 6px; font-size: 14px; background: {Theme::PANEL}; color: {Theme::TEXT}; outline: none; font-family: monospace;",
-                        value: "{workdir_input}",
-                        oninput: move |e| workdir_input.set(e.value()),
-                    }
-                    button {
-                        style: "padding: 0 16px; background: {Theme::ACCENT_LIGHT}; color: {Theme::ACCENT_STRONG}; border: 1px solid rgba(68, 120, 52, 0.18); border-radius: 6px; font-size: 13px; font-weight: 600; cursor: {browse_button_cursor}; white-space: nowrap; opacity: {browse_button_opacity};",
-                        disabled: is_browsing_workdir,
-                        onclick: browse_for_workdir,
-                        "{browse_label}"
-                    }
-                }
-                p { style: "font-size: 11px; color: {Theme::MUTED}; margin-top: 4px;",
-                    "{workdir_hint}"
                 }
             }
 
@@ -785,9 +714,7 @@ pub fn save_config(
     agents: &[String],
     security_level: savhub_local::config::SecurityLevel,
 ) {
-    let default_workdir = directories::UserDirs::new()
-        .map(|u| u.home_dir().join(".savhub"))
-        .unwrap_or_else(|| std::path::PathBuf::from(".savhub"));
+    let default_workdir = savhub_local::clients::home_dir().join(".savhub");
 
     let config = savhub_local::config::GlobalConfig {
         rest_api: Some(savhub_local::config::RestApiConfig {
