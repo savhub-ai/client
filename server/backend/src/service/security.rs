@@ -150,17 +150,22 @@ pub struct SkillScanInput {
 /// Rebuild static-scan inputs from the cached repo checkout instead of
 /// collecting file contents during the index job itself.
 pub fn build_skill_scan_inputs_from_repo_checkout(
-    conn: &mut PgConnection,
+    pool: &PgPool,
     repo_id: Uuid,
     skills_in_flock: &[SkillRow],
 ) -> Vec<SkillScanInput> {
-    let repo = repos::table
-        .find(repo_id)
-        .select(RepoRow::as_select())
-        .first::<RepoRow>(conn)
-        .optional()
+    let repo = pool
+        .get()
         .ok()
-        .flatten();
+        .and_then(|mut conn| {
+            repos::table
+                .find(repo_id)
+                .select(RepoRow::as_select())
+                .first::<RepoRow>(&mut conn)
+                .optional()
+                .ok()
+                .flatten()
+        });
 
     let Some(repo) = repo else {
         return vec![];
@@ -561,13 +566,14 @@ pub fn run_static_scan_for_skill(pool: &PgPool, skill: &SkillRow) -> Result<bool
 // ---------------------------------------------------------------------------
 
 /// Atomically claim one skill with `security_status = 'checked'`.
-pub fn claim_ai_scan_task(conn: &mut PgConnection) -> Result<Option<SkillRow>, AppError> {
+pub fn claim_ai_scan_task(pool: &PgPool) -> Result<Option<SkillRow>, AppError> {
     // Check if AI is configured
     let config = &crate::state::app_state().config;
     if config.ai_provider.is_none() || config.ai_api_key.is_none() {
         return Ok(None);
     }
 
+    let mut conn = pool.get().map_err(|e| AppError::Internal(e.to_string()))?;
     diesel::sql_query(
         "UPDATE skills SET security_status = 'scanning', updated_at = NOW() \
          WHERE id = ( \
@@ -580,7 +586,7 @@ pub fn claim_ai_scan_task(conn: &mut PgConnection) -> Result<Option<SkillRow>, A
          ) \
          RETURNING *",
     )
-    .get_result::<SkillRow>(conn)
+    .get_result::<SkillRow>(&mut conn)
     .optional()
     .map_err(Into::into)
 }
