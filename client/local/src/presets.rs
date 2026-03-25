@@ -781,7 +781,10 @@ fn collect_skill_folders(workdir: &Path) -> Vec<SkillFolder> {
     for dir in installed_client_skills_dirs(workdir) {
         if dir.is_dir() {
             for folder in find_skill_folders(&dir).unwrap_or_default() {
-                if !all_folders.iter().any(|existing| existing.slug == folder.slug) {
+                if !all_folders
+                    .iter()
+                    .any(|existing| existing.slug == folder.slug)
+                {
                     all_folders.push(folder);
                 }
             }
