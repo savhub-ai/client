@@ -2971,24 +2971,30 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         }
     }
 
-    // ── Show plan ──
-    if !to_add.is_empty() {
-        println!("\nSkills to add:");
-        for s in &to_add {
-            println!("  \x1b[32m[+]\x1b[0m {s}");
-        }
-    }
-    if !to_remove.is_empty() {
-        println!("\nSkills to remove:");
-        for s in &to_remove {
-            println!("  \x1b[31m[-]\x1b[0m {s}");
-        }
-    }
-    if to_add.is_empty() && to_remove.is_empty() {
+    // ── Show plan (compact summary) ──
+    if !to_add.is_empty() || !to_remove.is_empty() {
+        println!(
+            "\nChanges: \x1b[32m+{}\x1b[0m skill(s) to add, \x1b[31m-{}\x1b[0m to remove",
+            to_add.len(),
+            to_remove.len()
+        );
+    } else {
         println!("\nNo skill changes, updating selector configuration only.");
     }
 
     if args.dry_run {
+        if !to_add.is_empty() {
+            println!("\nSkills to add:");
+            for s in &to_add {
+                println!("  \x1b[32m[+]\x1b[0m {s}");
+            }
+        }
+        if !to_remove.is_empty() {
+            println!("Skills to remove:");
+            for s in &to_remove {
+                println!("  \x1b[31m[-]\x1b[0m {s}");
+            }
+        }
         println!("\n\x1b[2m(dry-run: no changes made)\x1b[0m");
         return Ok(());
     }
@@ -3139,24 +3145,61 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         })
         .collect();
 
-    if !to_add.is_empty() {
-        eprintln!("Fetching {} skill(s)...", to_add.len());
-    }
     let to_add_pairs: Vec<(String, String)> = to_add
         .iter()
         .filter_map(|slug| skill_map.get(slug).cloned())
         .collect();
-    let batch_results = registry::fetch_skills_batch(&to_add_pairs)?;
 
     // Build lock entries: start from current, remove deleted, add new
     let mut lock = current_lock.clone();
     lock.skills
         .retain(|s| !to_remove.iter().any(|r| r == s.slug.as_str()));
 
-    // Group by repo for display
+    // Fetch with per-skill progress output
+    if !to_add.is_empty() {
+        eprintln!();
+    }
+    let batch_results = registry::fetch_skills_batch_with_progress(
+        &to_add_pairs,
+        |idx, total, result| {
+            use std::io::Write as _;
+            match result {
+                Ok(slug) => {
+                    eprint!(
+                        "\r\x1b[2K  \x1b[32m\u{2713}\x1b[0m [{}/{}] {slug}",
+                        idx + 1,
+                        total
+                    );
+                }
+                Err(label) => {
+                    eprint!(
+                        "\r\x1b[2K  \x1b[31m\u{2717}\x1b[0m [{}/{}] {label}",
+                        idx + 1,
+                        total
+                    );
+                }
+            }
+            let _ = std::io::stderr().flush();
+        },
+    )?;
+    if !to_add.is_empty() {
+        // Clear the progress line and show fetch summary
+        let ok_count = batch_results.len();
+        let fail_count = to_add.len() - ok_count;
+        if fail_count > 0 {
+            eprintln!(
+                "\r\x1b[2K  Fetched {ok_count}/{}, {fail_count} failed",
+                to_add.len()
+            );
+        } else {
+            eprintln!("\r\x1b[2K  Fetched {ok_count} skill(s)");
+        }
+    }
+
+    // Copy fetched skills to AI client directories
     {
         for info in &batch_results {
-            let mut copied_to_any_client = false;
+            let mut client_names = Vec::new();
             for client in &filtered_clients {
                 if !client.installed {
                     continue;
@@ -3174,14 +3217,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
                     );
                     continue;
                 }
-                copied_to_any_client = true;
-                println!(
-                    "  \x1b[32m\u{2713}\x1b[0m {} -> {rel_dir}/{}",
-                    info.slug, info.slug
-                );
-            }
-            if !copied_to_any_client {
-                println!("  \x1b[32m\u{2713}\x1b[0m {} (cached)", info.slug);
+                client_names.push(client.kind.as_str());
             }
 
             // Record in savhub.lock

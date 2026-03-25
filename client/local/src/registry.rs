@@ -605,6 +605,17 @@ pub fn list_repo_flock_refs(repo_url: &str) -> Result<Vec<crate::selectors::Sele
 }
 
 pub fn fetch_skills_batch(repo_paths: &[(String, String)]) -> Result<Vec<FetchedSkillInfo>> {
+    fetch_skills_batch_with_progress(repo_paths, |_, _, _| {})
+}
+
+/// Fetch skills in batch with a per-skill progress callback.
+///
+/// `on_progress(index, total, result)` is called after each skill is processed.
+/// `result` is `Ok(slug)` on success or `Err(message)` on failure.
+pub fn fetch_skills_batch_with_progress(
+    repo_paths: &[(String, String)],
+    mut on_progress: impl FnMut(usize, usize, Result<&str, &str>),
+) -> Result<Vec<FetchedSkillInfo>> {
     let mut seen = BTreeSet::new();
     let mut requested: Vec<(String, String)> = Vec::new();
     for (repo_url, skill_path) in repo_paths {
@@ -618,24 +629,25 @@ pub fn fetch_skills_batch(repo_paths: &[(String, String)]) -> Result<Vec<Fetched
 
     let config_dir = get_config_dir()?;
     let mut results = Vec::new();
+    let total = requested.len();
 
-    for (repo_url, skill_path) in &requested {
+    for (idx, (repo_url, skill_path)) in requested.iter().enumerate() {
         let label = format!("{repo_url}/{skill_path}");
         let repo = match remote_repo_detail(repo_url)? {
             Some(value) => value,
             None => {
-                eprintln!("  \x1b[33m!\x1b[0m {label}: repo not found in registry API");
+                on_progress(idx, total, Err(&label));
                 continue;
             }
         };
         // Find the skill across all flocks in this repo
         let descriptor = find_skill_descriptor_in_repo(&repo, skill_path);
         let Some(descriptor) = descriptor else {
-            eprintln!("  \x1b[33m!\x1b[0m {label}: skill not found in registry API");
+            on_progress(idx, total, Err(&label));
             continue;
         };
         let Some(git_sha) = normalize_non_empty(repo.document.git_sha.clone()) else {
-            eprintln!("  \x1b[33m!\x1b[0m {label}: repo has no git_sha",);
+            on_progress(idx, total, Err(&label));
             continue;
         };
         let spec = RemoteSkillFetchSpec {
@@ -647,8 +659,8 @@ pub fn fetch_skills_batch(repo_paths: &[(String, String)]) -> Result<Vec<Fetched
         };
         let local_path = match cache_remote_skill_from_repo(&spec) {
             Ok(path) => path,
-            Err(error) => {
-                eprintln!("  \x1b[33m!\x1b[0m {label}: {error}");
+            Err(_error) => {
+                on_progress(idx, total, Err(&label));
                 continue;
             }
         };
@@ -680,6 +692,8 @@ pub fn fetch_skills_batch(repo_paths: &[(String, String)]) -> Result<Vec<Fetched
                 git_sha: Some(git_sha.clone()),
             },
         );
+
+        on_progress(idx, total, Ok(&slug));
 
         results.push(FetchedSkillInfo {
             slug,
