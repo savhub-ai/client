@@ -46,10 +46,6 @@
         {
           "git_url": "https://github.com/salvo-rs/salvo-skills.git",
           "description": "Official Salvo web framework skills"
-        },
-        {
-          "git_url": "https://github.com/actionbook/rust-skills.git",
-          "description": "Rust Developer AI Assistance"
         }
       ],
       "priority": 20,
@@ -593,7 +589,7 @@
       "flocks": [],
       "repos": [
         {
-          "git_url": "https://github.com/laravel/claude-code.git",
+          "git_url": "https://github.com/laravel/agent-skills.git",
           "description": "Official Laravel agent skills for Claude Code and Cursor"
         },
         {
@@ -727,12 +723,8 @@
       "flocks": [],
       "repos": [
         {
-          "git_url": "https://github.com/phodal/makepad-skills.git",
-          "description": "Makepad UI framework skills for DSL, widgets, shaders, animations, layout"
-        },
-        {
-          "git_url": "https://github.com/actionbook/rust-skills.git",
-          "description": "Rust Developer AI Assistance"
+          "git_url": "https://github.com/ZhangHanDong/makepad-skills.git",
+          "description": "Agent Skills for Makepad"
         }
       ],
       "priority": 25,
