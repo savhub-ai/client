@@ -4,8 +4,8 @@ use dioxus::prelude::*;
 use savhub_local::selectors::{
     MatchMode, SelectorDefinition, SelectorRule, clone_official_as_custom, create_selector,
     delete_selector, generate_selector_id, normalize_repo_url_to_sign,
-    read_official_selector_prefs, read_official_selectors_store, read_selectors_store,
-    set_all_official_selectors_enabled, set_official_selector_enabled, set_selector_enabled,
+    read_official_selectors_store, read_selector_prefs, read_selectors_store,
+    set_all_custom_selectors_enabled, set_all_official_selectors_enabled, set_selector_enabled,
     update_selector,
 };
 
@@ -35,7 +35,6 @@ struct SelectorForm {
     flocks: BTreeSet<String>,
     repos: BTreeSet<String>,
     priority: i32,
-    enabled: bool,
     error: String,
 }
 
@@ -53,7 +52,6 @@ impl SelectorForm {
             flocks: BTreeSet::new(),
             repos: BTreeSet::new(),
             priority: 0,
-            enabled: true,
             error: String::new(),
         }
     }
@@ -110,7 +108,6 @@ impl SelectorForm {
             flocks: d.flocks.iter().map(|s| s.to_string()).collect(),
             repos: d.repos.iter().map(|r| r.git_url.clone()).collect(),
             priority: d.priority,
-            enabled: d.enabled,
             error: String::new(),
         }
     }
@@ -174,7 +171,6 @@ impl SelectorForm {
                 .map(|url| savhub_local::selectors::SelectorRepo::from_url(url))
                 .collect(),
             priority: self.priority,
-            enabled: self.enabled,
             match_count: 0,
         }
     }
@@ -205,13 +201,13 @@ pub fn SelectorsPage() -> Element {
 
     // ── Official selectors ──
     let official_store = read_official_selectors_store().unwrap_or_default();
-    let official_prefs = read_official_selector_prefs().unwrap_or_default();
+    let selector_prefs = read_selector_prefs().unwrap_or_default();
     let official_count = official_store.selectors.len();
     let _all_official_disabled = official_count > 0
         && official_store
             .selectors
             .iter()
-            .all(|e| official_prefs.disabled.contains(&e.selector.sign));
+            .all(|e| selector_prefs.disabled.contains(&e.selector.sign));
 
     // ── Custom selectors ──
     let mut custom_selectors = read_selectors_store().unwrap_or_default().selectors;
@@ -303,24 +299,30 @@ pub fn SelectorsPage() -> Element {
                         }
                     }
                 }
-                // Enable All / Disable All (only in Official tab)
-                if *show_official.read() {
-                    button {
-                        style: "padding: 4px 10px; font-size: 11px; border: 1px solid {Theme::LINE}; border-radius: 6px; background: {Theme::PANEL}; color: {Theme::ACCENT_STRONG}; cursor: pointer;",
-                        onclick: move |_| {
+                // Enable All / Disable All
+                button {
+                    style: "padding: 4px 10px; font-size: 11px; border: 1px solid {Theme::LINE}; border-radius: 6px; background: {Theme::PANEL}; color: {Theme::ACCENT_STRONG}; cursor: pointer;",
+                    onclick: move |_| {
+                        if *show_official.read() {
                             let _ = set_all_official_selectors_enabled(true);
-                            version += 1;
-                        },
-                        "{t.selectors_enable_all}"
-                    }
-                    button {
-                        style: "padding: 4px 10px; font-size: 11px; border: 1px solid {Theme::LINE}; border-radius: 6px; background: {Theme::PANEL}; color: {Theme::MUTED}; cursor: pointer;",
-                        onclick: move |_| {
+                        } else {
+                            let _ = set_all_custom_selectors_enabled(true);
+                        }
+                        version += 1;
+                    },
+                    "{t.selectors_enable_all}"
+                }
+                button {
+                    style: "padding: 4px 10px; font-size: 11px; border: 1px solid {Theme::LINE}; border-radius: 6px; background: {Theme::PANEL}; color: {Theme::MUTED}; cursor: pointer;",
+                    onclick: move |_| {
+                        if *show_official.read() {
                             let _ = set_all_official_selectors_enabled(false);
-                            version += 1;
-                        },
-                        "{t.selectors_disable_all}"
-                    }
+                        } else {
+                            let _ = set_all_custom_selectors_enabled(false);
+                        }
+                        version += 1;
+                    },
+                    "{t.selectors_disable_all}"
                 }
                 div { style: "flex: 1; max-width: 200px; margin-left: auto;",
                     input {
@@ -394,7 +396,7 @@ pub fn SelectorsPage() -> Element {
                     } else {
                         div { style: "{container_style}",
                             for entry in official_filtered.iter() {
-                                { let is_disabled = official_prefs.disabled.contains(&entry.selector.sign);
+                                { let is_disabled = selector_prefs.disabled.contains(&entry.selector.sign);
                                 let selector = entry.selector.clone();
                                 let tags = entry.tags.clone();
                                 rsx! {
@@ -405,7 +407,7 @@ pub fn SelectorsPage() -> Element {
                                     card_mode: is_cards,
                                     is_official: true,
                                     tags: tags,
-                                    effective_enabled: !is_disabled,
+                                    is_enabled: !is_disabled,
                                     on_click: {
                                         let selector = selector.clone();
                                         move |_| detail_selector.set(Some(selector.clone()))
@@ -425,7 +427,7 @@ pub fn SelectorsPage() -> Element {
                                     on_toggle: {
                                         let sign = selector.sign.clone();
                                         move |_| {
-                                            let _ = set_official_selector_enabled(&sign, is_disabled);
+                                            let _ = set_selector_enabled(&sign, is_disabled);
                                             version += 1;
                                         }
                                     },
@@ -450,12 +452,15 @@ pub fn SelectorsPage() -> Element {
                     } else {
                         div { style: "{container_style}",
                             for selector in custom_filtered.iter() {
+                                { let is_disabled = selector_prefs.disabled.contains(&selector.sign);
+                                rsx! {
                                 SelectorRow {
                                     key: "{selector.sign}",
                                     selector: selector.clone(),
                                     form_is_open: form_is_open,
                                     card_mode: is_cards,
                                     is_official: false,
+                                    is_enabled: !is_disabled,
                                     on_click: {
                                         let selector = selector.clone();
                                         move |_| detail_selector.set(Some(selector.clone()))
@@ -473,11 +478,11 @@ pub fn SelectorsPage() -> Element {
                                         move |_| { let _ = delete_selector(&id); version += 1; }
                                     },
                                     on_toggle: {
-                                        let id = selector.sign.clone();
-                                        let enabled = selector.enabled;
-                                        move |_| { let _ = set_selector_enabled(&id, !enabled); version += 1; }
+                                        let sign = selector.sign.clone();
+                                        move |_| { let _ = set_selector_enabled(&sign, is_disabled); version += 1; }
                                     },
                                 }
+                                }}
                             }
                         }
                     }
@@ -514,9 +519,7 @@ fn SelectorRow(
     #[props(default = false)] card_mode: bool,
     #[props(default = false)] is_official: bool,
     #[props(default = Vec::new())] tags: Vec<String>,
-    /// For official selectors the definition always has `enabled: true`, but
-    /// the user may have disabled it via prefs.  This prop carries the effective state.
-    #[props(default = None)] effective_enabled: Option<bool>,
+    #[props(default = true)] is_enabled: bool,
     on_click: EventHandler<()>,
     on_template: EventHandler<()>,
     on_edit: EventHandler<()>,
@@ -531,7 +534,6 @@ fn SelectorRow(
     let flocks_count = selector.flocks.len();
     let repos_count = selector.repos.len();
     let match_count = selector.match_count;
-    let is_enabled = effective_enabled.unwrap_or(selector.enabled);
     let opacity = if is_enabled { "1" } else { "0.5" };
     let toggle_label = if is_enabled {
         t.selectors_disable

@@ -431,12 +431,15 @@ struct GlobalOpts {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     if let Some(profile) = &cli.profile {
-        let resolved = if profile.starts_with("~") {
-            directories::UserDirs::new()
-                .map(|d| d.home_dir().join(profile.strip_prefix("~").unwrap_or(profile)))
-                .unwrap_or_else(|| profile.clone())
-        } else {
+        let resolved = if profile.is_absolute() {
             profile.clone()
+        } else {
+            // Resolve relative paths (including ~ and bare names like .savhub-dev)
+            // against the user's home directory, never the project working directory.
+            let stripped = profile.strip_prefix("~").unwrap_or(profile);
+            directories::UserDirs::new()
+                .map(|d| d.home_dir().join(stripped))
+                .unwrap_or_else(|| profile.clone())
         };
         // SAFETY: called before any threads are spawned.
         unsafe { std::env::set_var("SAVHUB_CONFIG_DIR", resolved) };
@@ -2313,36 +2316,56 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
 
     match command {
         SelectorCommand::List => {
-            let store = read_selectors_store()?;
-            if store.selectors.is_empty() {
-                println!("No selectors configured.");
+            let official_store = savhub_local::selectors::read_official_selectors_store()?;
+            let custom_store = read_selectors_store()?;
+            let prefs = savhub_local::selectors::read_selector_prefs().unwrap_or_default();
+
+            let mut all_selectors: Vec<savhub_local::selectors::SelectorDefinition> = Vec::new();
+            for entry in &official_store.selectors {
+                all_selectors.push(entry.selector.clone());
+            }
+            all_selectors.extend(custom_store.selectors.clone());
+
+            if all_selectors.is_empty() {
+                println!("No selectors configured. Run `savhub apply` to sync official selectors.");
                 return Ok(());
             }
-            for d in &store.selectors {
+            for d in &all_selectors {
                 let pri = if d.priority != 0 {
                     format!(" [P{}]", d.priority)
                 } else {
                     String::new()
                 };
-                let status = if d.enabled { "+" } else { "-" };
+                let enabled = !prefs.disabled.contains(&d.sign);
+                let status = if enabled { "+" } else { "-" };
+                let official_tag = if savhub_local::selectors::is_official_selector(&d.sign) {
+                    " (official)"
+                } else {
+                    ""
+                };
                 let rules = d.rules.len();
                 let skills = d.skills.len();
                 println!(
-                    "  [{status}] {:<24} scope={:<10} {}r {}s{}",
-                    d.name, d.folder_scope, rules, skills, pri
+                    "  [{status}] {:<24} scope={:<10} {}r {}s{}{}",
+                    d.name, d.folder_scope, rules, skills, pri, official_tag
                 );
                 if !d.description.is_empty() {
                     let desc: String = d.description.chars().take(80).collect();
                     println!("      {desc}");
                 }
             }
-            println!("\n{} selector(s)", store.selectors.len());
+            println!("\n{} selector(s)", all_selectors.len());
         }
         SelectorCommand::Show(args) => {
-            let store = read_selectors_store()?;
+            let official_store = savhub_local::selectors::read_official_selectors_store()?;
+            let custom_store = read_selectors_store()?;
+            let mut all: Vec<savhub_local::selectors::SelectorDefinition> = Vec::new();
+            for entry in &official_store.selectors {
+                all.push(entry.selector.clone());
+            }
+            all.extend(custom_store.selectors.clone());
             let query = args.name.to_lowercase();
-            let found: Vec<_> = store
-                .selectors
+            let found: Vec<_> = all
                 .iter()
                 .filter(|d| {
                     d.name.to_lowercase().contains(&query) || d.sign.to_lowercase().contains(&query)
@@ -2358,7 +2381,8 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
             for d in &found {
                 println!("Name:       {}", d.name);
                 println!("ID:         {}", d.sign);
-                println!("Enabled:    {}", if d.enabled { "yes" } else { "no" });
+                let enabled = savhub_local::selectors::is_selector_enabled(&d.sign);
+                println!("Enabled:    {}", if enabled { "yes" } else { "no" });
                 if !d.description.is_empty() {
                     println!("Desc:       {}", d.description);
                 }
@@ -2649,6 +2673,13 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     clean(&mut args.skip_flocks);
 
     let workdir = &opts.workdir;
+
+    // Sync official selectors from the server before scanning
+    eprintln!("Syncing official selectors...");
+    if let Err(e) = savhub_local::selectors::sync_official_selectors(&opts.registry) {
+        eprintln!("Warning: could not sync official selectors: {e}");
+    }
+
     eprintln!("Scanning project...");
     let result = run_selectors(workdir)?;
 

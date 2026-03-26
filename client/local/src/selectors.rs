@@ -215,16 +215,9 @@ pub struct SelectorDefinition {
     /// contribute conflicting skills, the selector with the higher priority wins.
     #[serde(default)]
     pub priority: i32,
-    /// Whether this selector is enabled. Only enabled selectors are evaluated.
-    #[serde(default = "default_enabled")]
-    pub enabled: bool,
     /// How many times this selector has been matched by `savhub apply`.
     #[serde(default)]
     pub match_count: i64,
-}
-
-fn default_enabled() -> bool {
-    true
 }
 
 fn default_folder_scope() -> String {
@@ -239,10 +232,10 @@ pub struct SelectorsStore {
 }
 
 // ---------------------------------------------------------------------------
-// Official (preset) selectors
+// Official selectors
 // ---------------------------------------------------------------------------
 
-/// A single official preset entry: the selector definition plus metadata.
+/// A single official selector entry: the selector definition plus metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OfficialSelectorEntry {
     pub selector: SelectorDefinition,
@@ -261,9 +254,9 @@ pub struct OfficialSelectorsStore {
     pub selectors: Vec<OfficialSelectorEntry>,
 }
 
-/// User preference overlay — tracks which official selectors are disabled.
+/// User preference overlay — tracks which selectors (official or custom) are disabled.
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub struct OfficialSelectorPrefs {
+pub struct SelectorPrefs {
     pub version: u8,
     pub disabled: std::collections::BTreeSet<String>,
 }
@@ -763,41 +756,29 @@ pub fn parse_expression(input: &str, max_rules: usize) -> Result<RuleExpression>
 // Persistence
 // ---------------------------------------------------------------------------
 
-fn selectors_path() -> Result<PathBuf> {
-    Ok(get_config_dir()?.join("selectors.json"))
+fn selectors_dir() -> Result<PathBuf> {
+    Ok(get_config_dir()?.join("selectors"))
+}
+
+fn custom_selectors_path() -> Result<PathBuf> {
+    Ok(selectors_dir()?.join("custom.json"))
 }
 
 pub fn read_selectors_store() -> Result<SelectorsStore> {
-    let path = selectors_path()?;
+    let path = custom_selectors_path()?;
     if let Ok(raw) = fs::read_to_string(&path) {
-        let mut store: SelectorsStore = serde_json::from_str(&raw)
+        let store: SelectorsStore = serde_json::from_str(&raw)
             .with_context(|| format!("invalid selectors at {}", path.display()))?;
-
-        // One-time migration: move builtin-* selectors to the official store.
-        if store.selectors.iter().any(|d| d.sign.starts_with("builtin-")) {
-            let _ = migrate_builtin_to_official();
-            // Re-read after migration (builtin entries removed).
-            if let Ok(raw2) = fs::read_to_string(&path) {
-                if let Ok(s) = serde_json::from_str(&raw2) {
-                    store = s;
-                }
-            }
-        }
-
         return Ok(store);
     }
-    // First run: create an empty custom store.
-    // Official selectors will be provided by sync_official_selectors().
-    let store = SelectorsStore {
+    Ok(SelectorsStore {
         version: 1,
         selectors: Vec::new(),
-    };
-    let _ = write_selectors_store(&store);
-    Ok(store)
+    })
 }
 
 pub fn write_selectors_store(store: &SelectorsStore) -> Result<()> {
-    let path = selectors_path()?;
+    let path = custom_selectors_path()?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -847,15 +828,14 @@ pub fn update_selector(selector: SelectorDefinition) -> Result<()> {
     write_selectors_store(&store)
 }
 
-pub fn set_selector_enabled(id: &str, enabled: bool) -> Result<()> {
-    let mut store = read_selectors_store()?;
-    let selector = store
-        .selectors
-        .iter_mut()
-        .find(|d| d.sign == id)
-        .with_context(|| format!("selector '{id}' not found"))?;
-    selector.enabled = enabled;
-    write_selectors_store(&store)
+pub fn set_selector_enabled(sign: &str, enabled: bool) -> Result<()> {
+    let mut prefs = read_selector_prefs()?;
+    if enabled {
+        prefs.disabled.remove(sign);
+    } else {
+        prefs.disabled.insert(sign.to_string());
+    }
+    write_selector_prefs(&prefs)
 }
 
 pub fn delete_selector(id: &str) -> Result<()> {
@@ -873,11 +853,11 @@ pub fn delete_selector(id: &str) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 fn official_selectors_path() -> Result<PathBuf> {
-    Ok(get_config_dir()?.join("official_selectors.json"))
+    Ok(selectors_dir()?.join("official.json"))
 }
 
-fn official_selector_prefs_path() -> Result<PathBuf> {
-    Ok(get_config_dir()?.join("official_selector_prefs.json"))
+fn selector_prefs_path() -> Result<PathBuf> {
+    Ok(selectors_dir()?.join("prefs.json"))
 }
 
 /// Read the official selectors store (empty if file does not exist yet).
@@ -903,20 +883,20 @@ pub fn write_official_selectors_store(store: &OfficialSelectorsStore) -> Result<
     Ok(())
 }
 
-/// Read user preferences for official selectors (empty if file does not exist).
-pub fn read_official_selector_prefs() -> Result<OfficialSelectorPrefs> {
-    let path = official_selector_prefs_path()?;
+/// Read selector preferences (empty if file does not exist).
+pub fn read_selector_prefs() -> Result<SelectorPrefs> {
+    let path = selector_prefs_path()?;
     if let Ok(raw) = fs::read_to_string(&path) {
-        let prefs: OfficialSelectorPrefs = serde_json::from_str(&raw)
-            .with_context(|| format!("invalid official selector prefs at {}", path.display()))?;
+        let prefs: SelectorPrefs = serde_json::from_str(&raw)
+            .with_context(|| format!("invalid selector prefs at {}", path.display()))?;
         return Ok(prefs);
     }
-    Ok(OfficialSelectorPrefs::default())
+    Ok(SelectorPrefs::default())
 }
 
-/// Write user preferences for official selectors.
-pub fn write_official_selector_prefs(prefs: &OfficialSelectorPrefs) -> Result<()> {
-    let path = official_selector_prefs_path()?;
+/// Write selector preferences.
+pub fn write_selector_prefs(prefs: &SelectorPrefs) -> Result<()> {
+    let path = selector_prefs_path()?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -926,31 +906,40 @@ pub fn write_official_selector_prefs(prefs: &OfficialSelectorPrefs) -> Result<()
     Ok(())
 }
 
-/// Toggle the enabled state of a single official selector.
-pub fn set_official_selector_enabled(sign: &str, enabled: bool) -> Result<()> {
-    let mut prefs = read_official_selector_prefs()?;
-    if enabled {
-        prefs.disabled.remove(sign);
-    } else {
-        prefs.disabled.insert(sign.to_string());
-    }
-    write_official_selector_prefs(&prefs)
+/// Check whether a selector is enabled (i.e. not in the disabled set).
+pub fn is_selector_enabled(sign: &str) -> bool {
+    read_selector_prefs()
+        .map(|p| !p.disabled.contains(sign))
+        .unwrap_or(true)
 }
 
 /// Enable or disable ALL official selectors at once.
 pub fn set_all_official_selectors_enabled(enabled: bool) -> Result<()> {
-    let mut prefs = read_official_selector_prefs()?;
+    let mut prefs = read_selector_prefs()?;
     if enabled {
-        prefs.disabled.clear();
+        // Only remove official signs from disabled set, keep custom disabled intact.
+        prefs.disabled.retain(|s| !is_official_selector(s));
     } else {
         let store = read_official_selectors_store()?;
-        prefs.disabled = store
-            .selectors
-            .iter()
-            .map(|e| e.selector.sign.clone())
-            .collect();
+        for entry in &store.selectors {
+            prefs.disabled.insert(entry.selector.sign.clone());
+        }
     }
-    write_official_selector_prefs(&prefs)
+    write_selector_prefs(&prefs)
+}
+
+pub fn set_all_custom_selectors_enabled(enabled: bool) -> Result<()> {
+    let mut prefs = read_selector_prefs()?;
+    if enabled {
+        // Only remove custom signs from disabled set, keep official disabled intact.
+        prefs.disabled.retain(|s| is_official_selector(s));
+    } else {
+        let store = read_selectors_store()?;
+        for entry in &store.selectors {
+            prefs.disabled.insert(entry.sign.clone());
+        }
+    }
+    write_selector_prefs(&prefs)
 }
 
 /// Clone an official selector as a new custom selector.
@@ -999,7 +988,7 @@ pub fn sync_official_selectors(api_base: &str) -> Result<bool> {
         .timeout(std::time::Duration::from_secs(30))
         .build()?;
 
-    let url = format!("{}/api/v1/official_selectors", api_base.trim_end_matches('/'));
+    let url = format!("{}/official_selectors", api_base.trim_end_matches('/'));
     let mut req = client.get(&url);
     if let Some(etag) = &current.etag {
         req = req.header("If-None-Match", etag.as_str());
@@ -1044,49 +1033,6 @@ pub fn sync_official_selectors(api_base: &str) -> Result<bool> {
     Ok(true)
 }
 
-/// Migrate old `builtin-*` selectors from `selectors.json` to the official
-/// store.  Called once on first run after upgrade.
-pub fn migrate_builtin_to_official() -> Result<()> {
-    let official_path = official_selectors_path()?;
-    if official_path.exists() {
-        // Already migrated (or synced from server).
-        return Ok(());
-    }
-
-    let mut custom_store = read_selectors_store()?;
-    let mut prefs = read_official_selector_prefs()?;
-
-    // Record which builtin selectors the user had disabled.
-    for sel in &custom_store.selectors {
-        if sel.sign.starts_with("builtin-") && !sel.enabled {
-            // Map builtin sign to official sign: "builtin-rust-project" → "official:rust"
-            // We can't do this mapping perfectly, so we just track the builtin sign.
-            prefs.disabled.insert(sel.sign.clone());
-        }
-    }
-
-    // Remove builtin entries from custom store.
-    let before = custom_store.selectors.len();
-    custom_store.selectors.retain(|d| !d.sign.starts_with("builtin-"));
-    if custom_store.selectors.len() != before {
-        write_selectors_store(&custom_store)?;
-    }
-
-    // Persist prefs if we recorded any disabled builtins.
-    if !prefs.disabled.is_empty() {
-        write_official_selector_prefs(&prefs)?;
-    }
-
-    // Write an empty official store as a migration marker.
-    // The real data will arrive on the next server sync.
-    let store = OfficialSelectorsStore {
-        version: 1,
-        ..Default::default()
-    };
-    write_official_selectors_store(&store)?;
-    Ok(())
-}
-
 /// Update match counts after `savhub apply`:
 /// - Increment for selectors that matched
 /// - Decrement for selectors that previously matched but no longer do
@@ -1107,10 +1053,6 @@ pub fn update_match_counts(matched_names: &[String], unmatched_names: &[String])
     }
     Ok(())
 }
-
-// ---------------------------------------------------------------------------
-// Default selectors (seeded on first use)
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Selector execution engine
@@ -1145,25 +1087,21 @@ pub struct SelectorRunResult {
 /// When multiple selectors contribute a skill with the same slug,
 /// the higher-priority selector wins.
 pub fn run_selectors(project_root: &Path) -> Result<SelectorRunResult> {
-    // Merge official selectors (applying user prefs) with custom selectors.
+    // Merge official selectors with custom selectors, applying user prefs.
     let official_store = read_official_selectors_store()?;
-    let prefs = read_official_selector_prefs()?;
+    let prefs = read_selector_prefs()?;
     let custom_store = read_selectors_store()?;
 
     let mut all_selectors: Vec<SelectorDefinition> = Vec::new();
     for entry in &official_store.selectors {
-        let mut sel = entry.selector.clone();
-        if prefs.disabled.contains(&sel.sign) {
-            sel.enabled = false;
-        }
-        all_selectors.push(sel);
+        all_selectors.push(entry.selector.clone());
     }
     all_selectors.extend(custom_store.selectors.clone());
 
     let mut matched: Vec<SelectorMatch> = Vec::new();
 
     for selector in &all_selectors {
-        if !selector.enabled {
+        if prefs.disabled.contains(&selector.sign) {
             continue;
         }
         if selector.evaluate(project_root) {
@@ -1250,7 +1188,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             skills: vec![],
             flocks: vec![],
             repos: vec![],
-            enabled: true,
+
             priority: 10,
             match_count: 0,
         },
@@ -1277,7 +1215,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             skills: vec![],
             flocks: vec![],
             repos: vec![],
-            enabled: true,
+
             priority: 10,
             match_count: 0,
         },
@@ -1295,7 +1233,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             skills: vec![],
             flocks: vec![],
             repos: vec![],
-            enabled: true,
+
             priority: 10,
             match_count: 0,
         },
@@ -1321,7 +1259,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             skills: vec![],
             flocks: vec![],
             repos: vec![],
-            enabled: true,
+
             priority: 10,
             match_count: 0,
         },
@@ -1349,7 +1287,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
                 path: "salvo-skills".to_string(),
             }],
             repos: vec![],
-            enabled: true,
+
             priority: 20,
             match_count: 0,
         },
@@ -1373,7 +1311,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             skills: vec![],
             flocks: vec![],
             repos: vec![],
-            enabled: true,
+
             priority: 20,
             match_count: 0,
         },
@@ -1397,7 +1335,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             skills: vec![],
             flocks: vec![],
             repos: vec![],
-            enabled: true,
+
             priority: 20,
             match_count: 0,
         },
@@ -1421,7 +1359,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             skills: vec![],
             flocks: vec![],
             repos: vec![],
-            enabled: true,
+
             priority: 20,
             match_count: 0,
         },
@@ -1448,7 +1386,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             repos: vec![SelectorRepo::from_url(
                 "github.com/ZhangHanDong/makepad-skills",
             )],
-            enabled: true,
+
             priority: 20,
             match_count: 0,
         },
@@ -1472,7 +1410,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             skills: vec![],
             flocks: vec![],
             repos: vec![],
-            enabled: true,
+
             priority: 10,
             match_count: 0,
         },
@@ -1497,7 +1435,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             skills: vec![],
             flocks: vec![],
             repos: vec![],
-            enabled: true,
+
             priority: 20,
             match_count: 0,
         },
@@ -1522,7 +1460,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             skills: vec![],
             flocks: vec![],
             repos: vec![],
-            enabled: true,
+
             priority: 20,
             match_count: 0,
         },
@@ -1547,7 +1485,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             skills: vec![],
             flocks: vec![],
             repos: vec![],
-            enabled: true,
+
             priority: 20,
             match_count: 0,
         },
@@ -1572,7 +1510,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             skills: vec![],
             flocks: vec![],
             repos: vec![],
-            enabled: true,
+
             priority: 20,
             match_count: 0,
         },
@@ -1597,7 +1535,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             skills: vec![],
             flocks: vec![],
             repos: vec![],
-            enabled: true,
+
             priority: 20,
             match_count: 0,
         },
@@ -1622,7 +1560,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             skills: vec![],
             flocks: vec![],
             repos: vec![],
-            enabled: true,
+
             priority: 20,
             match_count: 0,
         },
@@ -1649,7 +1587,7 @@ fn seed_default_selectors(store: &mut SelectorsStore) {
             skills: vec![],
             flocks: vec![],
             repos: vec![],
-            enabled: true,
+
             priority: 20,
             match_count: 0,
         },

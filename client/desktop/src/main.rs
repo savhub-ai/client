@@ -128,12 +128,15 @@ fn main() {
 
     let cli = DesktopCli::parse();
     if let Some(profile) = &cli.profile {
-        let resolved = if profile.starts_with("~") {
-            directories::UserDirs::new()
-                .map(|d| d.home_dir().join(profile.strip_prefix("~").unwrap_or(profile)))
-                .unwrap_or_else(|| profile.clone())
-        } else {
+        let resolved = if profile.is_absolute() {
             profile.clone()
+        } else {
+            // Resolve relative paths (including ~ and bare names like .savhub-dev)
+            // against the user's home directory, never the project working directory.
+            let stripped = profile.strip_prefix("~").unwrap_or(profile);
+            directories::UserDirs::new()
+                .map(|d| d.home_dir().join(stripped))
+                .unwrap_or_else(|| profile.clone())
         };
         // SAFETY: called before any threads are spawned.
         unsafe { std::env::set_var("SAVHUB_CONFIG_DIR", resolved) };
