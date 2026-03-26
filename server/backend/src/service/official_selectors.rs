@@ -1,16 +1,16 @@
 use once_cell::sync::Lazy;
 use sha2::{Digest, Sha256};
-use shared::PresetsResponse;
+use shared::OfficialSelectorsResponse;
 
-/// Embedded preset selectors (compiled into the binary from the repo root
-/// `presets.json`).  The server serves this payload verbatim, with an ETag
+/// Embedded official selectors (compiled into the binary from the repo root.
+/// The server serves this payload verbatim, with an ETag
 /// derived from the SHA-256 hash so clients can do conditional fetches.
-static PRESETS: Lazy<PresetPayload> = Lazy::new(|| {
-    let raw = include_str!("../../../../presets.json");
+static OFFICIAL_SELECTORS: Lazy<SelectorPayload> = Lazy::new(|| {
+    let raw = include_str!("../../../../official_selectors.json");
     let parsed: serde_json::Value =
-        serde_json::from_str(raw).expect("presets.json is not valid JSON");
-    let presets_array = parsed
-        .get("presets")
+        serde_json::from_str(raw).expect("official_selectors.json is not valid JSON");
+    let selectors_array = parsed
+        .get("selectors")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
@@ -23,27 +23,30 @@ static PRESETS: Lazy<PresetPayload> = Lazy::new(|| {
     let hex: String = hash[..16].iter().map(|b| format!("{b:02x}")).collect();
     let etag = format!("\"sha256-{hex}\"");
 
-    let response = PresetsResponse {
+    let response = OfficialSelectorsResponse {
         version,
         etag: Some(etag.clone()),
-        presets: presets_array,
+        selectors: selectors_array,
     };
-    let json = serde_json::to_string(&response).expect("failed to serialise presets response");
+    let json =
+        serde_json::to_string(&response).expect("failed to serialise official selectors response");
 
-    PresetPayload { json, etag }
+    SelectorPayload { json, etag }
 });
 
-struct PresetPayload {
+struct SelectorPayload {
     json: String,
     etag: String,
 }
 
-/// Return the cached preset selectors JSON response.
+/// Return the cached official selectors JSON response.
 ///
 /// If the caller supplies an `if_none_match` value that matches the current
 /// ETag, this returns `None` (the caller should send 304 Not Modified).
-pub fn get_presets(if_none_match: Option<&str>) -> Option<(&'static str, &'static str)> {
-    let payload = &*PRESETS;
+pub fn get_official_selectors(
+    if_none_match: Option<&str>,
+) -> Option<(&'static str, &'static str)> {
+    let payload = &*OFFICIAL_SELECTORS;
     if let Some(inm) = if_none_match {
         if inm == payload.etag || inm.trim_matches('"') == payload.etag.trim_matches('"') {
             return None;

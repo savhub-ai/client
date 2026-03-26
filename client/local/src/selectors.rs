@@ -268,9 +268,9 @@ pub struct OfficialSelectorPrefs {
     pub disabled: std::collections::BTreeSet<String>,
 }
 
-/// Returns `true` when `sign` belongs to an official (preset) selector.
+/// Returns `true` when `sign` belongs to an official selector.
 pub fn is_official_selector(sign: &str) -> bool {
-    sign.starts_with("preset:")
+    sign.starts_with("official:")
 }
 
 // ---------------------------------------------------------------------------
@@ -973,9 +973,9 @@ pub fn clone_official_as_custom(sign: &str) -> Result<SelectorDefinition> {
     Ok(cloned)
 }
 
-/// Convert a preset JSON value (from server API / presets.json) into an
+/// Convert an official selector JSON value into an
 /// `OfficialSelectorEntry`.
-pub fn preset_value_to_entry(value: &serde_json::Value) -> Result<OfficialSelectorEntry> {
+pub fn selector_value_to_entry(value: &serde_json::Value) -> Result<OfficialSelectorEntry> {
     // Extract tags before parsing the selector (tags are not part of SelectorDefinition)
     let tags: Vec<String> = value
         .get("tags")
@@ -985,7 +985,7 @@ pub fn preset_value_to_entry(value: &serde_json::Value) -> Result<OfficialSelect
     // Parse the selector definition from the same value.
     // We strip fields unknown to SelectorDefinition so deserialization succeeds.
     let selector: SelectorDefinition = serde_json::from_value(value.clone())
-        .context("failed to parse preset into SelectorDefinition")?;
+        .context("failed to parse selector into SelectorDefinition")?;
 
     Ok(OfficialSelectorEntry { selector, tags })
 }
@@ -999,7 +999,7 @@ pub fn sync_official_selectors(api_base: &str) -> Result<bool> {
         .timeout(std::time::Duration::from_secs(30))
         .build()?;
 
-    let url = format!("{}/api/v1/presets", api_base.trim_end_matches('/'));
+    let url = format!("{}/api/v1/official_selectors", api_base.trim_end_matches('/'));
     let mut req = client.get(&url);
     if let Some(etag) = &current.etag {
         req = req.header("If-None-Match", etag.as_str());
@@ -1010,7 +1010,7 @@ pub fn sync_official_selectors(api_base: &str) -> Result<bool> {
         return Ok(false);
     }
     if !resp.status().is_success() {
-        bail!("presets API returned {}", resp.status());
+        bail!("official selectors API returned {}", resp.status());
     }
 
     let body: serde_json::Value = resp.json()?;
@@ -1018,18 +1018,18 @@ pub fn sync_official_selectors(api_base: &str) -> Result<bool> {
         .get("etag")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
-    let presets = body
-        .get("presets")
+    let selectors = body
+        .get("selectors")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
 
     let mut entries = Vec::new();
-    for preset in &presets {
-        match preset_value_to_entry(preset) {
+    for selector in &selectors {
+        match selector_value_to_entry(selector) {
             Ok(entry) => entries.push(entry),
             Err(err) => {
-                eprintln!("[savhub] skipping invalid preset: {err}");
+                eprintln!("[savhub] skipping invalid selector: {err}");
             }
         }
     }
@@ -1059,7 +1059,7 @@ pub fn migrate_builtin_to_official() -> Result<()> {
     // Record which builtin selectors the user had disabled.
     for sel in &custom_store.selectors {
         if sel.sign.starts_with("builtin-") && !sel.enabled {
-            // Map builtin sign to preset sign: "builtin-rust-project" → "preset:rust"
+            // Map builtin sign to official sign: "builtin-rust-project" → "official:rust"
             // We can't do this mapping perfectly, so we just track the builtin sign.
             prefs.disabled.insert(sel.sign.clone());
         }

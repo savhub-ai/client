@@ -383,13 +383,13 @@ fn select_best_skill(
     if best_score > 0 { best_item } else { None }
 }
 
-/// Fetch official preset selectors from the server API.
+/// Fetch official selectors from the server API.
 #[allow(dead_code)]
-pub async fn fetch_official_presets(
+pub async fn fetch_official_selectors(
     client: &ApiClient,
-) -> Result<savhub_shared::PresetsResponse, String> {
+) -> Result<savhub_shared::OfficialSelectorsResponse, String> {
     client
-        .get_json::<savhub_shared::PresetsResponse>("/presets")
+        .get_json::<savhub_shared::OfficialSelectorsResponse>("/official_selectors")
         .await
         .map_err(|e| e.to_string())
 }

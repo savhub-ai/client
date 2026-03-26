@@ -15,7 +15,7 @@ use clap::{ArgAction, Args, Parser, Subcommand};
 use dialoguer::Confirm;
 use savhub_local::api::ApiClient;
 use savhub_local::config::{read_global_config, write_global_config};
-use savhub_local::presets::{
+use savhub_local::project::{
     disable_project_skill, enable_repo_skill_in_project, read_project_added_skills,
     write_project_added_skills,
 };
@@ -909,7 +909,7 @@ async fn cmd_fetch(opts: &GlobalOpts, args: FetchArgs) -> Result<()> {
 
 fn cmd_update(opts: &GlobalOpts, _args: UpdateArgs) -> Result<()> {
     // Read the project lock (savhub.lock) to find current skills + git_sha
-    let project_lock = savhub_local::presets::read_project_lockfile(&opts.workdir)?;
+    let project_lock = savhub_local::project::read_project_lockfile(&opts.workdir)?;
     if project_lock.skills.is_empty() {
         println!("No project skills in savhub.lock.");
         return Ok(());
@@ -986,7 +986,7 @@ fn cmd_update(opts: &GlobalOpts, _args: UpdateArgs) -> Result<()> {
         let short_new = &latest_sha[..12.min(latest_sha.len())];
         println!("  {slug}: {short_old} -> {short_new}");
 
-        new_skills.push(savhub_local::presets::ProjectLockedSkill {
+        new_skills.push(savhub_local::project::ProjectLockedSkill {
             repo: skill.repo.clone(),
             path: skill.path.clone(),
             slug: slug.clone(),
@@ -996,9 +996,9 @@ fn cmd_update(opts: &GlobalOpts, _args: UpdateArgs) -> Result<()> {
         updated += 1;
     }
 
-    savhub_local::presets::write_project_lockfile(
+    savhub_local::project::write_project_lockfile(
         &opts.workdir,
-        &savhub_local::presets::ProjectLockFile {
+        &savhub_local::project::ProjectLockFile {
             version: 1,
             skills: new_skills,
         },
@@ -1019,7 +1019,7 @@ fn cmd_fetched_prune(config_dir: &Path, lockfile: &savhub_shared::Lockfile) -> R
     for project in &projects.projects {
         let project_path = PathBuf::from(&project.path);
         let project_lock =
-            savhub_local::presets::read_project_lockfile(&project_path).unwrap_or_default();
+            savhub_local::project::read_project_lockfile(&project_path).unwrap_or_default();
         for skill in &project_lock.skills {
             if let (Some(repo), Some(path)) = (skill.repo.as_deref(), skill.path.as_deref())
                 && !repo.is_empty()
@@ -2658,7 +2658,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         );
 
         // Read savhub.lock for fetched skills
-        let lockfile = savhub_local::presets::read_project_lockfile(workdir)?;
+        let lockfile = savhub_local::project::read_project_lockfile(workdir)?;
 
         if !lockfile.skills.is_empty() {
             println!("\nSkills to remove:");
@@ -2697,15 +2697,15 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         }
 
         // Clear selectors.matched, flocks.matched (leave manual_* untouched)
-        let mut config = savhub_local::presets::read_project_config(workdir)?;
+        let mut config = savhub_local::project::read_project_config(workdir)?;
         config.selectors.matched.clear();
         config.flocks.matched.clear();
-        savhub_local::presets::write_project_config_force(workdir, &config)?;
+        savhub_local::project::write_project_config_force(workdir, &config)?;
 
         // Clear savhub.lock (empty but file still exists)
-        savhub_local::presets::write_project_lockfile_force(
+        savhub_local::project::write_project_lockfile_force(
             workdir,
-            &savhub_local::presets::ProjectLockFile::default(),
+            &savhub_local::project::ProjectLockFile::default(),
         )?;
 
         if lockfile.skills.is_empty() {
@@ -2720,7 +2720,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         return Ok(());
     }
 
-    let existing_config = savhub_local::presets::read_project_config(workdir)?;
+    let existing_config = savhub_local::project::read_project_config(workdir)?;
 
     // ── Collect all matched items ──
     let matched_selector_names: Vec<String> = result
@@ -2919,7 +2919,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     }
 
     // ── Filter out skipped skills (existing config + CLI --skip-skills) ──
-    let config = savhub_local::presets::read_project_config(workdir)?;
+    let config = savhub_local::project::read_project_config(workdir)?;
     let mut skipped = config.skills.manual_skipped.clone();
     for s in &args.skip_skills {
         if !s.is_empty() && !skipped.contains(s) {
@@ -2934,7 +2934,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         .collect();
 
     // ── Compute diff against current lockfile ──
-    let current_lock = savhub_local::presets::read_project_lockfile(workdir)?;
+    let current_lock = savhub_local::project::read_project_lockfile(workdir)?;
     let current_locked_slugs: BTreeSet<String> = current_lock
         .skills
         .iter()
@@ -3020,7 +3020,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
 
     // ── Apply: update savhub.toml selectors (replace, not accumulate) ──
     {
-        let mut cfg = savhub_local::presets::read_project_config(workdir)?;
+        let mut cfg = savhub_local::project::read_project_config(workdir)?;
         cfg.selectors.matched = result
             .matched
             .iter()
@@ -3031,7 +3031,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
                     .filter(|f| selected_flocks.contains(&f.to_string()))
                     .cloned()
                     .collect();
-                savhub_local::presets::ProjectSelectorMatch {
+                savhub_local::project::ProjectSelectorMatch {
                     selector: m.selector.name.clone(),
                     flocks: selector_flocks,
                     skills: m.skills.clone(),
@@ -3075,7 +3075,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             if !s.is_empty() && !cfg.skills.manual_added.iter().any(|e| e.path == *s) {
                 cfg.skills
                     .manual_added
-                    .push(savhub_local::presets::ProjectAddedSkill {
+                    .push(savhub_local::project::ProjectAddedSkill {
                         path: s.rsplit('/').next().unwrap_or(s).to_string(),
                         slug: s.rsplit('/').next().unwrap_or(s).to_string(),
                         repo: None,
@@ -3101,7 +3101,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             }
         }
 
-        savhub_local::presets::write_project_config_force(workdir, &cfg)?;
+        savhub_local::project::write_project_config_force(workdir, &cfg)?;
     }
 
     // ── Update selector match counts ──
@@ -3204,7 +3204,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
             if !lock.skills.iter().any(|s| s.slug.as_str() == info.slug) {
                 let vi = savhub_local::skills::read_skill_version_info(&info.local_path)
                     .unwrap_or_default();
-                lock.skills.push(savhub_local::presets::ProjectLockedSkill {
+                lock.skills.push(savhub_local::project::ProjectLockedSkill {
                     repo: Some(info.repo_sign.clone()),
                     path: Some(info.skill_path.clone()),
                     slug: info.slug.clone(),
@@ -3217,7 +3217,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
     }
 
     // Always create savhub.lock (even if empty)
-    savhub_local::presets::write_project_lockfile_force(workdir, &lock)?;
+    savhub_local::project::write_project_lockfile_force(workdir, &lock)?;
 
     // Register this project so desktop can see it
     let _ = savhub_local::config::add_project(&workdir.display().to_string());

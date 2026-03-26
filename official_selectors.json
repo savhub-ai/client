@@ -1,10 +1,10 @@
 {
-  "$schema": "presets-schema",
+  "$schema": "selectors-schema",
   "version": 1,
-  "description": "Built-in selector presets that detect project types and recommend skill repos",
-  "presets": [
+  "description": "Official selectors that detect project types and recommend skill repos",
+  "selectors": [
     {
-      "sign": "preset:rust",
+      "sign": "official:rust",
       "name": "Rust Project",
       "description": "Detects Rust projects by Cargo.toml presence",
       "folder_scope": ".",
@@ -30,7 +30,7 @@
       "tags": ["rust", "cargo", "systems"]
     },
     {
-      "sign": "preset:rust-salvo",
+      "sign": "official:rust-salvo",
       "name": "Rust Salvo Web Framework",
       "description": "Detects Rust projects using the Salvo web framework",
       "folder_scope": ".",
@@ -57,7 +57,7 @@
       "tags": ["rust", "salvo", "web"]
     },
     {
-      "sign": "preset:python",
+      "sign": "official:python",
       "name": "Python Project",
       "description": "Detects Python projects by pyproject.toml, setup.py, or requirements.txt",
       "folder_scope": ".",
@@ -86,7 +86,7 @@
       "tags": ["python", "pip"]
     },
     {
-      "sign": "preset:python-django",
+      "sign": "official:python-django",
       "name": "Django Project",
       "description": "Detects Django projects by manage.py and settings",
       "folder_scope": ".",
@@ -113,7 +113,7 @@
       "tags": ["python", "django", "web"]
     },
     {
-      "sign": "preset:python-fastapi",
+      "sign": "official:python-fastapi",
       "name": "FastAPI Project",
       "description": "Detects FastAPI projects by dependency references",
       "folder_scope": ".",
@@ -137,7 +137,7 @@
       "tags": ["python", "fastapi", "web", "api"]
     },
     {
-      "sign": "preset:python-ml",
+      "sign": "official:python-ml",
       "name": "Python ML / Data Science",
       "description": "Detects machine learning and data science Python projects",
       "folder_scope": ".",
@@ -166,7 +166,7 @@
       "tags": ["python", "ml", "data-science", "pytorch", "tensorflow"]
     },
     {
-      "sign": "preset:typescript-node",
+      "sign": "official:typescript-node",
       "name": "TypeScript / Node.js Project",
       "description": "Detects TypeScript and Node.js projects",
       "folder_scope": ".",
@@ -193,7 +193,7 @@
       "tags": ["typescript", "nodejs", "javascript"]
     },
     {
-      "sign": "preset:javascript-node",
+      "sign": "official:javascript-node",
       "name": "JavaScript / Node.js Project",
       "description": "Detects JavaScript Node.js projects without TypeScript",
       "folder_scope": ".",
@@ -220,7 +220,7 @@
       "tags": ["javascript", "nodejs"]
     },
     {
-      "sign": "preset:nextjs",
+      "sign": "official:nextjs",
       "name": "Next.js Project",
       "description": "Detects Next.js projects by next.config file",
       "folder_scope": ".",
@@ -248,7 +248,7 @@
       "tags": ["nextjs", "react", "typescript", "web"]
     },
     {
-      "sign": "preset:react",
+      "sign": "official:react",
       "name": "React Project",
       "description": "Detects React projects by dependency in package.json",
       "folder_scope": ".",
@@ -275,7 +275,7 @@
       "tags": ["react", "javascript", "typescript", "frontend"]
     },
     {
-      "sign": "preset:vue",
+      "sign": "official:vue",
       "name": "Vue.js Project",
       "description": "Detects Vue.js projects",
       "folder_scope": ".",
@@ -302,7 +302,7 @@
       "tags": ["vue", "javascript", "typescript", "frontend"]
     },
     {
-      "sign": "preset:svelte",
+      "sign": "official:svelte",
       "name": "Svelte / SvelteKit Project",
       "description": "Detects Svelte/SvelteKit projects",
       "folder_scope": ".",
@@ -330,7 +330,7 @@
       "tags": ["svelte", "sveltekit", "javascript", "frontend"]
     },
     {
-      "sign": "preset:go",
+      "sign": "official:go",
       "name": "Go Project",
       "description": "Detects Go projects by go.mod presence",
       "folder_scope": ".",
@@ -356,7 +356,7 @@
       "tags": ["go", "golang"]
     },
     {
-      "sign": "preset:java-maven",
+      "sign": "official:java-maven",
       "name": "Java Maven Project",
       "description": "Detects Java projects using Maven",
       "folder_scope": ".",
@@ -382,7 +382,7 @@
       "tags": ["java", "maven"]
     },
     {
-      "sign": "preset:java-gradle",
+      "sign": "official:java-gradle",
       "name": "Java / Kotlin Gradle Project",
       "description": "Detects Java or Kotlin projects using Gradle",
       "folder_scope": ".",
@@ -409,7 +409,7 @@
       "tags": ["java", "kotlin", "gradle"]
     },
     {
-      "sign": "preset:spring-boot",
+      "sign": "official:spring-boot",
       "name": "Spring Boot Project",
       "description": "Detects Spring Boot projects",
       "folder_scope": ".",
@@ -439,7 +439,7 @@
       "tags": ["java", "spring-boot", "web"]
     },
     {
-      "sign": "preset:swift-ios",
+      "sign": "official:swift-ios",
       "name": "Swift / iOS Project",
       "description": "Detects Swift and iOS projects",
       "folder_scope": ".",
@@ -468,7 +468,7 @@
       "tags": ["swift", "ios", "macos", "apple", "xcode"]
     },
     {
-      "sign": "preset:flutter",
+      "sign": "official:flutter",
       "name": "Flutter / Dart Project",
       "description": "Detects Flutter and Dart projects",
       "folder_scope": ".",
@@ -495,7 +495,7 @@
       "tags": ["flutter", "dart", "mobile", "cross-platform"]
     },
     {
-      "sign": "preset:cpp",
+      "sign": "official:cpp",
       "name": "C++ Project",
       "description": "Detects C++ projects using CMake or Makefile",
       "folder_scope": ".",
@@ -524,7 +524,7 @@
       "tags": ["cpp", "c++", "cmake", "systems"]
     },
     {
-      "sign": "preset:ruby-rails",
+      "sign": "official:ruby-rails",
       "name": "Ruby on Rails Project",
       "description": "Detects Ruby on Rails projects",
       "folder_scope": ".",
@@ -556,7 +556,7 @@
       "tags": ["ruby", "rails", "web"]
     },
     {
-      "sign": "preset:ruby",
+      "sign": "official:ruby",
       "name": "Ruby Project",
       "description": "Detects Ruby projects by Gemfile",
       "folder_scope": ".",
@@ -578,7 +578,7 @@
       "tags": ["ruby"]
     },
     {
-      "sign": "preset:php-laravel",
+      "sign": "official:php-laravel",
       "name": "Laravel (PHP) Project",
       "description": "Detects Laravel PHP projects",
       "folder_scope": ".",
@@ -610,7 +610,7 @@
       "tags": ["php", "laravel", "web"]
     },
     {
-      "sign": "preset:php",
+      "sign": "official:php",
       "name": "PHP Project",
       "description": "Detects PHP projects by composer.json",
       "folder_scope": ".",
@@ -636,7 +636,7 @@
       "tags": ["php", "composer"]
     },
     {
-      "sign": "preset:devops-docker",
+      "sign": "official:devops-docker",
       "name": "Docker / Containerized Project",
       "description": "Detects projects with Docker configuration",
       "folder_scope": ".",
@@ -665,7 +665,7 @@
       "tags": ["docker", "devops", "containers"]
     },
     {
-      "sign": "preset:devops-kubernetes",
+      "sign": "official:devops-kubernetes",
       "name": "Kubernetes Project",
       "description": "Detects Kubernetes manifests and Helm charts",
       "folder_scope": ".",
@@ -690,7 +690,7 @@
       "tags": ["kubernetes", "k8s", "helm", "devops"]
     },
     {
-      "sign": "preset:devops-terraform",
+      "sign": "official:devops-terraform",
       "name": "Terraform / IaC Project",
       "description": "Detects Terraform infrastructure-as-code projects",
       "folder_scope": ".",
@@ -713,7 +713,7 @@
       "tags": ["terraform", "iac", "devops", "infrastructure"]
     },
     {
-      "sign": "preset:makepad",
+      "sign": "official:makepad",
       "name": "Makepad UI Project",
       "description": "Detects Makepad Rust UI framework projects",
       "folder_scope": ".",
@@ -740,7 +740,7 @@
       "tags": ["rust", "makepad", "ui", "cross-platform"]
     },
     {
-      "sign": "preset:general-fullstack",
+      "sign": "official:general-fullstack",
       "name": "General Full-Stack Skills",
       "description": "Universal skills applicable to any software project",
       "folder_scope": ".",
