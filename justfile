@@ -28,15 +28,15 @@ frontend-build:
 
 # Run desktop app (debug)
 desktop:
-    cargo run -p savhub-desktop -- --profile ~/.savhub-dev
+    cargo run -p savhub-desktop -- --profile .savhub-dev
 
 # Run desktop app (release)
 desktop-release:
-    cargo run -p savhub-desktop --release -- --profile ~/.savhub-dev
+    cargo run -p savhub-desktop --release -- --profile .savhub-dev
 
 # Run CLI command
 cli *ARGS:
-    cargo run -p savhub -- --profile ~/.savhub-dev {{ARGS}}
+    cargo run -p savhub -- --profile .savhub-dev {{ARGS}}
 
 # Check entire workspace
 check:

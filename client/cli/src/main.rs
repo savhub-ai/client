@@ -431,8 +431,15 @@ struct GlobalOpts {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     if let Some(profile) = &cli.profile {
+        let resolved = if profile.starts_with("~") {
+            directories::UserDirs::new()
+                .map(|d| d.home_dir().join(profile.strip_prefix("~").unwrap_or(profile)))
+                .unwrap_or_else(|| profile.clone())
+        } else {
+            profile.clone()
+        };
         // SAFETY: called before any threads are spawned.
-        unsafe { std::env::set_var("SAVHUB_CONFIG_DIR", profile) };
+        unsafe { std::env::set_var("SAVHUB_CONFIG_DIR", resolved) };
     }
 
     // Clean up backup binary from a previous self-update

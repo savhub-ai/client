@@ -383,6 +383,17 @@ fn select_best_skill(
     if best_score > 0 { best_item } else { None }
 }
 
+/// Fetch official preset selectors from the server API.
+#[allow(dead_code)]
+pub async fn fetch_official_presets(
+    client: &ApiClient,
+) -> Result<savhub_shared::PresetsResponse, String> {
+    client
+        .get_json::<savhub_shared::PresetsResponse>("/presets")
+        .await
+        .map_err(|e| e.to_string())
+}
+
 fn score_skill_match(item: &SkillListItem, lookup: &RemoteSkillLookup) -> i32 {
     let item_slug = item.slug.to_ascii_lowercase();
     let item_path = item.path.to_ascii_lowercase();

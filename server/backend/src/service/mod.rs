@@ -10,6 +10,7 @@ pub mod github_auth;
 pub mod index_jobs;
 pub mod index_rules;
 pub mod index_rules_admin;
+pub mod presets;
 pub mod interactions;
 pub mod llm_eval;
 pub mod reports;

@@ -17,7 +17,7 @@ use crate::auth::{AuthContext, optional_auth, require_auth};
 use crate::error::AppError;
 use crate::service::{
     admin, blocks, browse_history, catalog, github_auth, index_jobs, index_rules_admin,
-    interactions, reports, repos, security, site_admins, users,
+    interactions, presets, reports, repos, security, site_admins, users,
 };
 use crate::state::app_state;
 
@@ -71,6 +71,7 @@ pub fn router() -> Router {
                     .get(get_doc_page)
                     .push(Router::with_path("{**path}").get(get_doc_page)),
             )
+            .push(Router::with_path("presets").get(get_official_selectors))
             // ── Group 2: Login required ────────────────────────────────
             .push(
                 Router::new()
@@ -189,6 +190,34 @@ async fn health(res: &mut Response) {
             res.render(Json(
                 json!({ "status": "unhealthy", "error": "database unavailable" }),
             ));
+        }
+    }
+}
+
+#[handler]
+async fn get_official_selectors(req: &mut Request, res: &mut Response) {
+    let if_none_match = req
+        .headers()
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok());
+    match presets::get_official_selectors(if_none_match) {
+        Some((json, etag)) => {
+            res.headers_mut().insert(
+                header::ETAG,
+                HeaderValue::from_str(etag).unwrap_or_else(|_| HeaderValue::from_static("")),
+            );
+            res.headers_mut().insert(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("public, max-age=3600"),
+            );
+            res.headers_mut().insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/json"),
+            );
+            res.write_body(json.to_string()).ok();
+        }
+        None => {
+            res.status_code(StatusCode::NOT_MODIFIED);
         }
     }
 }

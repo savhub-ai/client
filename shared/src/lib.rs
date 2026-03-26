@@ -359,6 +359,21 @@ pub struct UpdateIndexRuleRequest {
     pub description: Option<String>,
 }
 
+// -- Preset Selectors --
+
+/// Response from `GET /api/v1/presets`.
+///
+/// Each preset is a `serde_json::Value` matching the `SelectorDefinition`
+/// shape plus optional `tags`.  The client-local library converts these into
+/// typed `OfficialSelectorEntry` values after fetching.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PresetsResponse {
+    pub version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub etag: Option<String>,
+    pub presets: Vec<Value>,
+}
+
 // -- Documentation --
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

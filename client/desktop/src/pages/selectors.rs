@@ -2,8 +2,10 @@ use std::collections::BTreeSet;
 
 use dioxus::prelude::*;
 use savhub_local::selectors::{
-    MatchMode, SelectorDefinition, SelectorRule, create_selector, delete_selector,
-    generate_selector_id, normalize_repo_url_to_sign, read_selectors_store, set_selector_enabled,
+    MatchMode, SelectorDefinition, SelectorRule, clone_official_as_custom, create_selector,
+    delete_selector, generate_selector_id, normalize_repo_url_to_sign,
+    read_official_selector_prefs, read_official_selectors_store, read_selectors_store,
+    set_all_official_selectors_enabled, set_official_selector_enabled, set_selector_enabled,
     update_selector,
 };
 
@@ -196,22 +198,29 @@ pub fn SelectorsPage() -> Element {
     let mut search = use_signal(String::new);
     let mut detail_selector = use_signal(|| Option::<SelectorDefinition>::None);
     let mut view_mode = use_signal(|| ViewMode::List);
-    let mut sort_mode = use_signal(|| 0u8); // 0=name, 1=priority, 2=match_count
+    let mut syncing = use_signal(|| false);
+    let mut show_official = use_signal(|| true); // true=Official, false=Custom
 
     let _ = *version.read();
 
-    let mut all_selectors = read_selectors_store().unwrap_or_default().selectors;
-    let current_sort = *sort_mode.read();
-    match current_sort {
-        1 => all_selectors.sort_by(|a, b| b.priority.cmp(&a.priority)),
-        2 => all_selectors.sort_by(|a, b| b.match_count.cmp(&a.match_count)),
-        _ => all_selectors.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
-    }
+    // ── Official selectors ──
+    let official_store = read_official_selectors_store().unwrap_or_default();
+    let official_prefs = read_official_selector_prefs().unwrap_or_default();
+    let official_count = official_store.selectors.len();
+    let _all_official_disabled = official_count > 0
+        && official_store
+            .selectors
+            .iter()
+            .all(|e| official_prefs.disabled.contains(&e.selector.sign));
+
+    // ── Custom selectors ──
+    let mut custom_selectors = read_selectors_store().unwrap_or_default().selectors;
+    custom_selectors.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     let search_val = search.read().to_lowercase();
-    let selectors: Vec<_> = if search_val.is_empty() {
-        all_selectors
+    let custom_filtered: Vec<_> = if search_val.is_empty() {
+        custom_selectors
     } else {
-        all_selectors
+        custom_selectors
             .into_iter()
             .filter(|d| {
                 d.name.to_lowercase().contains(&search_val)
@@ -220,7 +229,52 @@ pub fn SelectorsPage() -> Element {
             })
             .collect()
     };
+    let official_filtered: Vec<_> = if search_val.is_empty() {
+        official_store.selectors.clone()
+    } else {
+        official_store
+            .selectors
+            .iter()
+            .filter(|e| {
+                e.selector.name.to_lowercase().contains(&search_val)
+                    || e.selector.description.to_lowercase().contains(&search_val)
+                    || e.tags.iter().any(|tag| tag.to_lowercase().contains(&search_val))
+            })
+            .cloned()
+            .collect()
+    };
     let form_is_open = form.read().is_some();
+    let is_cards = *view_mode.read() == ViewMode::Cards;
+    let container_style = if is_cards {
+        "display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px;"
+    } else {
+        "display: flex; flex-direction: column; gap: 10px;"
+    };
+
+    // ── Sync on mount (if stale or never synced) ──
+    let mut sync_triggered = use_signal(|| false);
+    if !*sync_triggered.read() {
+        sync_triggered.set(true);
+        let should_sync = official_store.last_synced_at.as_deref().map_or(true, |ts| {
+            chrono::DateTime::parse_from_rfc3339(ts)
+                .map(|dt| {
+                    let diff = chrono::Utc::now().signed_duration_since(dt.with_timezone(&chrono::Utc));
+                    diff.num_hours() >= 24
+                })
+                .unwrap_or(true)
+        });
+        if should_sync {
+            syncing.set(true);
+            let api_base = state.api_base.read().clone();
+            spawn(async move {
+                let _ = tokio::task::spawn_blocking(move || {
+                    savhub_local::selectors::sync_official_selectors(&api_base)
+                }).await;
+                syncing.set(false);
+                version += 1;
+            });
+        }
+    }
 
     rsx! {
         div { style: "display: flex; flex-direction: column; height: 100%; position: relative;",
@@ -229,29 +283,74 @@ pub fn SelectorsPage() -> Element {
                 h1 { style: "font-size: 18px; font-weight: 700; color: {Theme::TEXT}; white-space: nowrap;",
                     "{t.selectors_title}"
                 }
-                div { style: "flex: 1; max-width: 320px; margin-left: auto;",
+                // Official / Custom toggle
+                {
+                    let is_official = *show_official.read();
+                    let active_style = format!("padding: 5px 14px; font-size: 12px; font-weight: 600; border: none; border-radius: 6px; cursor: pointer; background: {}; color: white;", Theme::ACCENT);
+                    let inactive_style = format!("padding: 5px 14px; font-size: 12px; font-weight: 600; border: none; border-radius: 6px; cursor: pointer; background: transparent; color: {};", Theme::MUTED);
+                    rsx! {
+                        div { style: "display: inline-flex; align-items: center; background: {Theme::PANEL}; border: 1px solid {Theme::LINE}; border-radius: 8px; padding: 2px;",
+                            button {
+                                style: if is_official { "{active_style}" } else { "{inactive_style}" },
+                                onclick: move |_| show_official.set(true),
+                                "{t.selectors_official_title}"
+                            }
+                            button {
+                                style: if !is_official { "{active_style}" } else { "{inactive_style}" },
+                                onclick: move |_| show_official.set(false),
+                                "{t.selectors_custom_title}"
+                            }
+                        }
+                    }
+                }
+                // Enable All / Disable All (only in Official tab)
+                if *show_official.read() {
+                    button {
+                        style: "padding: 4px 10px; font-size: 11px; border: 1px solid {Theme::LINE}; border-radius: 6px; background: {Theme::PANEL}; color: {Theme::ACCENT_STRONG}; cursor: pointer;",
+                        onclick: move |_| {
+                            let _ = set_all_official_selectors_enabled(true);
+                            version += 1;
+                        },
+                        "{t.selectors_enable_all}"
+                    }
+                    button {
+                        style: "padding: 4px 10px; font-size: 11px; border: 1px solid {Theme::LINE}; border-radius: 6px; background: {Theme::PANEL}; color: {Theme::MUTED}; cursor: pointer;",
+                        onclick: move |_| {
+                            let _ = set_all_official_selectors_enabled(false);
+                            version += 1;
+                        },
+                        "{t.selectors_disable_all}"
+                    }
+                }
+                div { style: "flex: 1; max-width: 200px; margin-left: auto;",
                     input {
                         r#type: "text", value: "{search}", placeholder: "{t.selectors_search_skills}",
                         style: "width: 100%; padding: 6px 12px; border: 1px solid {Theme::LINE}; border-radius: 6px; font-size: 13px; background: {Theme::PANEL}; color: {Theme::TEXT}; outline: none;",
                         oninput: move |e: Event<FormData>| search.set(e.value().to_string()),
                     }
                 }
-                // Sort
-                select {
-                    style: "padding: 6px 8px; border: 1px solid {Theme::LINE}; border-radius: 8px; font-size: 12px; background: {Theme::PANEL}; color: {Theme::TEXT}; cursor: pointer; outline: none;",
-                    value: "{current_sort}",
-                    onchange: move |e: Event<FormData>| {
-                        sort_mode.set(e.value().parse::<u8>().unwrap_or(0));
-                    },
-                    option { value: "0", "Name" }
-                    option { value: "1", "Priority" }
-                    option { value: "2", "Usage" }
-                }
-                // Refresh
+                // Refresh (syncs with server when on Official tab)
                 button {
-                    title: "Refresh",
+                    title: if *show_official.read() { "Sync with server" } else { "Refresh" },
                     style: "display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex-shrink: 0; background: {Theme::PANEL}; color: {Theme::ACCENT_STRONG}; border: 1px solid {Theme::LINE}; border-radius: 8px; cursor: pointer; font-size: 16px;",
-                    onclick: move |_| version += 1,
+                    onclick: {
+                        let api_base = state.api_base.read().clone();
+                        move |_| {
+                            if *show_official.read() {
+                                syncing.set(true);
+                                let api_base = api_base.clone();
+                                spawn(async move {
+                                    let _ = tokio::task::spawn_blocking(move || {
+                                        savhub_local::selectors::sync_official_selectors(&api_base)
+                                    }).await;
+                                    syncing.set(false);
+                                    version += 1;
+                                });
+                            } else {
+                                version += 1;
+                            }
+                        }
+                    },
                     crate::icons::LucideIcon { icon: crate::icons::Icon::RefreshCw, size: 14 }
                 }
                 // View toggle
@@ -262,48 +361,101 @@ pub fn SelectorsPage() -> Element {
                         view_mode.set(if cur == ViewMode::Cards { ViewMode::List } else { ViewMode::Cards });
                     },
                 }
-                // Create
-                button {
-                    disabled: form_is_open,
-                    style: "padding: 7px 16px; background: {Theme::ACCENT}; color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap;",
-                    onclick: move |_| {
-                        form_key += 1;
-                        form.set(Some(SelectorForm::blank()));
-                    },
-                    "+ Create"
+                // Create custom selector (only in Custom tab)
+                if !*show_official.read() {
+                    button {
+                        disabled: form_is_open,
+                        style: "padding: 7px 16px; background: {Theme::ACCENT}; color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap;",
+                        onclick: move |_| {
+                            form_key += 1;
+                            form.set(Some(SelectorForm::blank()));
+                        },
+                        "+ Create"
+                    }
                 }
             }
 
             // ── Scrollable content ──
             div { style: "flex: 1; overflow-y: auto; padding: 16px 32px 32px;",
-            div { style: "max-width: 1180px; display: flex; flex-direction: column; gap: 8px;",
+            div { style: "max-width: 1180px; display: flex; flex-direction: column; gap: 20px;",
 
-                // ── Selector list ──────────────────────────────────
-                if selectors.is_empty() {
-                    div { style: "background: {Theme::PANEL}; border: 1px dashed {Theme::LINE}; border-radius: 12px; padding: 32px; text-align: center;",
-                        h2 { style: "font-size: 16px; font-weight: 700; color: {Theme::TEXT}; margin-bottom: 8px;",
-                            "{t.selectors_empty_title}"
+                // ══════════════════════════════════════════════
+                // Official / Custom Selectors (toggled)
+                // ══════════════════════════════════════════════
+                if *show_official.read() {
+                div { style: "display: flex; flex-direction: column; gap: 10px;",
+                    // Official selector cards/list
+                    if official_filtered.is_empty() {
+                        div { style: "background: {Theme::PANEL}; border: 1px dashed {Theme::LINE}; border-radius: 10px; padding: 20px; text-align: center;",
+                            p { style: "font-size: 12px; color: {Theme::MUTED};",
+                                "No official selectors yet. Click the refresh button to sync from server."
+                            }
                         }
-                        p { style: "font-size: 13px; color: {Theme::MUTED};",
-                            "{t.selectors_empty_hint}"
-                        }
-                    }
-                } else {
-                    { let is_cards = *view_mode.read() == ViewMode::Cards;
-                    let container_style = if is_cards {
-                        "display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; flex: 1;"
                     } else {
-                        "display: flex; flex-direction: column; gap: 10px; flex: 1;"
-                    };
-                    rsx! {
-                    div { style: "display: flex; flex-direction: column; flex: 1; min-height: 0;",
                         div { style: "{container_style}",
-                            for selector in selectors.iter() {
+                            for entry in official_filtered.iter() {
+                                { let is_disabled = official_prefs.disabled.contains(&entry.selector.sign);
+                                let selector = entry.selector.clone();
+                                let tags = entry.tags.clone();
+                                rsx! {
                                 SelectorRow {
                                     key: "{selector.sign}",
                                     selector: selector.clone(),
                                     form_is_open: form_is_open,
                                     card_mode: is_cards,
+                                    is_official: true,
+                                    tags: tags,
+                                    effective_enabled: !is_disabled,
+                                    on_click: {
+                                        let selector = selector.clone();
+                                        move |_| detail_selector.set(Some(selector.clone()))
+                                    },
+                                    on_template: {
+                                        let sign = selector.sign.clone();
+                                        move |_| {
+                                            if let Ok(cloned) = clone_official_as_custom(&sign) {
+                                                form_key += 1;
+                                                form.set(Some(SelectorForm::from_selector(&cloned, false)));
+                                                version += 1;
+                                            }
+                                        }
+                                    },
+                                    on_edit: move |_| {},
+                                    on_delete: move |_| {},
+                                    on_toggle: {
+                                        let sign = selector.sign.clone();
+                                        move |_| {
+                                            let _ = set_official_selector_enabled(&sign, is_disabled);
+                                            version += 1;
+                                        }
+                                    },
+                                }
+                                }}
+                            }
+                        }
+                    }
+                }
+                } else {
+                // ══════════════════════════════════════════════
+                // Custom Selectors
+                // ══════════════════════════════════════════════
+                div { style: "display: flex; flex-direction: column; gap: 10px;",
+                    // Custom selector cards/list
+                    if custom_filtered.is_empty() {
+                        div { style: "background: {Theme::PANEL}; border: 1px dashed {Theme::LINE}; border-radius: 10px; padding: 20px; text-align: center;",
+                            p { style: "font-size: 12px; color: {Theme::MUTED};",
+                                "{t.selectors_empty_hint}"
+                            }
+                        }
+                    } else {
+                        div { style: "{container_style}",
+                            for selector in custom_filtered.iter() {
+                                SelectorRow {
+                                    key: "{selector.sign}",
+                                    selector: selector.clone(),
+                                    form_is_open: form_is_open,
+                                    card_mode: is_cards,
+                                    is_official: false,
                                     on_click: {
                                         let selector = selector.clone();
                                         move |_| detail_selector.set(Some(selector.clone()))
@@ -329,8 +481,9 @@ pub fn SelectorsPage() -> Element {
                             }
                         }
                     }
-                    }}
                 }
+                } // end custom
+
             } // max-width
             } // scrollable content
 
@@ -352,11 +505,18 @@ pub fn SelectorsPage() -> Element {
 // ---------------------------------------------------------------------------
 
 /// Selector item. Card mode = small grid card. List mode = full-width row with description.
+///
+/// When `is_official` is true, the card shows a lock badge and only toggle + clone buttons.
 #[component]
 fn SelectorRow(
     selector: SelectorDefinition,
     form_is_open: bool,
     #[props(default = false)] card_mode: bool,
+    #[props(default = false)] is_official: bool,
+    #[props(default = Vec::new())] tags: Vec<String>,
+    /// For official selectors the definition always has `enabled: true`, but
+    /// the user may have disabled it via prefs.  This prop carries the effective state.
+    #[props(default = None)] effective_enabled: Option<bool>,
     on_click: EventHandler<()>,
     on_template: EventHandler<()>,
     on_edit: EventHandler<()>,
@@ -371,25 +531,48 @@ fn SelectorRow(
     let flocks_count = selector.flocks.len();
     let repos_count = selector.repos.len();
     let match_count = selector.match_count;
-    let is_enabled = selector.enabled;
+    let is_enabled = effective_enabled.unwrap_or(selector.enabled);
     let opacity = if is_enabled { "1" } else { "0.5" };
     let toggle_label = if is_enabled {
         t.selectors_disable
     } else {
         t.selectors_enable
     };
+    let border_color = if is_official {
+        "rgba(90, 158, 63, 0.25)"
+    } else {
+        Theme::LINE
+    };
 
     if card_mode {
         // Card view — compact card for grid layout, multiple per row
         rsx! {
             div {
-                style: "background: {Theme::PANEL}; border: 1px solid {Theme::LINE}; border-radius: 10px; padding: 14px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; opacity: {opacity};",
+                style: "background: {Theme::PANEL}; border: 1px solid {border_color}; border-radius: 10px; padding: 14px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; opacity: {opacity}; position: relative;",
                 onmousedown: move |evt: Event<MouseData>| { let c = evt.client_coordinates(); down_pos.set((c.x, c.y)); },
                 onclick: move |evt: Event<MouseData>| { let c = evt.client_coordinates(); let (dx, dy) = *down_pos.read(); if (c.x - dx).abs() < 5.0 && (c.y - dy).abs() < 5.0 { on_click.call(()); } },
-                h3 { style: "font-size: 14px; font-weight: 700; color: {Theme::TEXT};", "{selector.name}" }
+                // Official badge
+                if is_official {
+                    span { style: "position: absolute; top: 8px; right: 8px; display: inline-flex; align-items: center; gap: 3px; font-size: 9px; padding: 2px 6px; background: rgba(90, 158, 63, 0.10); color: {Theme::ACCENT_STRONG}; border-radius: 999px;",
+                        crate::icons::LucideIcon { icon: crate::icons::Icon::Lock, size: 9 }
+                        "{t.selectors_official_badge}"
+                    }
+                }
+                { let pr = if is_official { "60px" } else { "0" };
+                rsx! { h3 { style: "font-size: 14px; font-weight: 700; color: {Theme::TEXT}; padding-right: {pr};", "{selector.name}" } }}
                 if !selector.description.is_empty() {
                     p { style: "font-size: 12px; color: {Theme::MUTED}; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;",
                         "{selector.description}"
+                    }
+                }
+                // Tags (official only)
+                if !tags.is_empty() {
+                    div { style: "display: flex; flex-wrap: wrap; gap: 3px;",
+                        for tag in tags.iter() {
+                            span { style: "font-size: 9px; padding: 1px 5px; background: rgba(90, 158, 63, 0.08); color: {Theme::MUTED}; border-radius: 999px;",
+                                "{tag}"
+                            }
+                        }
                     }
                 }
                 div { style: "display: flex; flex-wrap: wrap; gap: 5px; margin-top: auto;",
@@ -408,8 +591,12 @@ fn SelectorRow(
                 div { style: "display: flex; gap: 4px;",
                     onclick: move |e: Event<MouseData>| e.stop_propagation(),
                     SmallButton { label: toggle_label, disabled: form_is_open, accent: if is_enabled { Theme::MUTED } else { Theme::ACCENT_STRONG }, onclick: move |_| on_toggle.call(()) }
-                    SmallButton { label: t.selectors_edit, disabled: form_is_open, onclick: move |_| on_edit.call(()) }
-                    SmallButton { label: t.selectors_delete, disabled: form_is_open, accent: Theme::DANGER, onclick: move |_| on_delete.call(()) }
+                    if is_official {
+                        SmallButton { label: t.selectors_clone_template, disabled: form_is_open, onclick: move |_| on_template.call(()) }
+                    } else {
+                        SmallButton { label: t.selectors_edit, disabled: form_is_open, onclick: move |_| on_edit.call(()) }
+                        SmallButton { label: t.selectors_delete, disabled: form_is_open, accent: Theme::DANGER, onclick: move |_| on_delete.call(()) }
+                    }
                 }
             }
         }
@@ -417,12 +604,20 @@ fn SelectorRow(
         // List view — full-width row with description, one per line
         rsx! {
             div {
-                style: "background: {Theme::PANEL}; border: 1px solid {Theme::LINE}; border-radius: 12px; padding: 16px; cursor: pointer; opacity: {opacity};",
+                style: "background: {Theme::PANEL}; border: 1px solid {border_color}; border-radius: 12px; padding: 16px; cursor: pointer; opacity: {opacity};",
                 onmousedown: move |evt: Event<MouseData>| { let c = evt.client_coordinates(); down_pos.set((c.x, c.y)); },
                 onclick: move |evt: Event<MouseData>| { let c = evt.client_coordinates(); let (dx, dy) = *down_pos.read(); if (c.x - dx).abs() < 5.0 && (c.y - dy).abs() < 5.0 { on_click.call(()); } },
                 div { style: "display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 8px;",
                     div { style: "min-width: 0; flex: 1;",
-                        h3 { style: "font-size: 15px; font-weight: 700; color: {Theme::TEXT}; margin-bottom: 4px;", "{selector.name}" }
+                        div { style: "display: flex; align-items: center; gap: 6px; margin-bottom: 4px;",
+                            if is_official {
+                                span { style: "display: inline-flex; align-items: center; gap: 3px; font-size: 10px; padding: 2px 7px; background: rgba(90, 158, 63, 0.10); color: {Theme::ACCENT_STRONG}; border-radius: 999px;",
+                                    crate::icons::LucideIcon { icon: crate::icons::Icon::Lock, size: 10 }
+                                    "{t.selectors_official_badge}"
+                                }
+                            }
+                            h3 { style: "font-size: 15px; font-weight: 700; color: {Theme::TEXT};", "{selector.name}" }
+                        }
                         if !selector.description.is_empty() {
                             p { style: "font-size: 12px; color: {Theme::MUTED}; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;",
                                 "{selector.description}"
@@ -432,9 +627,13 @@ fn SelectorRow(
                     div { style: "display: flex; gap: 4px; flex-shrink: 0;",
                         onclick: move |e: Event<MouseData>| e.stop_propagation(),
                         SmallButton { label: toggle_label, disabled: form_is_open, accent: if is_enabled { Theme::MUTED } else { Theme::ACCENT_STRONG }, onclick: move |_| on_toggle.call(()) }
-                        SmallButton { label: t.selectors_use_template, disabled: form_is_open, onclick: move |_| on_template.call(()) }
-                        SmallButton { label: t.selectors_edit, disabled: form_is_open, onclick: move |_| on_edit.call(()) }
-                        SmallButton { label: t.selectors_delete, disabled: form_is_open, accent: Theme::DANGER, onclick: move |_| on_delete.call(()) }
+                        if is_official {
+                            SmallButton { label: t.selectors_clone_template, disabled: form_is_open, onclick: move |_| on_template.call(()) }
+                        } else {
+                            SmallButton { label: t.selectors_use_template, disabled: form_is_open, onclick: move |_| on_template.call(()) }
+                            SmallButton { label: t.selectors_edit, disabled: form_is_open, onclick: move |_| on_edit.call(()) }
+                            SmallButton { label: t.selectors_delete, disabled: form_is_open, accent: Theme::DANGER, onclick: move |_| on_delete.call(()) }
+                        }
                     }
                 }
                 div { style: "display: flex; flex-wrap: wrap; gap: 6px;",
@@ -447,6 +646,12 @@ fn SelectorRow(
                         span { style: "font-size: 11px; padding: 1px 7px; background: rgba(90, 158, 63, 0.12); color: {Theme::ACCENT_STRONG}; border-radius: 999px; display: inline-flex; align-items: center; gap: 2px;",
                             crate::icons::LucideIcon { icon: crate::icons::Icon::Check, size: 10 }
                             "{match_count}"
+                        }
+                    }
+                    // Tags (official only, list view)
+                    for tag in tags.iter() {
+                        span { style: "font-size: 10px; padding: 1px 6px; background: rgba(90, 158, 63, 0.08); color: {Theme::MUTED}; border-radius: 999px;",
+                            "{tag}"
                         }
                     }
                 }

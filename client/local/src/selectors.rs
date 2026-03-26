@@ -239,6 +239,41 @@ pub struct SelectorsStore {
 }
 
 // ---------------------------------------------------------------------------
+// Official (preset) selectors
+// ---------------------------------------------------------------------------
+
+/// A single official preset entry: the selector definition plus metadata.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OfficialSelectorEntry {
+    pub selector: SelectorDefinition,
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+/// Store for official selectors synced from the server.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct OfficialSelectorsStore {
+    pub version: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_synced_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub etag: Option<String>,
+    pub selectors: Vec<OfficialSelectorEntry>,
+}
+
+/// User preference overlay — tracks which official selectors are disabled.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct OfficialSelectorPrefs {
+    pub version: u8,
+    pub disabled: std::collections::BTreeSet<String>,
+}
+
+/// Returns `true` when `sign` belongs to an official (preset) selector.
+pub fn is_official_selector(sign: &str) -> bool {
+    sign.starts_with("preset:")
+}
+
+// ---------------------------------------------------------------------------
 // Expression builder & evaluation
 // ---------------------------------------------------------------------------
 
@@ -735,15 +770,28 @@ fn selectors_path() -> Result<PathBuf> {
 pub fn read_selectors_store() -> Result<SelectorsStore> {
     let path = selectors_path()?;
     if let Ok(raw) = fs::read_to_string(&path) {
-        let store: SelectorsStore = serde_json::from_str(&raw)
+        let mut store: SelectorsStore = serde_json::from_str(&raw)
             .with_context(|| format!("invalid selectors at {}", path.display()))?;
+
+        // One-time migration: move builtin-* selectors to the official store.
+        if store.selectors.iter().any(|d| d.sign.starts_with("builtin-")) {
+            let _ = migrate_builtin_to_official();
+            // Re-read after migration (builtin entries removed).
+            if let Ok(raw2) = fs::read_to_string(&path) {
+                if let Ok(s) = serde_json::from_str(&raw2) {
+                    store = s;
+                }
+            }
+        }
+
         return Ok(store);
     }
-    let mut store = SelectorsStore {
+    // First run: create an empty custom store.
+    // Official selectors will be provided by sync_official_selectors().
+    let store = SelectorsStore {
         version: 1,
         selectors: Vec::new(),
     };
-    seed_default_selectors(&mut store);
     let _ = write_selectors_store(&store);
     Ok(store)
 }
@@ -820,6 +868,225 @@ pub fn delete_selector(id: &str) -> Result<()> {
     write_selectors_store(&store)
 }
 
+// ---------------------------------------------------------------------------
+// Official selector persistence & operations
+// ---------------------------------------------------------------------------
+
+fn official_selectors_path() -> Result<PathBuf> {
+    Ok(get_config_dir()?.join("official_selectors.json"))
+}
+
+fn official_selector_prefs_path() -> Result<PathBuf> {
+    Ok(get_config_dir()?.join("official_selector_prefs.json"))
+}
+
+/// Read the official selectors store (empty if file does not exist yet).
+pub fn read_official_selectors_store() -> Result<OfficialSelectorsStore> {
+    let path = official_selectors_path()?;
+    if let Ok(raw) = fs::read_to_string(&path) {
+        let store: OfficialSelectorsStore = serde_json::from_str(&raw)
+            .with_context(|| format!("invalid official selectors at {}", path.display()))?;
+        return Ok(store);
+    }
+    Ok(OfficialSelectorsStore::default())
+}
+
+/// Write the official selectors store.
+pub fn write_official_selectors_store(store: &OfficialSelectorsStore) -> Result<()> {
+    let path = official_selectors_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let payload = serde_json::to_string_pretty(store)?;
+    fs::write(&path, format!("{payload}\n"))?;
+    let _ = crate::pilot::notify_config_changed();
+    Ok(())
+}
+
+/// Read user preferences for official selectors (empty if file does not exist).
+pub fn read_official_selector_prefs() -> Result<OfficialSelectorPrefs> {
+    let path = official_selector_prefs_path()?;
+    if let Ok(raw) = fs::read_to_string(&path) {
+        let prefs: OfficialSelectorPrefs = serde_json::from_str(&raw)
+            .with_context(|| format!("invalid official selector prefs at {}", path.display()))?;
+        return Ok(prefs);
+    }
+    Ok(OfficialSelectorPrefs::default())
+}
+
+/// Write user preferences for official selectors.
+pub fn write_official_selector_prefs(prefs: &OfficialSelectorPrefs) -> Result<()> {
+    let path = official_selector_prefs_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let payload = serde_json::to_string_pretty(prefs)?;
+    fs::write(&path, format!("{payload}\n"))?;
+    let _ = crate::pilot::notify_config_changed();
+    Ok(())
+}
+
+/// Toggle the enabled state of a single official selector.
+pub fn set_official_selector_enabled(sign: &str, enabled: bool) -> Result<()> {
+    let mut prefs = read_official_selector_prefs()?;
+    if enabled {
+        prefs.disabled.remove(sign);
+    } else {
+        prefs.disabled.insert(sign.to_string());
+    }
+    write_official_selector_prefs(&prefs)
+}
+
+/// Enable or disable ALL official selectors at once.
+pub fn set_all_official_selectors_enabled(enabled: bool) -> Result<()> {
+    let mut prefs = read_official_selector_prefs()?;
+    if enabled {
+        prefs.disabled.clear();
+    } else {
+        let store = read_official_selectors_store()?;
+        prefs.disabled = store
+            .selectors
+            .iter()
+            .map(|e| e.selector.sign.clone())
+            .collect();
+    }
+    write_official_selector_prefs(&prefs)
+}
+
+/// Clone an official selector as a new custom selector.
+///
+/// Returns the cloned definition (already saved to the custom store).
+pub fn clone_official_as_custom(sign: &str) -> Result<SelectorDefinition> {
+    let official = read_official_selectors_store()?;
+    let entry = official
+        .selectors
+        .iter()
+        .find(|e| e.selector.sign == sign)
+        .with_context(|| format!("official selector '{sign}' not found"))?;
+
+    let mut cloned = entry.selector.clone();
+    cloned.sign = generate_selector_id();
+    cloned.name = format!("{} (copy)", cloned.name);
+    cloned.match_count = 0;
+
+    create_selector(cloned.clone())?;
+    Ok(cloned)
+}
+
+/// Convert a preset JSON value (from server API / presets.json) into an
+/// `OfficialSelectorEntry`.
+pub fn preset_value_to_entry(value: &serde_json::Value) -> Result<OfficialSelectorEntry> {
+    // Extract tags before parsing the selector (tags are not part of SelectorDefinition)
+    let tags: Vec<String> = value
+        .get("tags")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+
+    // Parse the selector definition from the same value.
+    // We strip fields unknown to SelectorDefinition so deserialization succeeds.
+    let selector: SelectorDefinition = serde_json::from_value(value.clone())
+        .context("failed to parse preset into SelectorDefinition")?;
+
+    Ok(OfficialSelectorEntry { selector, tags })
+}
+
+/// Sync official selectors from the server API.
+///
+/// Returns `Ok(true)` if the store was updated, `Ok(false)` if unchanged (304).
+pub fn sync_official_selectors(api_base: &str) -> Result<bool> {
+    let current = read_official_selectors_store()?;
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
+
+    let url = format!("{}/api/v1/presets", api_base.trim_end_matches('/'));
+    let mut req = client.get(&url);
+    if let Some(etag) = &current.etag {
+        req = req.header("If-None-Match", etag.as_str());
+    }
+
+    let resp = req.send()?;
+    if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
+        return Ok(false);
+    }
+    if !resp.status().is_success() {
+        bail!("presets API returned {}", resp.status());
+    }
+
+    let body: serde_json::Value = resp.json()?;
+    let etag = body
+        .get("etag")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let presets = body
+        .get("presets")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut entries = Vec::new();
+    for preset in &presets {
+        match preset_value_to_entry(preset) {
+            Ok(entry) => entries.push(entry),
+            Err(err) => {
+                eprintln!("[savhub] skipping invalid preset: {err}");
+            }
+        }
+    }
+
+    let store = OfficialSelectorsStore {
+        version: 1,
+        last_synced_at: Some(chrono::Utc::now().to_rfc3339()),
+        etag,
+        selectors: entries,
+    };
+    write_official_selectors_store(&store)?;
+    Ok(true)
+}
+
+/// Migrate old `builtin-*` selectors from `selectors.json` to the official
+/// store.  Called once on first run after upgrade.
+pub fn migrate_builtin_to_official() -> Result<()> {
+    let official_path = official_selectors_path()?;
+    if official_path.exists() {
+        // Already migrated (or synced from server).
+        return Ok(());
+    }
+
+    let mut custom_store = read_selectors_store()?;
+    let mut prefs = read_official_selector_prefs()?;
+
+    // Record which builtin selectors the user had disabled.
+    for sel in &custom_store.selectors {
+        if sel.sign.starts_with("builtin-") && !sel.enabled {
+            // Map builtin sign to preset sign: "builtin-rust-project" → "preset:rust"
+            // We can't do this mapping perfectly, so we just track the builtin sign.
+            prefs.disabled.insert(sel.sign.clone());
+        }
+    }
+
+    // Remove builtin entries from custom store.
+    let before = custom_store.selectors.len();
+    custom_store.selectors.retain(|d| !d.sign.starts_with("builtin-"));
+    if custom_store.selectors.len() != before {
+        write_selectors_store(&custom_store)?;
+    }
+
+    // Persist prefs if we recorded any disabled builtins.
+    if !prefs.disabled.is_empty() {
+        write_official_selector_prefs(&prefs)?;
+    }
+
+    // Write an empty official store as a migration marker.
+    // The real data will arrive on the next server sync.
+    let store = OfficialSelectorsStore {
+        version: 1,
+        ..Default::default()
+    };
+    write_official_selectors_store(&store)?;
+    Ok(())
+}
+
 /// Update match counts after `savhub apply`:
 /// - Increment for selectors that matched
 /// - Decrement for selectors that previously matched but no longer do
@@ -878,10 +1145,24 @@ pub struct SelectorRunResult {
 /// When multiple selectors contribute a skill with the same slug,
 /// the higher-priority selector wins.
 pub fn run_selectors(project_root: &Path) -> Result<SelectorRunResult> {
-    let store = read_selectors_store()?;
+    // Merge official selectors (applying user prefs) with custom selectors.
+    let official_store = read_official_selectors_store()?;
+    let prefs = read_official_selector_prefs()?;
+    let custom_store = read_selectors_store()?;
+
+    let mut all_selectors: Vec<SelectorDefinition> = Vec::new();
+    for entry in &official_store.selectors {
+        let mut sel = entry.selector.clone();
+        if prefs.disabled.contains(&sel.sign) {
+            sel.enabled = false;
+        }
+        all_selectors.push(sel);
+    }
+    all_selectors.extend(custom_store.selectors.clone());
+
     let mut matched: Vec<SelectorMatch> = Vec::new();
 
-    for selector in &store.selectors {
+    for selector in &all_selectors {
         if !selector.enabled {
             continue;
         }
@@ -951,6 +1232,7 @@ pub fn run_selectors(project_root: &Path) -> Result<SelectorRunResult> {
     })
 }
 
+#[allow(dead_code)]
 fn seed_default_selectors(store: &mut SelectorsStore) {
     let defaults = vec![
         // ── Language-level selectors ─────────────────────────
