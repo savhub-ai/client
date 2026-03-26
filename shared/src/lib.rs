@@ -599,6 +599,27 @@ pub struct ToggleStarResponse {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SaveCustomSelectorsRequest {
+    pub selectors: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub version: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CustomSelectorsResponse {
+    pub ok: bool,
+    pub selectors: Vec<serde_json::Value>,
+    pub version: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StarredIdsResponse {
+    pub skill_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DeleteResponse {
     pub ok: bool,
 }

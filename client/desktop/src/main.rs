@@ -145,11 +145,47 @@ fn main() {
     // Clean up backup binary from a previous update
     updater::cleanup_old_binary();
 
-    // Sync official selectors on startup (non-blocking, best-effort)
+    // Sync selectors on startup (non-blocking, best-effort)
     std::thread::spawn(|| {
         let api_base = savhub_local::registry::api_base_url();
-        if let Err(e) = savhub_local::selectors::sync_official_selectors(&api_base) {
-            eprintln!("[savhub] startup selector sync failed: {e}");
+        eprintln!("[savhub] startup sync: api_base={api_base}");
+        match savhub_local::selectors::sync_official_selectors(&api_base) {
+            Ok(updated) => eprintln!("[savhub] official selectors sync ok, updated={updated}"),
+            Err(e) => eprintln!("[savhub] official selectors sync failed: {e}"),
+        }
+
+        // Pull custom selectors from server if logged in
+        let token = savhub_local::config::read_global_config()
+            .ok()
+            .flatten()
+            .and_then(|c| c.token);
+        if let Some(token) = token {
+            match savhub_local::selectors::pull_custom_selectors(&api_base, &token) {
+                Ok(Some(remote)) => {
+                    match savhub_local::selectors::merge_and_apply(remote) {
+                        Ok(result) => {
+                            if result.added > 0 {
+                                eprintln!("[savhub] merged {} remote selector(s)", result.added);
+                            }
+                            for c in &result.conflicts {
+                                eprintln!(
+                                    "[savhub] selector conflict: '{}' ({}), keeping local version",
+                                    c.name, c.sign
+                                );
+                            }
+                            // Push merged result back if new selectors were added locally
+                            if result.added > 0 {
+                                let _ = savhub_local::selectors::push_custom_selectors(
+                                    &api_base, &token,
+                                );
+                            }
+                        }
+                        Err(e) => eprintln!("[savhub] selector merge failed: {e}"),
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => eprintln!("[savhub] custom selector pull failed: {e}"),
+            }
         }
     });
 

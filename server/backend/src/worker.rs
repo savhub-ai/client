@@ -610,6 +610,19 @@ fn static_scan_loop(pool: &PgPool, thread_idx: usize) {
         match crate::service::security::run_static_scan_for_skill(pool, &skill) {
             Ok(true) => {
                 tracing::debug!("[static-scan] completed: skill={} ({})", slug, skill_id);
+                // Ensure the skill is no longer "unscanned" so we don't pick it again.
+                if let Ok(mut conn) = pool.get() {
+                    let current: Option<String> = skills::table
+                        .find(skill_id)
+                        .select(skills::security_status)
+                        .first(&mut conn)
+                        .ok();
+                    if current.as_deref() == Some("unscanned") {
+                        let _ = diesel::update(skills::table.find(skill_id))
+                            .set(skills::security_status.eq("checked"))
+                            .execute(&mut conn);
+                    }
+                }
             }
             Ok(false) => {
                 // No files found — mark as "checked" so it won't be picked again.

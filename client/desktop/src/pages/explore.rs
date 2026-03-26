@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 
 use dioxus::prelude::*;
-use savhub_shared::{FlockSummary, SecurityStatus, SkillListItem};
+use savhub_shared::{FlockSummary, SecurityStatus, SkillListItem, StarredIdsResponse, ToggleStarResponse};
 
 use crate::components::click_guard;
 use crate::components::pagination::PaginationControls;
@@ -25,6 +25,7 @@ struct DisplaySkill {
     summary: Option<String>,
     version: Option<String>,
     owner: Option<String>,
+    stars: i64,
     security_status: savhub_shared::SecurityStatus,
 }
 
@@ -46,6 +47,7 @@ impl DisplaySkill {
             summary: item.summary,
             version: item.latest_version.map(|v| v.version),
             owner: Some(item.owner.handle),
+            stars: item.stats.stars,
             security_status: item.security_status,
         }
     }
@@ -397,6 +399,26 @@ pub fn ExplorePage() -> Element {
     let flocks_data: Signal<Vec<DisplayFlock>> = use_signal(Vec::new);
     let mut reload_version = use_signal(|| 0u32);
     let mut flocks_version = use_signal(|| 0u32);
+    let mut starred_ids: Signal<HashSet<String>> = use_signal(HashSet::new);
+
+    // Fetch starred skill IDs on mount (if logged in)
+    {
+        let mut starred_fetched = use_signal(|| false);
+        if !*starred_fetched.read() && state.token.read().is_some() {
+            starred_fetched.set(true);
+            let client = state.api_client();
+            spawn(async move {
+                if let Ok(resp) = client
+                    .get_json::<StarredIdsResponse>("/me/starred-skill-ids")
+                    .await
+                {
+                    starred_ids.set(
+                        resp.skill_ids.into_iter().map(|id| id.to_string()).collect(),
+                    );
+                }
+            });
+        }
+    }
 
     use_effect(move || {
         let _ = *state.config_version.read();
@@ -685,6 +707,7 @@ pub fn ExplorePage() -> Element {
                             SkillListRow {
                                 skill: skill.clone(),
                                 fetched_versions: fetched_versions,
+                                starred_ids: starred_ids,
                             }
                         }
                     }
@@ -694,6 +717,7 @@ pub fn ExplorePage() -> Element {
                             SkillCard {
                                 skill: skill.clone(),
                                 fetched_versions: fetched_versions,
+                                starred_ids: starred_ids,
                             }
                         }
                     }
@@ -714,6 +738,7 @@ pub fn ExplorePage() -> Element {
 fn SkillListRow(
     skill: DisplaySkill,
     mut fetched_versions: Signal<BTreeMap<String, String>>,
+    mut starred_ids: Signal<HashSet<String>>,
 ) -> Element {
     let state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
@@ -819,6 +844,44 @@ fn SkillListRow(
                     }
                 }
                 div { style: "display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0;",
+                    // Star button
+                    {
+                        let skill_id = skill.id.clone();
+                        let is_starred = starred_ids.read().contains(&skill_id);
+                        rsx! {
+                            button {
+                                style: if is_starred {
+                                    "padding: 4px 8px; font-size: 12px; background: #ffd70020; color: #b8860b; border: 1px solid #ffd70040; border-radius: 4px; cursor: pointer; font-weight: 500; display: inline-flex; align-items: center; gap: 3px;"
+                                } else {
+                                    format!("padding: 4px 8px; font-size: 12px; background: transparent; color: {muted}; border: 1px solid {line}; border-radius: 4px; cursor: pointer; font-weight: 500; display: inline-flex; align-items: center; gap: 3px;", muted = Theme::MUTED, line = Theme::LINE)
+                                },
+                                onclick: {
+                                    let skill_id = skill_id.clone();
+                                    move |e: Event<MouseData>| {
+                                        e.stop_propagation();
+                                        let client = state.api_client();
+                                        let skill_id = skill_id.clone();
+                                        spawn(async move {
+                                            if let Ok(resp) = client
+                                                .post_empty::<ToggleStarResponse>(&format!("/skills/{skill_id}/star"))
+                                                .await
+                                            {
+                                                starred_ids.with_mut(|ids| {
+                                                    if resp.starred {
+                                                        ids.insert(skill_id);
+                                                    } else {
+                                                        ids.remove(&skill_id);
+                                                    }
+                                                });
+                                            }
+                                        });
+                                    }
+                                },
+                                crate::icons::LucideIcon { icon: crate::icons::Icon::Star, size: 12 }
+                                "{skill.stars}"
+                            }
+                        }
+                    }
                     if *working.read() {
                         span { style: "display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: {Theme::ACCENT}; font-weight: 600;",
                             span { style: "display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(90, 158, 63, 0.3); border-top-color: {Theme::ACCENT}; border-radius: 50%; animation: spin 0.8s linear infinite;" }
@@ -849,6 +912,7 @@ fn SkillListRow(
 fn SkillCard(
     skill: DisplaySkill,
     mut fetched_versions: Signal<BTreeMap<String, String>>,
+    mut starred_ids: Signal<HashSet<String>>,
 ) -> Element {
     let state = use_context::<AppState>();
     let t = i18n::texts(*state.lang.read());
@@ -971,7 +1035,45 @@ fn SkillCard(
                         "{desc}"
                     }
                 }
-                div { style: "display: flex; justify-content: flex-end; align-items: center; margin-top: 4px;",
+                div { style: "display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-top: 4px;",
+                    // Star button
+                    {
+                        let skill_id = skill.id.clone();
+                        let is_starred = starred_ids.read().contains(&skill_id);
+                        rsx! {
+                            button {
+                                style: if is_starred {
+                                    "padding: 4px 8px; font-size: 12px; background: #ffd70020; color: #b8860b; border: 1px solid #ffd70040; border-radius: 4px; cursor: pointer; font-weight: 500; display: inline-flex; align-items: center; gap: 3px;"
+                                } else {
+                                    format!("padding: 4px 8px; font-size: 12px; background: transparent; color: {muted}; border: 1px solid {line}; border-radius: 4px; cursor: pointer; font-weight: 500; display: inline-flex; align-items: center; gap: 3px;", muted = Theme::MUTED, line = Theme::LINE)
+                                },
+                                onclick: {
+                                    let skill_id = skill_id.clone();
+                                    move |e: Event<MouseData>| {
+                                        e.stop_propagation();
+                                        let client = state.api_client();
+                                        let skill_id = skill_id.clone();
+                                        spawn(async move {
+                                            if let Ok(resp) = client
+                                                .post_empty::<ToggleStarResponse>(&format!("/skills/{skill_id}/star"))
+                                                .await
+                                            {
+                                                starred_ids.with_mut(|ids| {
+                                                    if resp.starred {
+                                                        ids.insert(skill_id);
+                                                    } else {
+                                                        ids.remove(&skill_id);
+                                                    }
+                                                });
+                                            }
+                                        });
+                                    }
+                                },
+                                crate::icons::LucideIcon { icon: crate::icons::Icon::Star, size: 12 }
+                                "{skill.stars}"
+                            }
+                        }
+                    }
                     if *working.read() {
                         span { style: "display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: {Theme::ACCENT}; font-weight: 600;",
                             span { style: "display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(90, 158, 63, 0.3); border-top-color: {Theme::ACCENT}; border-radius: 50%; animation: spin 0.8s linear infinite;" }

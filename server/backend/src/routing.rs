@@ -8,8 +8,9 @@ use serde_json::json;
 use shared::{
     AddSiteAdminRequest, BanUserRequest, CreateCommentRequest, CreateIndexRuleRequest,
     CreateRepoRequest, CreateReportRequest, ModerationUpdateRequest, RateFlockRequest,
-    RecordInstallRequest, RecordViewRequest, ResourceKind, ReviewReportRequest, SetUserRoleRequest,
-    SubmitIndexRequest, UpdateIndexRuleRequest, UpdateSecurityStatusRequest,
+    RecordInstallRequest, RecordViewRequest, ResourceKind, ReviewReportRequest,
+    SaveCustomSelectorsRequest, SetUserRoleRequest, SubmitIndexRequest, UpdateIndexRuleRequest,
+    UpdateSecurityStatusRequest,
 };
 use uuid::Uuid;
 
@@ -17,7 +18,8 @@ use crate::auth::{AuthContext, optional_auth, require_auth};
 use crate::error::AppError;
 use crate::service::{
     admin, blocks, browse_history, catalog, github_auth, index_jobs, index_rules_admin,
-    interactions, official_selectors, reports, repos, security, site_admins, users,
+    custom_selectors, interactions, official_selectors, reports, repos, security, site_admins,
+    users,
 };
 use crate::state::app_state;
 
@@ -132,6 +134,12 @@ pub fn router() -> Router {
                             .push(Router::with_path("{id}/review").post(review_report)),
                     )
                     .push(Router::with_path("blocks/flocks").get(list_blocked_flocks))
+                    .push(
+                        Router::with_path("me/selectors/custom")
+                            .get(get_my_custom_selectors)
+                            .post(save_my_custom_selectors),
+                    )
+                    .push(Router::with_path("me/starred-skill-ids").get(get_my_starred_skill_ids))
                     .push(
                         Router::with_path("history")
                             .get(get_browse_history)
@@ -907,6 +915,40 @@ async fn list_blocked_flocks(depot: &Depot, res: &mut Response) {
     let auth = auth_from_depot(depot);
     match blocks::list_blocked_flocks(auth) {
         Ok(payload) => res.render(Json(payload)),
+        Err(error) => render_error(res, error),
+    }
+}
+
+#[handler]
+async fn get_my_custom_selectors(depot: &Depot, res: &mut Response) {
+    let auth = auth_from_depot(depot);
+    match custom_selectors::get_custom_selectors(auth) {
+        Ok(payload) => res.render(Json(payload)),
+        Err(error) => render_error(res, error),
+    }
+}
+
+#[handler]
+async fn save_my_custom_selectors(req: &mut Request, depot: &Depot, res: &mut Response) {
+    let auth = auth_from_depot(depot);
+    let body = match req.parse_json::<SaveCustomSelectorsRequest>().await {
+        Ok(body) => body,
+        Err(error) => {
+            render_error(res, AppError::BadRequest(error.to_string()));
+            return;
+        }
+    };
+    match custom_selectors::save_custom_selectors(auth, body) {
+        Ok(payload) => res.render(Json(payload)),
+        Err(error) => render_error(res, error),
+    }
+}
+
+#[handler]
+async fn get_my_starred_skill_ids(depot: &Depot, res: &mut Response) {
+    let auth = auth_from_depot(depot);
+    match interactions::get_starred_skill_ids(auth) {
+        Ok(ids) => res.render(Json(shared::StarredIdsResponse { skill_ids: ids })),
         Err(error) => render_error(res, error),
     }
 }

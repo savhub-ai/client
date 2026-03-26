@@ -866,8 +866,10 @@ pub fn read_official_selectors_store() -> Result<OfficialSelectorsStore> {
     if let Ok(raw) = fs::read_to_string(&path) {
         let store: OfficialSelectorsStore = serde_json::from_str(&raw)
             .with_context(|| format!("invalid official selectors at {}", path.display()))?;
+        eprintln!("[savhub] read official store: {} selector(s) from {}", store.selectors.len(), path.display());
         return Ok(store);
     }
+    eprintln!("[savhub] official store not found at {}", path.display());
     Ok(OfficialSelectorsStore::default())
 }
 
@@ -989,12 +991,15 @@ pub fn sync_official_selectors(api_base: &str) -> Result<bool> {
         .build()?;
 
     let url = format!("{}/selectors/official", api_base.trim_end_matches('/'));
+    eprintln!("[savhub] GET {url}");
     let mut req = client.get(&url);
     if let Some(etag) = &current.etag {
+        eprintln!("[savhub]   If-None-Match: {etag}");
         req = req.header("If-None-Match", etag.as_str());
     }
 
-    let resp = req.send()?;
+    let resp = req.send().inspect_err(|e| eprintln!("[savhub]   request error: {e}"))?;
+    eprintln!("[savhub]   response: {} content-type={:?}", resp.status(), resp.headers().get("content-type"));
     if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
         return Ok(false);
     }
@@ -1035,6 +1040,7 @@ pub fn sync_official_selectors(api_base: &str) -> Result<bool> {
         }
     }
 
+    eprintln!("[savhub]   parsed {} official selector(s) from response", entries.len());
     let store = OfficialSelectorsStore {
         version: 1,
         last_synced_at: Some(chrono::Utc::now().to_rfc3339()),
@@ -1042,7 +1048,136 @@ pub fn sync_official_selectors(api_base: &str) -> Result<bool> {
         selectors: entries,
     };
     write_official_selectors_store(&store)?;
+    eprintln!("[savhub]   wrote official store to {}", official_selectors_path()?.display());
     Ok(true)
+}
+
+// ---------------------------------------------------------------------------
+// Custom selectors cloud sync
+// ---------------------------------------------------------------------------
+
+/// Push local custom selectors to the server.
+pub fn push_custom_selectors(api_base: &str, token: &str) -> Result<()> {
+    let store = read_selectors_store()?;
+    let selectors: Vec<serde_json::Value> = store
+        .selectors
+        .iter()
+        .filter_map(|s| serde_json::to_value(s).ok())
+        .collect();
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
+
+    let url = format!("{}/me/selectors/custom", api_base.trim_end_matches('/'));
+    let resp = client
+        .post(&url)
+        .bearer_auth(token)
+        .json(&serde_json::json!({
+            "selectors": selectors,
+            "version": store.version,
+        }))
+        .send()?;
+
+    if !resp.status().is_success() {
+        bail!("push custom selectors failed: HTTP {}", resp.status());
+    }
+    Ok(())
+}
+
+/// Pull custom selectors from the server. Returns `None` if the server has none.
+pub fn pull_custom_selectors(api_base: &str, token: &str) -> Result<Option<SelectorsStore>> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
+
+    let url = format!("{}/me/selectors/custom", api_base.trim_end_matches('/'));
+    let resp = client.get(&url).bearer_auth(token).send()?;
+
+    if !resp.status().is_success() {
+        bail!("pull custom selectors failed: HTTP {}", resp.status());
+    }
+
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if !content_type.contains("application/json") {
+        bail!("pull custom selectors: unexpected Content-Type: {content_type}");
+    }
+
+    let body: serde_json::Value = resp.json()?;
+    let selectors_arr = body
+        .get("selectors")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    if selectors_arr.is_empty() {
+        return Ok(None);
+    }
+
+    let mut selectors = Vec::new();
+    for val in &selectors_arr {
+        match serde_json::from_value::<SelectorDefinition>(val.clone()) {
+            Ok(def) => selectors.push(def),
+            Err(e) => eprintln!("[savhub] skipping invalid remote selector: {e}"),
+        }
+    }
+
+    let version = body
+        .get("version")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(1) as u8;
+
+    Ok(Some(SelectorsStore { version, selectors }))
+}
+
+/// Conflict when merging selectors: same sign, different content.
+#[derive(Debug, Clone)]
+pub struct SelectorConflict {
+    pub sign: String,
+    pub name: String,
+}
+
+/// Result of merging remote selectors into local store.
+#[derive(Debug)]
+pub struct MergeResult {
+    pub added: usize,
+    pub conflicts: Vec<SelectorConflict>,
+}
+
+/// Merge remote selectors into local store, write the result, and return merge info.
+///
+/// - Same sign + same content → skip
+/// - Same sign + different content → keep local, report conflict
+/// - Only remote → add to local
+/// - Only local → keep
+pub fn merge_and_apply(remote: SelectorsStore) -> Result<MergeResult> {
+    let mut local = read_selectors_store()?;
+    let mut added = 0;
+    let mut conflicts = Vec::new();
+
+    for remote_sel in &remote.selectors {
+        if let Some(local_sel) = local.selectors.iter().find(|d| d.sign == remote_sel.sign) {
+            if local_sel != remote_sel {
+                conflicts.push(SelectorConflict {
+                    sign: remote_sel.sign.clone(),
+                    name: remote_sel.name.clone(),
+                });
+            }
+        } else {
+            local.selectors.push(remote_sel.clone());
+            added += 1;
+        }
+    }
+
+    if added > 0 {
+        write_selectors_store(&local)?;
+    }
+
+    Ok(MergeResult { added, conflicts })
 }
 
 /// Update match counts after `savhub apply`:

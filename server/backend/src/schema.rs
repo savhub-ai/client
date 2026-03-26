@@ -304,6 +304,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    user_custom_selectors (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        selectors -> Jsonb,
+        version -> Int2,
+        updated_at -> Timestamptz,
+        created_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
     user_tokens (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -360,6 +371,7 @@ diesel::joinable!(skill_versions -> skills (skill_id));
 diesel::joinable!(skill_versions -> users (created_by));
 diesel::joinable!(skills -> flocks (flock_id));
 diesel::joinable!(skills -> repos (repo_id));
+diesel::joinable!(user_custom_selectors -> users (user_id));
 diesel::joinable!(user_tokens -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
@@ -382,6 +394,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     skill_stars,
     skill_versions,
     skills,
+    user_custom_selectors,
     user_tokens,
     users,
 );

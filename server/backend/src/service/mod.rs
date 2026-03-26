@@ -6,6 +6,7 @@ pub mod ai;
 pub mod blocks;
 pub mod browse_history;
 pub mod catalog;
+pub mod custom_selectors;
 pub mod github_auth;
 pub mod index_jobs;
 pub mod index_rules;

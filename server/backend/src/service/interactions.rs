@@ -210,6 +210,17 @@ pub fn is_flock_starred(conn: &mut PgConnection, flock_id: Uuid, user_id: Uuid) 
         > 0
 }
 
+/// Return all skill IDs the user has starred.
+pub fn get_starred_skill_ids(auth: &AuthContext) -> Result<Vec<Uuid>, AppError> {
+    let mut conn = db_conn()?;
+    let ids: Vec<Option<Uuid>> = skill_stars::table
+        .filter(skill_stars::user_id.eq(auth.user.id))
+        .filter(skill_stars::skill_id.is_not_null())
+        .select(skill_stars::skill_id)
+        .load::<Option<Uuid>>(&mut conn)?;
+    Ok(ids.into_iter().flatten().collect())
+}
+
 pub fn fetch_skill_comments(
     conn: &mut PgConnection,
     skill_id: Uuid,

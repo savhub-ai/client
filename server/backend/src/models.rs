@@ -8,7 +8,8 @@ use uuid::Uuid;
 use crate::schema::{
     ai_request_cache, ai_usage_logs, audit_logs, browse_histories, flocks, index_jobs, index_rules,
     pending_index_repos, reports, repos, security_scans, site_admins, skill_blocks, skill_comments,
-    skill_installs, skill_ratings, skill_stars, skill_versions, skills, user_tokens, users,
+    skill_installs, skill_ratings, skill_stars, skill_versions, skills, user_custom_selectors,
+    user_tokens, users,
 };
 
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable)]
@@ -769,5 +770,27 @@ pub struct NewPendingIndexRepoRow {
     pub id: Uuid,
     pub repo_id: Uuid,
     pub expected_start_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Queryable, Selectable, Identifiable)]
+#[diesel(table_name = user_custom_selectors)]
+pub struct UserCustomSelectorsRow {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub selectors: Value,
+    pub version: i16,
+    pub updated_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Insertable)]
+#[diesel(table_name = user_custom_selectors)]
+pub struct NewUserCustomSelectorsRow {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub selectors: Value,
+    pub version: i16,
+    pub updated_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
 }

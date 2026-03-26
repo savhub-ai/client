@@ -199,10 +199,25 @@ pub fn SelectorsPage() -> Element {
 
     let _ = *version.read();
 
+    // Background push of custom selectors to server after any mutation.
+    let push_selectors_to_server = move || {
+        let api_base = state.api_base.read().clone();
+        let token = state.token.read().clone();
+        if let Some(token) = token {
+            spawn(async move {
+                let _ = tokio::task::spawn_blocking(move || {
+                    savhub_local::selectors::push_custom_selectors(&api_base, &token)
+                }).await;
+            });
+        }
+    };
+
     // ── Official selectors ──
     let official_store = read_official_selectors_store().unwrap_or_default();
     let selector_prefs = read_selector_prefs().unwrap_or_default();
     let official_count = official_store.selectors.len();
+    let custom_count = read_selectors_store().map(|s| s.selectors.len()).unwrap_or(0);
+    eprintln!("[savhub] selectors page render: {official_count} official, {custom_count} custom, version={}", *version.peek());
     let _all_official_disabled = official_count > 0
         && official_store
             .selectors
@@ -252,14 +267,15 @@ pub fn SelectorsPage() -> Element {
     if !*sync_triggered.read() {
         sync_triggered.set(true);
         let api_base = state.api_base.read().clone();
+        eprintln!("[savhub] selectors page mount: syncing official selectors, api_base={api_base}");
         spawn(async move {
             let result = tokio::task::spawn_blocking(move || {
                 savhub_local::selectors::sync_official_selectors(&api_base)
             }).await;
-            match result {
-                Ok(Err(e)) => eprintln!("[savhub] failed to sync official selectors: {e}"),
-                Err(e) => eprintln!("[savhub] sync task failed: {e}"),
-                _ => {}
+            match &result {
+                Ok(Ok(updated)) => eprintln!("[savhub] selectors page sync done, updated={updated}"),
+                Ok(Err(e)) => eprintln!("[savhub] selectors page sync failed: {e}"),
+                Err(e) => eprintln!("[savhub] selectors page sync task panicked: {e}"),
             }
             version += 1;
         });
@@ -295,25 +311,33 @@ pub fn SelectorsPage() -> Element {
                 // Enable All / Disable All
                 button {
                     style: "padding: 4px 10px; font-size: 11px; border: 1px solid {Theme::LINE}; border-radius: 6px; background: {Theme::PANEL}; color: {Theme::ACCENT_STRONG}; cursor: pointer;",
-                    onclick: move |_| {
-                        if *show_official.read() {
-                            let _ = set_all_official_selectors_enabled(true);
-                        } else {
-                            let _ = set_all_custom_selectors_enabled(true);
+                    onclick: {
+
+                        move |_| {
+                            if *show_official.read() {
+                                let _ = set_all_official_selectors_enabled(true);
+                            } else {
+                                let _ = set_all_custom_selectors_enabled(true);
+                                push_selectors_to_server();
+                            }
+                            version += 1;
                         }
-                        version += 1;
                     },
                     "{t.selectors_enable_all}"
                 }
                 button {
                     style: "padding: 4px 10px; font-size: 11px; border: 1px solid {Theme::LINE}; border-radius: 6px; background: {Theme::PANEL}; color: {Theme::MUTED}; cursor: pointer;",
-                    onclick: move |_| {
-                        if *show_official.read() {
-                            let _ = set_all_official_selectors_enabled(false);
-                        } else {
-                            let _ = set_all_custom_selectors_enabled(false);
+                    onclick: {
+
+                        move |_| {
+                            if *show_official.read() {
+                                let _ = set_all_official_selectors_enabled(false);
+                            } else {
+                                let _ = set_all_custom_selectors_enabled(false);
+                                push_selectors_to_server();
+                            }
+                            version += 1;
                         }
-                        version += 1;
                     },
                     "{t.selectors_disable_all}"
                 }
@@ -415,11 +439,13 @@ pub fn SelectorsPage() -> Element {
                                     },
                                     on_template: {
                                         let sign = selector.sign.clone();
+                
                                         move |_| {
                                             if let Ok(cloned) = clone_official_as_custom(&sign) {
                                                 form_key += 1;
                                                 form.set(Some(SelectorForm::from_selector(&cloned, false)));
                                                 version += 1;
+                                                push_selectors_to_server();
                                             }
                                         }
                                     },
@@ -476,7 +502,8 @@ pub fn SelectorsPage() -> Element {
                                     },
                                     on_delete: {
                                         let id = selector.sign.clone();
-                                        move |_| { let _ = delete_selector(&id); version += 1; }
+                
+                                        move |_| { let _ = delete_selector(&id); version += 1; push_selectors_to_server(); }
                                     },
                                     on_toggle: {
                                         let sign = selector.sign.clone();
@@ -868,6 +895,16 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
         }
         form.set(None);
         version.with_mut(|v| *v += 1);
+        // Push to server
+        let api_base = state.api_base.read().clone();
+        let token = state.token.read().clone();
+        if let Some(token) = token {
+            spawn(async move {
+                let _ = tokio::task::spawn_blocking(move || {
+                    savhub_local::selectors::push_custom_selectors(&api_base, &token)
+                }).await;
+            });
+        }
     };
 
     // Read form snapshot
