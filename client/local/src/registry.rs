@@ -36,12 +36,11 @@ pub fn read_api_base_url() -> Option<String> {
     crate::config::read_global_config()
         .ok()
         .flatten()
-        .and_then(|cfg| cfg.rest_api)
-        .and_then(|rest| rest.base_url)
+        .and_then(|cfg| cfg.api_base)
         .filter(|value| !value.trim().is_empty())
 }
 
-fn registry_api_base() -> String {
+pub fn api_base_url() -> String {
     read_api_base_url().unwrap_or_else(|| DEFAULT_API_BASE.to_string())
 }
 
@@ -63,7 +62,7 @@ struct RegistryApiClient {
 impl RegistryApiClient {
     fn new() -> Result<Self> {
         Ok(Self {
-            base: registry_api_base(),
+            base: api_base_url(),
             token: registry_api_token(),
             client: Client::builder()
                 .user_agent("savhub-local")
@@ -740,7 +739,7 @@ pub fn fetch_skills_batch_with_progress(
                 &local_path,
                 &RepoSkillOrigin {
                     version: 1,
-                    repo: registry_api_base(),
+                    repo: api_base_url(),
                     repo_sign: repo_sign.clone(),
                     repo_commit: Some(git_sha.clone()),
                     slug: slug.clone(),

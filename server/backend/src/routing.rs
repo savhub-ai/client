@@ -71,7 +71,7 @@ pub fn router() -> Router {
                     .get(get_doc_page)
                     .push(Router::with_path("{**path}").get(get_doc_page)),
             )
-            .push(Router::with_path("official_selectors").get(get_official_selectors))
+            .push(Router::with_path("selectors/official").get(get_official_selectors))
             // ── Group 2: Login required ────────────────────────────────
             .push(
                 Router::new()

@@ -717,9 +717,7 @@ pub fn save_config(
     let default_workdir = savhub_local::clients::home_dir().join(".savhub");
 
     let config = savhub_local::config::GlobalConfig {
-        rest_api: Some(savhub_local::config::RestApiConfig {
-            base_url: Some(base.to_string()),
-        }),
+        api_base: Some(base.to_string()),
         token: if token.trim().is_empty() {
             None
         } else {

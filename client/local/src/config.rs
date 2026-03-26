@@ -63,20 +63,9 @@ fn is_default_security_level(level: &SecurityLevel) -> bool {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct RestApiConfig {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base_url: Option<String>,
-}
-
-fn is_rest_api_empty(cfg: &Option<RestApiConfig>) -> bool {
-    match cfg {
-        None => true,
-        Some(c) => c.base_url.is_none(),
-    }
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GlobalConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_base: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -88,8 +77,6 @@ pub struct GlobalConfig {
     /// Minimum security level for fetching skills/flocks.
     #[serde(default, skip_serializing_if = "is_default_security_level")]
     pub security_level: SecurityLevel,
-    #[serde(default, skip_serializing_if = "is_rest_api_empty")]
-    pub rest_api: Option<RestApiConfig>,
 }
 
 /// Resolve the savhub config/data directory.

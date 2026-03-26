@@ -988,7 +988,7 @@ pub fn sync_official_selectors(api_base: &str) -> Result<bool> {
         .timeout(std::time::Duration::from_secs(30))
         .build()?;
 
-    let url = format!("{}/official_selectors", api_base.trim_end_matches('/'));
+    let url = format!("{}/selectors/official", api_base.trim_end_matches('/'));
     let mut req = client.get(&url);
     if let Some(etag) = &current.etag {
         req = req.header("If-None-Match", etag.as_str());
@@ -1000,6 +1000,18 @@ pub fn sync_official_selectors(api_base: &str) -> Result<bool> {
     }
     if !resp.status().is_success() {
         bail!("official selectors API returned {}", resp.status());
+    }
+
+    // Guard against SPA catch-all returning HTML instead of JSON.
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if !content_type.contains("application/json") {
+        bail!(
+            "official selectors API returned unexpected Content-Type: {content_type} (is the server deployed?)"
+        );
     }
 
     let body: serde_json::Value = resp.json()?;

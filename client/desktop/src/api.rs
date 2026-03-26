@@ -389,7 +389,7 @@ pub async fn fetch_official_selectors(
     client: &ApiClient,
 ) -> Result<savhub_shared::OfficialSelectorsResponse, String> {
     client
-        .get_json::<savhub_shared::OfficialSelectorsResponse>("/official_selectors")
+        .get_json::<savhub_shared::OfficialSelectorsResponse>("/selectors/official")
         .await
         .map_err(|e| e.to_string())
 }

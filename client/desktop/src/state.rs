@@ -17,7 +17,7 @@ fn default_workdir() -> PathBuf {
 /// Read global config.
 ///
 /// API base URL priority (highest first):
-///   1. `~/.savhub/config.toml` → `[rest_api] base_url`
+///   1. `~/.savhub/config.toml` → `api_base`
 ///   2. Default fallback
 fn load_config() -> (
     String,
@@ -27,7 +27,7 @@ fn load_config() -> (
     Vec<String>,
     SecurityLevel,
 ) {
-    // Highest priority: [rest_api] override from config.toml.
+    // Highest priority: api_base from config.toml.
     let api_override = savhub_local::registry::read_api_base_url();
 
     let cfg = savhub_local::config::read_global_config()

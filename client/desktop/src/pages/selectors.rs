@@ -247,29 +247,22 @@ pub fn SelectorsPage() -> Element {
         "display: flex; flex-direction: column; gap: 10px;"
     };
 
-    // ── Sync on mount (if stale or never synced) ──
+    // ── Sync official selectors on page mount (silent, no spinner) ──
     let mut sync_triggered = use_signal(|| false);
     if !*sync_triggered.read() {
         sync_triggered.set(true);
-        let should_sync = official_store.last_synced_at.as_deref().map_or(true, |ts| {
-            chrono::DateTime::parse_from_rfc3339(ts)
-                .map(|dt| {
-                    let diff = chrono::Utc::now().signed_duration_since(dt.with_timezone(&chrono::Utc));
-                    diff.num_hours() >= 24
-                })
-                .unwrap_or(true)
+        let api_base = state.api_base.read().clone();
+        spawn(async move {
+            let result = tokio::task::spawn_blocking(move || {
+                savhub_local::selectors::sync_official_selectors(&api_base)
+            }).await;
+            match result {
+                Ok(Err(e)) => eprintln!("[savhub] failed to sync official selectors: {e}"),
+                Err(e) => eprintln!("[savhub] sync task failed: {e}"),
+                _ => {}
+            }
+            version += 1;
         });
-        if should_sync {
-            syncing.set(true);
-            let api_base = state.api_base.read().clone();
-            spawn(async move {
-                let _ = tokio::task::spawn_blocking(move || {
-                    savhub_local::selectors::sync_official_selectors(&api_base)
-                }).await;
-                syncing.set(false);
-                version += 1;
-            });
-        }
     }
 
     rsx! {
@@ -331,29 +324,37 @@ pub fn SelectorsPage() -> Element {
                         oninput: move |e: Event<FormData>| search.set(e.value().to_string()),
                     }
                 }
-                // Refresh (syncs with server when on Official tab)
+                // Refresh / Sync
                 button {
                     title: if *show_official.read() { "Sync with server" } else { "Refresh" },
-                    style: "display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex-shrink: 0; background: {Theme::PANEL}; color: {Theme::ACCENT_STRONG}; border: 1px solid {Theme::LINE}; border-radius: 8px; cursor: pointer; font-size: 16px;",
+                    disabled: *syncing.read(),
+                    style: if *syncing.read() {
+                        format!("display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex-shrink: 0; background: {panel}; color: {muted}; border: 1px solid {line}; border-radius: 8px; cursor: not-allowed; font-size: 16px; opacity: 0.6;", panel = Theme::PANEL, muted = Theme::MUTED, line = Theme::LINE)
+                    } else {
+                        format!("display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex-shrink: 0; background: {panel}; color: {accent}; border: 1px solid {line}; border-radius: 8px; cursor: pointer; font-size: 16px;", panel = Theme::PANEL, accent = Theme::ACCENT_STRONG, line = Theme::LINE)
+                    },
                     onclick: {
                         let api_base = state.api_base.read().clone();
                         move |_| {
-                            if *show_official.read() {
-                                syncing.set(true);
-                                let api_base = api_base.clone();
-                                spawn(async move {
+                            if *syncing.read() { return; }
+                            syncing.set(true);
+                            let api_base = api_base.clone();
+                            let is_official = *show_official.read();
+                            spawn(async move {
+                                if is_official {
                                     let _ = tokio::task::spawn_blocking(move || {
                                         savhub_local::selectors::sync_official_selectors(&api_base)
                                     }).await;
-                                    syncing.set(false);
-                                    version += 1;
-                                });
-                            } else {
+                                }
+                                syncing.set(false);
                                 version += 1;
-                            }
+                            });
                         }
                     },
-                    crate::icons::LucideIcon { icon: crate::icons::Icon::RefreshCw, size: 14 }
+                    span {
+                        style: if *syncing.read() { "display: inline-flex; animation: spin 1s linear infinite;" } else { "display: inline-flex;" },
+                        crate::icons::LucideIcon { icon: crate::icons::Icon::RefreshCw, size: 14 }
+                    }
                 }
                 // View toggle
                 ViewToggleButton {

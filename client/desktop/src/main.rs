@@ -145,6 +145,14 @@ fn main() {
     // Clean up backup binary from a previous update
     updater::cleanup_old_binary();
 
+    // Sync official selectors on startup (non-blocking, best-effort)
+    std::thread::spawn(|| {
+        let api_base = savhub_local::registry::api_base_url();
+        if let Err(e) = savhub_local::selectors::sync_official_selectors(&api_base) {
+            eprintln!("[savhub] startup selector sync failed: {e}");
+        }
+    });
+
     // Read language from config to set the window title
     let lang = state::read_language();
     let t = i18n::texts(lang);

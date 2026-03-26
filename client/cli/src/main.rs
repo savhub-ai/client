@@ -63,7 +63,7 @@ struct Cli {
     #[arg(long, global = true)]
     site: Option<String>,
     #[arg(long, global = true)]
-    registry: Option<String>,
+    api_base: Option<String>,
     #[arg(long = "no-input", global = true, action = ArgAction::SetTrue)]
     no_input: bool,
     #[command(subcommand)]
@@ -423,7 +423,7 @@ enum SyncStatus {
 struct GlobalOpts {
     workdir: PathBuf,
     dir: PathBuf,
-    registry: String,
+    api_base: String,
     input_allowed: bool,
 }
 
@@ -517,18 +517,18 @@ fn resolve_global_opts(cli: &Cli) -> Result<GlobalOpts> {
         .clone()
         .or_else(|| std::env::var("SAVHUB_SITE").ok())
         .unwrap_or_else(|| DEFAULT_SITE.to_string());
-    // Priority: --registry flag > env > config [rest_api] base_url > site default
+    // Priority: --api-base flag > env > config api_base > site default
     let api_override = savhub_local::registry::read_api_base_url();
-    let registry = cli
-        .registry
+    let api_base = cli
+        .api_base
         .clone()
-        .or_else(|| std::env::var("SAVHUB_REGISTRY").ok())
+        .or_else(|| std::env::var("SAVHUB_API_BASE").ok())
         .or(api_override)
         .unwrap_or_else(|| site.clone());
     Ok(GlobalOpts {
         workdir,
         dir,
-        registry,
+        api_base,
         input_allowed: !cli.no_input,
     })
 }
@@ -562,7 +562,7 @@ async fn cmd_login(opts: &GlobalOpts, args: LoginArgs) -> Result<()> {
         eprintln!("Ignoring --label; savhub login now uses GitHub OAuth.");
     }
 
-    let client = ApiClient::new(&opts.registry, None);
+    let client = ApiClient::new(&opts.api_base, None);
     let listener = TcpListener::bind("127.0.0.1:0")
         .context("failed to bind a local callback port for GitHub login")?;
     let return_to = format!(
@@ -586,15 +586,13 @@ async fn cmd_login(opts: &GlobalOpts, args: LoginArgs) -> Result<()> {
     }
 
     let token = wait_for_login_callback(listener)?;
-    let client = ApiClient::new(&opts.registry, Some(token.clone()));
+    let client = ApiClient::new(&opts.api_base, Some(token.clone()));
     let whoami = client.get_json::<WhoAmIResponse>("/whoami").await?;
     let Some(user) = whoami.user else {
         bail!("login failed: token is not valid");
     };
     let mut existing = read_global_config()?.unwrap_or_default();
-    existing.rest_api = Some(savhub_local::config::RestApiConfig {
-        base_url: Some(opts.registry.clone()),
-    });
+    existing.api_base = Some(opts.api_base.clone());
     existing.token = Some(token);
     write_global_config(&existing)?;
     println!("Logged in as @{} via GitHub", user.handle);
@@ -882,7 +880,7 @@ async fn cmd_fetch(opts: &GlobalOpts, args: FetchArgs) -> Result<()> {
         &target,
         &RepoSkillOrigin {
             version: 1,
-            repo: opts.registry.clone(),
+            repo: opts.api_base.clone(),
             repo_sign: resolved.spec.repo_sign.clone(),
             repo_commit: Some(resolved.spec.git_sha.clone()),
             slug: slug.clone(),
@@ -1993,12 +1991,12 @@ async fn download_skill_bundle(
 }
 
 fn authed_client(opts: &GlobalOpts) -> Result<ApiClient> {
-    Ok(ApiClient::new(&opts.registry, Some(require_auth_token()?)))
+    Ok(ApiClient::new(&opts.api_base, Some(require_auth_token()?)))
 }
 
 fn optional_client(opts: &GlobalOpts) -> Result<ApiClient> {
     Ok(ApiClient::new(
-        &opts.registry,
+        &opts.api_base,
         read_global_config()?.and_then(|config| config.token),
     ))
 }
@@ -2316,6 +2314,10 @@ fn cmd_selector(opts: &GlobalOpts, command: SelectorCommand) -> Result<()> {
 
     match command {
         SelectorCommand::List => {
+            // Sync official selectors from the server
+            if let Err(e) = savhub_local::selectors::sync_official_selectors(&opts.api_base) {
+                eprintln!("Warning: could not sync official selectors: {e}");
+            }
             let official_store = savhub_local::selectors::read_official_selectors_store()?;
             let custom_store = read_selectors_store()?;
             let prefs = savhub_local::selectors::read_selector_prefs().unwrap_or_default();
@@ -2676,7 +2678,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
 
     // Sync official selectors from the server before scanning
     eprintln!("Syncing official selectors...");
-    if let Err(e) = savhub_local::selectors::sync_official_selectors(&opts.registry) {
+    if let Err(e) = savhub_local::selectors::sync_official_selectors(&opts.api_base) {
         eprintln!("Warning: could not sync official selectors: {e}");
     }
 
