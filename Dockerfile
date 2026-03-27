@@ -48,6 +48,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
+COPY official_selectors.json ./
 COPY docs/ docs/
 COPY server/ server/
 COPY shared/ shared/
