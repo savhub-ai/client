@@ -428,7 +428,7 @@ pub fn extract_summary(parsed: &Value, markdown: &str) -> Option<String> {
 pub fn hash_string(value: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(value.as_bytes());
-    format!("{:x}", hasher.finalize())
+    hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
 pub fn select_markdown_file<'a>(
