@@ -207,7 +207,8 @@ pub fn SelectorsPage() -> Element {
             spawn(async move {
                 let _ = tokio::task::spawn_blocking(move || {
                     savhub_local::selectors::push_custom_selectors(&api_base, &token)
-                }).await;
+                })
+                .await;
             });
         }
     };
@@ -216,8 +217,13 @@ pub fn SelectorsPage() -> Element {
     let official_store = read_official_selectors_store().unwrap_or_default();
     let selector_prefs = read_selector_prefs().unwrap_or_default();
     let official_count = official_store.selectors.len();
-    let custom_count = read_selectors_store().map(|s| s.selectors.len()).unwrap_or(0);
-    eprintln!("[savhub] selectors page render: {official_count} official, {custom_count} custom, version={}", *version.peek());
+    let custom_count = read_selectors_store()
+        .map(|s| s.selectors.len())
+        .unwrap_or(0);
+    eprintln!(
+        "[savhub] selectors page render: {official_count} official, {custom_count} custom, version={}",
+        *version.peek()
+    );
     let _all_official_disabled = official_count > 0
         && official_store
             .selectors
@@ -249,7 +255,9 @@ pub fn SelectorsPage() -> Element {
             .filter(|e| {
                 e.selector.name.to_lowercase().contains(&search_val)
                     || e.selector.description.to_lowercase().contains(&search_val)
-                    || e.tags.iter().any(|tag| tag.to_lowercase().contains(&search_val))
+                    || e.tags
+                        .iter()
+                        .any(|tag| tag.to_lowercase().contains(&search_val))
             })
             .cloned()
             .collect()
@@ -271,9 +279,12 @@ pub fn SelectorsPage() -> Element {
         spawn(async move {
             let result = tokio::task::spawn_blocking(move || {
                 savhub_local::selectors::sync_official_selectors(&api_base)
-            }).await;
+            })
+            .await;
             match &result {
-                Ok(Ok(updated)) => eprintln!("[savhub] selectors page sync done, updated={updated}"),
+                Ok(Ok(updated)) => {
+                    eprintln!("[savhub] selectors page sync done, updated={updated}")
+                }
                 Ok(Err(e)) => eprintln!("[savhub] selectors page sync failed: {e}"),
                 Err(e) => eprintln!("[savhub] selectors page sync task panicked: {e}"),
             }
@@ -439,7 +450,7 @@ pub fn SelectorsPage() -> Element {
                                     },
                                     on_template: {
                                         let sign = selector.sign.clone();
-                
+
                                         move |_| {
                                             if let Ok(cloned) = clone_official_as_custom(&sign) {
                                                 form_key += 1;
@@ -502,7 +513,7 @@ pub fn SelectorsPage() -> Element {
                                     },
                                     on_delete: {
                                         let id = selector.sign.clone();
-                
+
                                         move |_| { let _ = delete_selector(&id); version += 1; push_selectors_to_server(); }
                                     },
                                     on_toggle: {
@@ -902,7 +913,8 @@ fn SelectorFormModal(form: Signal<Option<SelectorForm>>, version: Signal<u32>) -
             spawn(async move {
                 let _ = tokio::task::spawn_blocking(move || {
                     savhub_local::selectors::push_custom_selectors(&api_base, &token)
-                }).await;
+                })
+                .await;
             });
         }
     };

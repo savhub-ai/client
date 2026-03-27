@@ -14,10 +14,7 @@ static OFFICIAL_SELECTORS: Lazy<SelectorPayload> = Lazy::new(|| {
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
-    let version = parsed
-        .get("version")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(1) as u32;
+    let version = parsed.get("version").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
 
     let hash = Sha256::digest(raw.as_bytes());
     let hex: String = hash[..16].iter().map(|b| format!("{b:02x}")).collect();
@@ -43,9 +40,7 @@ struct SelectorPayload {
 ///
 /// If the caller supplies an `if_none_match` value that matches the current
 /// ETag, this returns `None` (the caller should send 304 Not Modified).
-pub fn get_official_selectors(
-    if_none_match: Option<&str>,
-) -> Option<(&'static str, &'static str)> {
+pub fn get_official_selectors(if_none_match: Option<&str>) -> Option<(&'static str, &'static str)> {
     let payload = &*OFFICIAL_SELECTORS;
     if let Some(inm) = if_none_match {
         if inm == payload.etag || inm.trim_matches('"') == payload.etag.trim_matches('"') {

@@ -17,8 +17,8 @@ use uuid::Uuid;
 use crate::auth::{AuthContext, optional_auth, require_auth};
 use crate::error::AppError;
 use crate::service::{
-    admin, blocks, browse_history, catalog, github_auth, index_jobs, index_rules_admin,
-    custom_selectors, interactions, official_selectors, reports, repos, security, site_admins,
+    admin, blocks, browse_history, catalog, custom_selectors, github_auth, index_jobs,
+    index_rules_admin, interactions, official_selectors, reports, repos, security, site_admins,
     users,
 };
 use crate::state::app_state;

@@ -866,7 +866,11 @@ pub fn read_official_selectors_store() -> Result<OfficialSelectorsStore> {
     if let Ok(raw) = fs::read_to_string(&path) {
         let store: OfficialSelectorsStore = serde_json::from_str(&raw)
             .with_context(|| format!("invalid official selectors at {}", path.display()))?;
-        eprintln!("[savhub] read official store: {} selector(s) from {}", store.selectors.len(), path.display());
+        eprintln!(
+            "[savhub] read official store: {} selector(s) from {}",
+            store.selectors.len(),
+            path.display()
+        );
         return Ok(store);
     }
     eprintln!("[savhub] official store not found at {}", path.display());
@@ -998,8 +1002,14 @@ pub fn sync_official_selectors(api_base: &str) -> Result<bool> {
         req = req.header("If-None-Match", etag.as_str());
     }
 
-    let resp = req.send().inspect_err(|e| eprintln!("[savhub]   request error: {e}"))?;
-    eprintln!("[savhub]   response: {} content-type={:?}", resp.status(), resp.headers().get("content-type"));
+    let resp = req
+        .send()
+        .inspect_err(|e| eprintln!("[savhub]   request error: {e}"))?;
+    eprintln!(
+        "[savhub]   response: {} content-type={:?}",
+        resp.status(),
+        resp.headers().get("content-type")
+    );
     if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
         return Ok(false);
     }
@@ -1040,7 +1050,10 @@ pub fn sync_official_selectors(api_base: &str) -> Result<bool> {
         }
     }
 
-    eprintln!("[savhub]   parsed {} official selector(s) from response", entries.len());
+    eprintln!(
+        "[savhub]   parsed {} official selector(s) from response",
+        entries.len()
+    );
     let store = OfficialSelectorsStore {
         version: 1,
         last_synced_at: Some(chrono::Utc::now().to_rfc3339()),
@@ -1048,7 +1061,10 @@ pub fn sync_official_selectors(api_base: &str) -> Result<bool> {
         selectors: entries,
     };
     write_official_selectors_store(&store)?;
-    eprintln!("[savhub]   wrote official store to {}", official_selectors_path()?.display());
+    eprintln!(
+        "[savhub]   wrote official store to {}",
+        official_selectors_path()?.display()
+    );
     Ok(true)
 }
 
@@ -1126,10 +1142,7 @@ pub fn pull_custom_selectors(api_base: &str, token: &str) -> Result<Option<Selec
         }
     }
 
-    let version = body
-        .get("version")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(1) as u8;
+    let version = body.get("version").and_then(|v| v.as_u64()).unwrap_or(1) as u8;
 
     Ok(Some(SelectorsStore { version, selectors }))
 }

@@ -1,6 +1,6 @@
 use chrono::Utc;
 use diesel::prelude::*;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use shared::{CustomSelectorsResponse, SaveCustomSelectorsRequest};
 use uuid::Uuid;
 
@@ -21,11 +21,7 @@ pub fn get_custom_selectors(auth: &AuthContext) -> Result<CustomSelectorsRespons
 
     match row {
         Some(row) => {
-            let selectors = row
-                .selectors
-                .as_array()
-                .cloned()
-                .unwrap_or_default();
+            let selectors = row.selectors.as_array().cloned().unwrap_or_default();
             Ok(CustomSelectorsResponse {
                 ok: true,
                 selectors,

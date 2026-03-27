@@ -2,7 +2,9 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 
 use dioxus::prelude::*;
-use savhub_shared::{FlockSummary, SecurityStatus, SkillListItem, StarredIdsResponse, ToggleStarResponse};
+use savhub_shared::{
+    FlockSummary, SecurityStatus, SkillListItem, StarredIdsResponse, ToggleStarResponse,
+};
 
 use crate::components::click_guard;
 use crate::components::pagination::PaginationControls;
@@ -413,7 +415,10 @@ pub fn ExplorePage() -> Element {
                     .await
                 {
                     starred_ids.set(
-                        resp.skill_ids.into_iter().map(|id| id.to_string()).collect(),
+                        resp.skill_ids
+                            .into_iter()
+                            .map(|id| id.to_string())
+                            .collect(),
                     );
                 }
             });
