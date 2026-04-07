@@ -6,7 +6,12 @@ all-features = false
 
 [advisories]
 yanked = "warn"
-ignore = []
+ignore = [
+    # glib <0.20 unsoundness in VariantStrIter. Transitive via
+    # dioxus-desktop -> wry/tao/gtk 0.18; cannot upgrade without a
+    # major dioxus-desktop bump. Not reachable from our code paths.
+    "RUSTSEC-2024-0429",
+]
 
 [licenses]
 allow = [
