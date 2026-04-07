@@ -140,6 +140,7 @@ pub fn router() -> Router {
                             .post(save_my_custom_selectors),
                     )
                     .push(Router::with_path("me/starred-skill-ids").get(get_my_starred_skill_ids))
+                    .push(Router::with_path("me/stars").get(get_my_starred_skills))
                     .push(
                         Router::with_path("history")
                             .get(get_browse_history)
@@ -949,6 +950,18 @@ async fn get_my_starred_skill_ids(depot: &Depot, res: &mut Response) {
     let auth = auth_from_depot(depot);
     match interactions::get_starred_skill_ids(auth) {
         Ok(ids) => res.render(Json(shared::StarredIdsResponse { skill_ids: ids })),
+        Err(error) => render_error(res, error),
+    }
+}
+
+/// D2: GET /me/stars — paged list of skills the caller has starred,
+/// newest-first. Optional `limit` query param, clamped to [1, 100].
+#[handler]
+async fn get_my_starred_skills(req: &mut Request, depot: &Depot, res: &mut Response) {
+    let auth = auth_from_depot(depot);
+    let limit = req.query::<i64>("limit").unwrap_or(50);
+    match catalog::list_my_starred_skills(auth, limit) {
+        Ok(page) => res.render(Json(page)),
         Err(error) => render_error(res, error),
     }
 }
