@@ -137,7 +137,11 @@ pub fn router() -> Router {
                     .push(
                         Router::with_path("me/selectors/custom")
                             .get(get_my_custom_selectors)
-                            .post(save_my_custom_selectors),
+                            .post(save_my_custom_selectors)
+                            .push(
+                                Router::with_path("validate")
+                                    .post(validate_my_custom_selectors),
+                            ),
                     )
                     .push(Router::with_path("me/starred-skill-ids").get(get_my_starred_skill_ids))
                     .push(Router::with_path("me/stars").get(get_my_starred_skills))
@@ -927,6 +931,19 @@ async fn get_my_custom_selectors(depot: &Depot, res: &mut Response) {
         Ok(payload) => res.render(Json(payload)),
         Err(error) => render_error(res, error),
     }
+}
+
+/// D5: POST /me/selectors/custom/validate — dry-run validation, no persist.
+#[handler]
+async fn validate_my_custom_selectors(req: &mut Request, _depot: &Depot, res: &mut Response) {
+    let body = match req.parse_json::<shared::SaveCustomSelectorsRequest>().await {
+        Ok(body) => body,
+        Err(error) => {
+            return render_error(res, AppError::BadRequest(error.to_string()));
+        }
+    };
+    let response = custom_selectors::validate_custom_selectors(body);
+    res.render(Json(response));
 }
 
 #[handler]
