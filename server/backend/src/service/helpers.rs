@@ -97,10 +97,7 @@ pub fn validate_git_url(url: &str) -> Result<(), AppError> {
             "git_url must not start with '-'".into(),
         ));
     }
-    if url
-        .chars()
-        .any(|c| c.is_control() || c == ' ' || c == '\t')
-    {
+    if url.chars().any(|c| c.is_control() || c == ' ' || c == '\t') {
         return Err(AppError::BadRequest(
             "git_url contains whitespace or control characters".into(),
         ));
@@ -469,7 +466,11 @@ pub fn extract_summary(parsed: &Value, markdown: &str) -> Option<String> {
 pub fn hash_string(value: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(value.as_bytes());
-    hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 pub fn select_markdown_file<'a>(

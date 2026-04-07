@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install wasm32 target and dx CLI
 RUN rustup target add wasm32-unknown-unknown \
-    && cargo install dioxus-cli@0.7.3
+    && cargo install dioxus-cli@0.7.3 --locked
 
 WORKDIR /app
 
