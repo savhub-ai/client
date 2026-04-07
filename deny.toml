@@ -46,6 +46,8 @@ allow = [
     "0BSD",
     "BSL-1.0",
     "OpenSSL",
+    "PostgreSQL",
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.9
 
