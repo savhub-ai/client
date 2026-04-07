@@ -319,13 +319,20 @@ fn unique_handle(conn: &mut PgConnection, base: &str) -> Result<String, AppError
 fn issue_github_token(conn: &mut PgConnection, user_id: Uuid) -> Result<String, AppError> {
     // Keep previous tokens so other clients (CLI, desktop) stay logged in.
     let token = format!("ghu_{}", Uuid::now_v7().simple());
+    let token_hash = super::helpers::hash_string(&token);
+    let token_prefix: String = token.chars().take(12).collect();
     diesel::insert_into(user_tokens::table)
         .values(NewUserTokenRow {
             id: Uuid::now_v7(),
             user_id,
             name: GITHUB_TOKEN_NAME.to_string(),
+            // The plaintext column is still present during B1 phase 1; it
+            // will be dropped in the follow-up migration. New rows still
+            // populate it so a rollback to the old auth.rs lookup works.
             token: token.clone(),
             created_at: Utc::now(),
+            token_hash,
+            token_prefix,
         })
         .execute(conn)?;
     Ok(token)

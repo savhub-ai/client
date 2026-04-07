@@ -64,6 +64,8 @@ pub struct UserTokenRow {
     pub name: String,
     pub token: String,
     pub created_at: DateTime<Utc>,
+    pub token_hash: String,
+    pub token_prefix: String,
 }
 
 #[derive(Debug, Clone, Insertable)]
@@ -74,6 +76,8 @@ pub struct NewUserTokenRow {
     pub name: String,
     pub token: String,
     pub created_at: DateTime<Utc>,
+    pub token_hash: String,
+    pub token_prefix: String,
 }
 
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable)]

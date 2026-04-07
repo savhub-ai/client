@@ -321,6 +321,8 @@ diesel::table! {
         name -> Text,
         token -> Text,
         created_at -> Timestamptz,
+        token_hash -> Text,
+        token_prefix -> Text,
     }
 }
 
