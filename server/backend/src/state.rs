@@ -9,7 +9,7 @@ use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::config::Config;
-use crate::db::{PgPool, run_migrations};
+use crate::db::{AsyncPgPool, PgPool, run_migrations};
 
 /// Real-time event broadcast to WebSocket clients.
 #[derive(Clone, Debug, Serialize)]
@@ -30,6 +30,9 @@ pub enum WsEvent {
 pub struct AppState {
     pub config: Config,
     pub pool: PgPool,
+    /// C2 phase 0: async pool used by ported modules. Lives alongside the
+    /// sync `pool` until every service is migrated.
+    pub async_pool: AsyncPgPool,
     pub events_tx: broadcast::Sender<WsEvent>,
     /// Per-repo locks that serialise clone/pull operations so that
     /// `collect_skill_candidates` never runs against a validated-cloned checkout.
@@ -57,13 +60,14 @@ impl AppState {
 
 static APP_STATE: OnceCell<Arc<AppState>> = OnceCell::new();
 
-pub fn init_state(config: Config, pool: PgPool) -> Result<Arc<AppState>> {
+pub fn init_state(config: Config, pool: PgPool, async_pool: AsyncPgPool) -> Result<Arc<AppState>> {
     let (events_tx, _) = broadcast::channel::<WsEvent>(256);
     let ai_chat_concurrency = config.ai_chat_concurrency.max(1);
     let ai_security_concurrency = config.ai_security_concurrency.max(1);
     let state = Arc::new(AppState {
         config,
         pool,
+        async_pool,
         events_tx,
         repo_checkout_locks: Arc::new(Mutex::new(HashMap::new())),
         ai_chat_semaphore: Arc::new(tokio::sync::Semaphore::new(ai_chat_concurrency)),

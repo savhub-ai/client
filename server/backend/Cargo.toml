@@ -13,6 +13,7 @@ novel-shared.workspace = true
 rust-embed.workspace = true
 chrono.workspace = true
 diesel.workspace = true
+diesel-async.workspace = true
 diesel_migrations.workspace = true
 dotenvy.workspace = true
 futures-util.workspace = true

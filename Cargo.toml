@@ -38,6 +38,10 @@ base64 = "0.22.1"
 diesel = { version = "2.3.7", features = [
     "postgres", "r2d2", "chrono", "uuid", "serde_json", "64-column-tables",
 ] }
+# C2 phase 0: introduce diesel-async + bb8 alongside the existing sync stack.
+# Modules will be ported to AsyncPgConnection one at a time; both pools live
+# in app_state until the migration is complete.
+diesel-async = { version = "0.7", features = ["postgres", "bb8"] }
 diesel_migrations = "2.3.1"
 dotenvy = "0.15.7"
 futures-util = "0.3.32"
