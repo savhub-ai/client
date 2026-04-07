@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::models::{UserRow, UserTokenRow};
 use crate::schema::{user_tokens, users};
+use crate::service::helpers::hash_string;
 use crate::state::app_state;
 
 #[derive(Debug, Clone)]
@@ -61,8 +62,11 @@ pub fn optional_auth(req: &Request) -> Result<Option<AuthContext>, AppError> {
         .get()
         .map_err(|error| AppError::Internal(error.to_string()))?;
 
+    // Look up by SHA-256(token). The plaintext column still exists for the
+    // duration of B1 phase 1; the next migration drops it.
+    let presented_hash = hash_string(token);
     let token_row = user_tokens::table
-        .filter(user_tokens::token.eq(token))
+        .filter(user_tokens::token_hash.eq(&presented_hash))
         .select(UserTokenRow::as_select())
         .first(&mut conn)
         .optional()?
