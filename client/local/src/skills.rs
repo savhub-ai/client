@@ -186,7 +186,11 @@ pub fn compute_fingerprint(files: &[LocalSkillFile]) -> String {
         hasher.update(file.content.as_bytes());
         hasher.update([0xff]);
     }
-    hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 pub fn ensure_skill_marker(files: &[LocalSkillFile]) -> Result<()> {
@@ -486,7 +490,11 @@ fn normalize_forward_slashes(path: impl AsRef<Path>) -> String {
 fn hash_bytes(value: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(value);
-    hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
