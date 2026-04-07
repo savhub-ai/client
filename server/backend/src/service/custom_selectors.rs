@@ -135,10 +135,7 @@ pub fn validate_custom_selectors(
             Some(other) => issues.push(SelectorValidationIssue {
                 index,
                 field: "kind".into(),
-                message: format!(
-                    "kind '{other}' is not one of {}",
-                    KNOWN_KINDS.join(", ")
-                ),
+                message: format!("kind '{other}' is not one of {}", KNOWN_KINDS.join(", ")),
             }),
             None => issues.push(SelectorValidationIssue {
                 index,
@@ -188,8 +185,9 @@ pub fn validate_custom_selectors(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
+
+    use super::*;
 
     fn req(selectors: Vec<Value>) -> SaveCustomSelectorsRequest {
         SaveCustomSelectorsRequest {
