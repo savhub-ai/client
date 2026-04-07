@@ -614,6 +614,30 @@ pub struct CustomSelectorsResponse {
     pub updated_at: Option<DateTime<Utc>>,
 }
 
+/// D5: response from POST /me/selectors/custom/validate.
+///
+/// Reports per-entry validation issues without persisting the payload, so the
+/// custom-selector editor UI can surface inline errors before the user clicks
+/// save.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SelectorValidationIssue {
+    /// Index in the submitted `selectors` array.
+    pub index: usize,
+    /// Field that failed (e.g. "name", "kind", "pattern") — empty if the
+    /// whole entry is invalid.
+    #[serde(default)]
+    pub field: String,
+    /// Human-readable error message.
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ValidateCustomSelectorsResponse {
+    /// `true` when `issues` is empty.
+    pub ok: bool,
+    pub issues: Vec<SelectorValidationIssue>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StarredIdsResponse {
     pub skill_ids: Vec<Uuid>,
