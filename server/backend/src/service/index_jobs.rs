@@ -172,6 +172,7 @@ pub async fn submit_index(
 
     // Normalize the git URL so the same repo always produces the same data
     let git_url = normalize_git_url(&request.git_url);
+    super::helpers::validate_git_url(&git_url)?;
     let url_hash = hash_string(&git_url);
 
     // Only admins may set force=true
@@ -590,47 +591,49 @@ async fn do_auto_import(
     // If we reused an existing checkout (pull, not fresh clone), compute which
     // candidate indices actually have file changes so we can skip unchanged
     // flocks entirely.
-    let changed_indices: HashSet<usize> =
-        if checkout.reused && checkout.previous_sha.is_some() && !job.force_index {
-            let prev = checkout.previous_sha.as_deref().unwrap();
-            let all_changed =
-                super::git_ops::changed_files_between(&checkout.path, prev, &checkout.head_sha)
-                    .await
-                    .unwrap_or_default();
+    let changed_indices: HashSet<usize> = if let (true, Some(prev), false) = (
+        checkout.reused,
+        checkout.previous_sha.as_deref(),
+        job.force_index,
+    ) {
+        let all_changed =
+            super::git_ops::changed_files_between(&checkout.path, prev, &checkout.head_sha)
+                .await
+                .unwrap_or_default();
 
-            if all_changed.is_empty() {
-                // No files changed at all — nothing to do.
-                tracing::info!(
-                    "[index{}] no file changes between {} and {}, skipping",
-                    job.id,
-                    &prev[..prev.len().min(8)],
-                    &checkout.head_sha[..checkout.head_sha.len().min(8)],
-                );
-                HashSet::new()
-            } else {
-                tracing::info!(
-                    "[index{}] incremental: {} files changed between {}..{}",
-                    job.id,
-                    all_changed.len(),
-                    &prev[..prev.len().min(8)],
-                    &checkout.head_sha[..checkout.head_sha.len().min(8)],
-                );
-                candidates
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, c)| {
-                        let prefix = join_repo_relative_path(effective_subdir, &c.relative_dir);
-                        all_changed
-                            .iter()
-                            .any(|f| f.starts_with(&format!("{}/", prefix)) || f == &prefix)
-                    })
-                    .map(|(i, _)| i)
-                    .collect()
-            }
+        if all_changed.is_empty() {
+            // No files changed at all — nothing to do.
+            tracing::info!(
+                "[index{}] no file changes between {} and {}, skipping",
+                job.id,
+                &prev[..prev.len().min(8)],
+                &checkout.head_sha[..checkout.head_sha.len().min(8)],
+            );
+            HashSet::new()
         } else {
-            // Fresh clone → every candidate is "changed"
-            (0..candidates.len()).collect()
-        };
+            tracing::info!(
+                "[index{}] incremental: {} files changed between {}..{}",
+                job.id,
+                all_changed.len(),
+                &prev[..prev.len().min(8)],
+                &checkout.head_sha[..checkout.head_sha.len().min(8)],
+            );
+            candidates
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| {
+                    let prefix = join_repo_relative_path(effective_subdir, &c.relative_dir);
+                    all_changed
+                        .iter()
+                        .any(|f| f.starts_with(&format!("{}/", prefix)) || f == &prefix)
+                })
+                .map(|(i, _)| i)
+                .collect()
+        }
+    } else {
+        // Fresh clone → every candidate is "changed"
+        (0..candidates.len()).collect()
+    };
 
     let is_incremental = checkout.reused && checkout.previous_sha.is_some() && !job.force_index;
 
@@ -805,8 +808,9 @@ async fn do_auto_import(
         };
 
         let default_flock_name = derive_flock_name(&flock_slug, &repo_name);
-        let (flock_name, flock_description) = if flock_meta_cached {
-            let f = existing_flock_for_meta.as_ref().unwrap();
+        let (flock_name, flock_description) = if let (true, Some(f)) =
+            (flock_meta_cached, existing_flock_for_meta.as_ref())
+        {
             tracing::info!(
                 "[index] ai_request_cache hit for flock_metadata {}/{} (commit {})",
                 repo_sign,
@@ -1545,11 +1549,11 @@ pub(crate) fn path_to_display_name(path: &str) -> String {
     for part in &parts {
         let expanded = part.replace('-', " ");
         let cur_first = expanded.split_whitespace().next().unwrap_or("");
-        if let Some(prev) = deduped.last() {
-            let prev_first = prev.split_whitespace().next().unwrap_or("");
+        if let Some(prev_last) = deduped.last_mut() {
+            let prev_first = prev_last.split_whitespace().next().unwrap_or("");
             if prev_first.eq_ignore_ascii_case(cur_first) {
                 // Replace the previous segment with the current (more specific) one
-                *deduped.last_mut().unwrap() = expanded;
+                *prev_last = expanded;
                 continue;
             }
         }
@@ -2028,5 +2032,36 @@ mod tests {
         assert_eq!(plans.len(), 1);
         assert_eq!(plans[0].slug, "toolbox");
         assert_eq!(plans[0].source_path, ".");
+    }
+
+    #[test]
+    fn path_to_display_name_dedupes_repeated_prefix() {
+        // "mofa/mofa-skills" → first segment "mofa" is subsumed by the more
+        // specific second segment "mofa skills".
+        assert_eq!(path_to_display_name("mofa/mofa-skills"), "mofa skills");
+    }
+
+    #[test]
+    fn path_to_display_name_keeps_distinct_segments() {
+        assert_eq!(
+            path_to_display_name("anthropics/mcp-skills"),
+            "anthropics mcp skills"
+        );
+    }
+
+    #[test]
+    fn path_to_display_name_handles_single_segment() {
+        assert_eq!(path_to_display_name("skills"), "skills");
+    }
+
+    #[test]
+    fn path_to_display_name_ignores_empty_segments() {
+        assert_eq!(path_to_display_name("/foo//bar/"), "foo bar");
+    }
+
+    #[test]
+    fn path_to_display_name_case_insensitive_dedup() {
+        // Verifies the A3 refactor preserved case-insensitive dedup behavior.
+        assert_eq!(path_to_display_name("Foo/foo-bar"), "foo bar");
     }
 }

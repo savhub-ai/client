@@ -78,6 +78,47 @@ pub fn normalize_git_url(raw: &str) -> String {
     }
 }
 
+/// Validate a normalized git URL for safe consumption by the `git` CLI.
+///
+/// Rejects values that could be misinterpreted as `git` options or that
+/// contain shell / control characters. Even though every caller passes the
+/// URL as a single argv element (no shell), `git` itself treats arguments
+/// beginning with `-` as flags (CVE-2018-17456 / CVE-2022-39253), so we must
+/// reject those explicitly.
+pub fn validate_git_url(url: &str) -> Result<(), AppError> {
+    if url.is_empty() {
+        return Err(AppError::BadRequest("git_url is empty".into()));
+    }
+    if url.len() > 2048 {
+        return Err(AppError::BadRequest("git_url too long".into()));
+    }
+    if url.starts_with('-') {
+        return Err(AppError::BadRequest(
+            "git_url must not start with '-'".into(),
+        ));
+    }
+    if url
+        .chars()
+        .any(|c| c.is_control() || c == ' ' || c == '\t')
+    {
+        return Err(AppError::BadRequest(
+            "git_url contains whitespace or control characters".into(),
+        ));
+    }
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err(AppError::BadRequest(
+            "git_url must use http(s):// scheme after normalization".into(),
+        ));
+    }
+    let (_, path) = parse_git_url_parts(url);
+    if path.is_empty() || !path.contains('/') {
+        return Err(AppError::BadRequest(
+            "git_url must include owner and repo path".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// Extract `(domain, path_slug)` from a **normalized** git URL.
 ///
 /// The domain is the host (with port `:` replaced by `-`).
@@ -594,6 +635,69 @@ pub fn audit_log_entry_from_row(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hash_string_is_deterministic_and_hex() {
+        let a = hash_string("hello");
+        let b = hash_string("hello");
+        assert_eq!(a, b);
+        assert_eq!(a.len(), 64);
+        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(hash_string("hello"), hash_string("Hello"));
+    }
+
+    #[test]
+    fn derive_repo_sign_roundtrip() {
+        let url = "https://github.com/anthropics/skills.git";
+        let sign = derive_repo_sign(url);
+        assert_eq!(sign, "github.com/anthropics/skills");
+        // sign_to_git_url is the inverse for the canonical form.
+        let (domain, slug) = parse_git_url_parts(url);
+        assert_eq!(sign_to_git_url(&domain, &slug), url);
+    }
+
+    #[test]
+    fn validate_git_url_accepts_normal_https() {
+        let url = normalize_git_url("https://github.com/anthropics/skills");
+        assert!(validate_git_url(&url).is_ok());
+    }
+
+    #[test]
+    fn validate_git_url_rejects_leading_dash() {
+        // Even after normalize prepends https://, a hostile input like
+        // "--upload-pack=evil" would be normalized to "https://--upload-pack=evil.git"
+        // which is fine; but validate must reject any literal leading '-'.
+        assert!(validate_git_url("-upload-pack=evil").is_err());
+        assert!(validate_git_url("--foo").is_err());
+    }
+
+    #[test]
+    fn validate_git_url_rejects_control_and_whitespace() {
+        assert!(validate_git_url("https://github.com/a/b\n.git").is_err());
+        assert!(validate_git_url("https://github.com/a /b.git").is_err());
+        assert!(validate_git_url("https://github.com/a\tb/c.git").is_err());
+        assert!(validate_git_url("https://github.com/a\0b/c.git").is_err());
+    }
+
+    #[test]
+    fn validate_git_url_rejects_non_http_scheme() {
+        assert!(validate_git_url("file:///etc/passwd").is_err());
+        assert!(validate_git_url("ssh://git@github.com/a/b.git").is_err());
+        assert!(validate_git_url("javascript:alert(1)").is_err());
+    }
+
+    #[test]
+    fn validate_git_url_rejects_missing_owner_or_repo() {
+        assert!(validate_git_url("https://github.com").is_err());
+        assert!(validate_git_url("https://github.com/onlyowner.git").is_err());
+    }
+
+    #[test]
+    fn validate_git_url_rejects_empty_and_oversized() {
+        assert!(validate_git_url("").is_err());
+        let huge = format!("https://github.com/a/{}.git", "x".repeat(3000));
+        assert!(validate_git_url(&huge).is_err());
+    }
 
     #[test]
     fn normalize_git_url_ssh_to_https() {
