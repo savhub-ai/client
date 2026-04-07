@@ -221,6 +221,89 @@ pub fn list_skills(
     }
 }
 
+/// D2: list skills the authenticated user has starred, newest-star first.
+///
+/// Soft-deleted and moderated-out skills are filtered for non-staff viewers,
+/// matching `list_skills`. Limit is clamped to [1, 100].
+pub fn list_my_starred_skills(
+    auth: &AuthContext,
+    limit: i64,
+) -> Result<PagedResponse<SkillListItem>, AppError> {
+    use crate::schema::skills::dsl;
+
+    let limit = limit.clamp(1, 100);
+    let mut conn = db_conn()?;
+
+    // Pull starred skill IDs ordered by when they were starred (newest first).
+    let starred_ids: Vec<uuid::Uuid> = skill_stars::table
+        .filter(skill_stars::user_id.eq(auth.user.id))
+        .filter(skill_stars::skill_id.is_not_null())
+        .order(skill_stars::created_at.desc())
+        .limit(limit)
+        .select(skill_stars::skill_id)
+        .load::<Option<uuid::Uuid>>(&mut conn)?
+        .into_iter()
+        .flatten()
+        .collect();
+
+    if starred_ids.is_empty() {
+        return Ok(PagedResponse {
+            items: Vec::new(),
+            next_cursor: None,
+        });
+    }
+
+    let viewer = Some(&auth.user);
+    let mut query = dsl::skills.into_boxed();
+    query = query
+        .filter(dsl::id.eq_any(&starred_ids))
+        .filter(dsl::soft_deleted_at.is_null());
+    if !viewer_is_staff(viewer) {
+        query = query.filter(dsl::moderation_status.eq("active"));
+    }
+    let rows: Vec<SkillRow> = query
+        .select(SkillRow::as_select())
+        .load::<SkillRow>(&mut conn)?;
+
+    // Preserve the starred-at ordering from the ID query.
+    let mut row_by_id: HashMap<uuid::Uuid, SkillRow> =
+        rows.into_iter().map(|r| (r.id, r)).collect();
+    let ordered_rows: Vec<SkillRow> = starred_ids
+        .iter()
+        .filter_map(|id| row_by_id.remove(id))
+        .collect();
+
+    let repo_map = load_repo_map(&mut conn)?;
+    let owners = load_skill_owners(&mut conn, &ordered_rows.iter().collect::<Vec<_>>())?;
+    let latest = load_skill_versions_map(
+        &mut conn,
+        ordered_rows
+            .iter()
+            .filter_map(|row| row.latest_version_id)
+            .collect(),
+    )?;
+
+    let items = ordered_rows
+        .iter()
+        .map(|row| {
+            let owner = owners
+                .get(&row.flock_id)
+                .ok_or_else(|| AppError::Internal("missing skill owner".to_string()))?;
+            let latest = row.latest_version_id.and_then(|id| latest.get(&id));
+            let git_url = repo_map
+                .get(&row.repo_id)
+                .map(|r| r.git_url.as_str())
+                .unwrap_or_default();
+            Ok(skill_item_from_rows(row, git_url, owner, latest))
+        })
+        .collect::<Result<Vec<_>, AppError>>()?;
+
+    Ok(PagedResponse {
+        items,
+        next_cursor: None,
+    })
+}
+
 pub fn list_flocks(
     sort: &str,
     limit: i64,
