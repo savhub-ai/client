@@ -213,10 +213,7 @@ pub(crate) fn extract_repo_name(git_url: &str) -> String {
 
 /// Extract repo description from the README title (first `#` heading) in the checkout.
 /// Falls back to `"Auto-created repo for {repo_name}"`.
-pub(crate) fn extract_repo_description(
-    checkout_path: &std::path::Path,
-    repo_name: &str,
-) -> String {
+pub(crate) fn extract_repo_description(checkout_path: &std::path::Path, repo_name: &str) -> String {
     let default = format!("Auto-created repo for {repo_name}");
     for candidate in &["README.md", "readme.md", "Readme.md", "README"] {
         let path = checkout_path.join(candidate);

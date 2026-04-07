@@ -1,18 +1,17 @@
 mod discovery;
 
-pub(crate) use discovery::{
-    flock_name_prefix, format_skill_slug, normalize_skill_name, path_to_display_name,
-};
-use discovery::{
-    compute_each_dir_as_flock_plans, compute_flock_group_plans, derive_flock_name,
-    extract_repo_description, extract_repo_name, join_repo_relative_path,
-};
-
 use std::collections::{HashMap, HashSet};
 use std::fs;
 
 use chrono::Utc;
 use diesel::prelude::*;
+use discovery::{
+    compute_each_dir_as_flock_plans, compute_flock_group_plans, derive_flock_name,
+    extract_repo_description, extract_repo_name, join_repo_relative_path,
+};
+pub(crate) use discovery::{
+    flock_name_prefix, format_skill_slug, normalize_skill_name, path_to_display_name,
+};
 use serde_json::json;
 use shared::{
     CatalogSource, FlockMetadata, ImportedSkillRecord, IndexJobDto, IndexJobListResponse,
@@ -1381,7 +1380,6 @@ pub(crate) fn persist_auto_import_flock(
 
     Ok(())
 }
-
 
 fn index_job_dto_from_row(row: &IndexJobRow) -> IndexJobDto {
     IndexJobDto {
