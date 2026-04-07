@@ -40,8 +40,7 @@ pub fn new_pool(database_url: &str) -> Result<PgPool> {
 /// callers can tune via `DATABASE_POOL_MAX_SIZE` (shared during migration).
 pub async fn new_async_pool(database_url: &str) -> Result<AsyncPgPool> {
     let max_size = configured_pool_max_size();
-    let manager =
-        AsyncDieselConnectionManager::<AsyncPgConnection>::new(database_url.to_string());
+    let manager = AsyncDieselConnectionManager::<AsyncPgConnection>::new(database_url.to_string());
     AsyncPool::builder()
         .max_size(max_size)
         .connection_timeout(std::time::Duration::from_secs(5))

@@ -60,11 +60,7 @@ impl AppState {
 
 static APP_STATE: OnceCell<Arc<AppState>> = OnceCell::new();
 
-pub fn init_state(
-    config: Config,
-    pool: PgPool,
-    async_pool: AsyncPgPool,
-) -> Result<Arc<AppState>> {
+pub fn init_state(config: Config, pool: PgPool, async_pool: AsyncPgPool) -> Result<Arc<AppState>> {
     let (events_tx, _) = broadcast::channel::<WsEvent>(256);
     let ai_chat_concurrency = config.ai_chat_concurrency.max(1);
     let ai_security_concurrency = config.ai_security_concurrency.max(1);
