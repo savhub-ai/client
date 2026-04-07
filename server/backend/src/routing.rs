@@ -1297,12 +1297,25 @@ struct WsClientMessage {
     job_id: Option<String>,
 }
 
+// Heartbeat tunables for /ws.
+//
+// Server sends a Ping every PING_INTERVAL. If no frame of any kind (ping
+// reply, text, binary) is observed for IDLE_TIMEOUT, the connection is
+// closed so a half-open TCP socket can't pin a worker forever.
+const WS_PING_INTERVAL: std::time::Duration = std::time::Duration::from_secs(20);
+const WS_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
 #[handler]
 async fn ws_events(req: &mut Request, res: &mut Response) -> Result<(), StatusError> {
     WebSocketUpgrade::new()
         .upgrade(req, res, |mut ws| async move {
             let mut rx = app_state().events_tx.subscribe();
             let mut subscriptions = std::collections::HashSet::<String>::new();
+            let mut ping_ticker = tokio::time::interval(WS_PING_INTERVAL);
+            // Skip the immediate first tick so we don't ping before the
+            // client has had a chance to settle.
+            ping_ticker.tick().await;
+            let mut last_seen = tokio::time::Instant::now();
             loop {
                 tokio::select! {
                     event = rx.recv() => {
@@ -1324,7 +1337,18 @@ async fn ws_events(req: &mut Request, res: &mut Response) -> Result<(), StatusEr
                     msg = ws.next() => {
                         match msg {
                             Some(Ok(msg)) => {
-                                if msg.is_text()
+                                last_seen = tokio::time::Instant::now();
+                                if msg.is_ping() {
+                                    // Reply with pong echoing the payload.
+                                    let payload = msg.as_bytes().to_vec();
+                                    if ws.send(salvo::websocket::Message::pong(payload)).await.is_err() {
+                                        break;
+                                    }
+                                } else if msg.is_pong() {
+                                    // Heartbeat reply — last_seen already updated.
+                                } else if msg.is_close() {
+                                    break;
+                                } else if msg.is_text()
                                     && let Ok(text) = msg.as_str()
                                         && let Ok(cmd) = serde_json::from_str::<WsClientMessage>(text) {
                                             match cmd.action.as_str() {
@@ -1343,6 +1367,16 @@ async fn ws_events(req: &mut Request, res: &mut Response) -> Result<(), StatusEr
                                         }
                             }
                             _ => break,
+                        }
+                    }
+                    _ = ping_ticker.tick() => {
+                        // Drop dead connections proactively.
+                        if last_seen.elapsed() > WS_IDLE_TIMEOUT {
+                            tracing::debug!("ws idle > {:?}, closing", WS_IDLE_TIMEOUT);
+                            break;
+                        }
+                        if ws.send(salvo::websocket::Message::ping(Vec::new())).await.is_err() {
+                            break;
                         }
                     }
                 }
