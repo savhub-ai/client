@@ -136,3 +136,32 @@ fn collect_links(items: &[SidebarItem], out: &mut Vec<DocSidebarLink>) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn en_site_builds_and_serves_pages() {
+        let routes = list_routes("en");
+        assert!(!routes.is_empty(), "expected at least one EN route");
+        let index = get_page("en", "/").expect("EN index page should exist");
+        assert!(!index.title.is_empty(), "EN index title should not be empty");
+        assert!(
+            !index.content_html.is_empty(),
+            "EN index content_html should not be empty"
+        );
+    }
+
+    #[test]
+    fn zh_site_builds_and_serves_pages() {
+        let routes = list_routes("zh");
+        assert!(!routes.is_empty(), "expected at least one ZH route");
+        let index = get_page("zh", "/").expect("ZH index page should exist");
+        assert!(!index.title.is_empty(), "ZH index title should not be empty");
+        assert!(
+            !index.content_html.is_empty(),
+            "ZH index content_html should not be empty"
+        );
+    }
+}
