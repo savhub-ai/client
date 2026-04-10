@@ -2974,7 +2974,7 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         .map(|s| s.slug.as_str().to_string())
         .collect();
 
-    let to_add: Vec<String> = desired_skills
+    let mut to_add: Vec<String> = desired_skills
         .difference(&current_locked_slugs)
         .cloned()
         .collect();
@@ -2982,6 +2982,37 @@ fn cmd_apply(opts: &GlobalOpts, mut args: ApplyArgs) -> Result<()> {
         .difference(&desired_skills)
         .cloned()
         .collect();
+
+    // ── Also restore skills that are in the lock but missing from disk ──
+    {
+        let check_clients: Vec<_> = savhub_local::clients::detect_clients()
+            .into_iter()
+            .filter(|c| {
+                let name = c.kind.as_str();
+                if !args.agents.is_empty() {
+                    return args.agents.iter().any(|a| a.eq_ignore_ascii_case(name));
+                }
+                if !args.skip_agents.is_empty() {
+                    return !args
+                        .skip_agents
+                        .iter()
+                        .any(|s| s.eq_ignore_ascii_case(name));
+                }
+                true
+            })
+            .filter(|c| c.installed && c.kind.project_skills_dir().is_some())
+            .collect();
+
+        for slug in desired_skills.intersection(&current_locked_slugs) {
+            let missing_from_disk = check_clients.iter().any(|c| {
+                let rel = c.kind.project_skills_dir().unwrap();
+                !workdir.join(rel).join(slug).exists()
+            });
+            if missing_from_disk && !to_add.contains(slug) {
+                to_add.push(slug.clone());
+            }
+        }
+    }
 
     // ── Check if anything actually changed ──
     let toml_exists = workdir.join("savhub.toml").exists();
